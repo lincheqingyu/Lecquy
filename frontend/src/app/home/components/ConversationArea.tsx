@@ -1,4 +1,5 @@
-import {Settings} from 'lucide-react'
+import {Moon, Settings, Sun} from 'lucide-react'
+import {ChatInput} from '../../../components/ui/ChatInput'
 
 /**
  * 组件的 Props 类型定义
@@ -15,6 +16,8 @@ interface ConversationAreaProps {
     isSettingsOpen: boolean      // 设置抽屉是否打开（用来决定点击区域是否关闭抽屉）
     onSettingsToggle: () => void // 切换设置抽屉的回调函数
     onSettingsClose: () => void  // 关闭设置抽屉的回调函数
+    isDark: boolean               // 当前是否是暗色模式
+    onThemeToggle: () => void     // 切换主题的回调
 }
 
 /**
@@ -27,7 +30,9 @@ interface ConversationAreaProps {
 export function ConversationArea({
                                      isSettingsOpen,
                                      onSettingsToggle,
+                                     isDark,
                                      onSettingsClose,
+                                     onThemeToggle
                                  }: ConversationAreaProps) {
     return (
         <div
@@ -35,29 +40,25 @@ export function ConversationArea({
                 // 布局：占满剩余空间
                 "relative flex-1",
                 // 外观：白色背景 + 右侧边框作为分隔线
-                "border-r border-border bg-surface",
+                "border-r border-border bg-surface-alt",
             ].join(" ")}
             // 点击对话区域时，如果抽屉开着就关闭它（常见的 UX 模式）
             onClick={isSettingsOpen ? onSettingsClose : undefined}
         >
-            {/* 主题切换
-            <div className="flex items-center justify-between">
-                <span className="text-text-secondary">外观</span>
-                <button
-                    type="button"
-                    onClick={onThemeToggle}
-                    className={[
-                        "flex items-center justify-center",
-                        "size-10 rounded-full",
-                        "text-text-secondary",
-                        "transition-colors hover:bg-hover hover:text-text-primary",
-                    ].join(" ")}
-                    aria-label={isDark ? "切换到亮色模式" : "切换到暗色模式"}
-                >
-                     根据当前主题显示不同图标
-                    {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
-                </button>
-            </div>*/}
+            <button
+                type="button"
+                onClick={onThemeToggle}
+                className={[
+                    "flex items-center justify-center",
+                    "size-10 rounded-full",
+                    "text-text-secondary",
+                    "transition-colors hover:bg-hover hover:text-text-primary",
+                ].join(" ")}
+                aria-label={isDark ? "切换到亮色模式" : "切换到暗色模式"}
+            >
+                {/* 根据当前主题显示不同图标 */}
+                {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+            </button>
 
             {/* ---------- 设置按钮（右上角浮动） ---------- */}
             <button
@@ -85,9 +86,9 @@ export function ConversationArea({
                 <Settings className="size-5" />
             </button>
 
-            {/* ---------- 对话内容区域（占位） ---------- */}
-            <div className="flex h-full items-center justify-center text-text-muted">
-                <p>对话区域</p>
+            {/* ---------- 对话输入区域 ---------- */}
+            <div className="flex h-full flex-col items-center justify-center">
+                <ChatInput />
             </div>
         </div>
     )

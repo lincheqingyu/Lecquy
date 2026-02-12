@@ -20,8 +20,8 @@
  * ============================================ */
 @theme {
     /* ---------- 背景色 ---------- */
-    --color-surface: #ffffff;          /* 主背景（页面、卡片、抽屉） */
-    --color-surface-alt: #f8fafb;      /* 次要背景（对话区域底色） */
+    --color-surface: hsl(0 0% 100%);         /* 主背景（页面、卡片、抽屉） */
+    --color-surface-alt: hsl(48 33.3% 97.1%);      /* 次要背景（对话区域底色） */
 
     /* ---------- 文字色 ---------- */
     --color-text-primary: #0f172a;     /* 主文字：标题、正文 */
@@ -34,6 +34,12 @@
     /* ---------- 交互色 ---------- */
     --color-hover: #f1f5f9;            /* 鼠标悬停时的背景色 */
     --color-accent: #3b82f6;           /* 品牌强调色：按钮、链接 */
+    --color-accent-soft: #eff6ff;      /* 强调色柔和背景（标签 hover） */
+    --color-accent-text: #2563eb;      /* 强调色文字 */
+
+    /* ---------- 阴影 ---------- */
+    --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.06);        /* 输入框默认阴影 */
+    --shadow-input-hover: 0 4px 16px rgba(0, 0, 0, 0.1);  /* 输入框悬停/聚焦阴影 */
 }
 
 /* ============================================
@@ -50,4 +56,8 @@
     --color-border: #334155;
     --color-hover: #1e293b;
     --color-accent: #60a5fa;
+    --color-accent-soft: rgba(96, 165, 250, 0.1);
+    --color-accent-text: #93bbfd;
+    --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-input-hover: 0 4px 16px rgba(0, 0, 0, 0.4);
 }

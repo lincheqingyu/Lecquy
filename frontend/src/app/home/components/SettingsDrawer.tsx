@@ -33,16 +33,15 @@ export function SettingsDrawer({
         <div
             className={clsx(
                 // 定位：固定在视口右侧
-                "fixed right-0 top-0",
                 // 尺寸：占满高度，宽 320px
-                "h-screen w-80",
+                "h-screen w-80 shrink-0",
                 // 外观：背景 + 左侧边框
                 "border-l border-border bg-surface",
                 // 动画：平滑滑入/滑出
                 "transition-transform duration-300 ease-in-out",
                 // 条件样式：clsx 的核心价值 ——
                 // 比模板字符串里写三元表达式更清晰
-                isOpen ? "translate-x-0" : "translate-x-full"
+                isOpen ? "mr-0" : "-mr-80"
             )}
         >
             {/* ---------- 抽屉头部 ---------- */}

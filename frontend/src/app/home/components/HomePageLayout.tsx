@@ -70,6 +70,8 @@ export function HomePageLayout() {
                 isSettingsOpen={isSettingsOpen}
                 onSettingsToggle={handleSettingsToggle}
                 onSettingsClose={handleSettingsClose}
+                isDark={isDark}
+                onThemeToggle={handleThemeToggle}
             />
             <SettingsDrawer
                 isOpen={isSettingsOpen}
