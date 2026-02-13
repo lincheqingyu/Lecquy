@@ -1,0 +1,94 @@
+# WebClaw Monorepo 使用指南
+
+## 项目结构
+
+```
+webclaw/
+├── frontend/          # @webclaw/frontend — React 前端应用
+├── backend/           # @webclaw/backend  — Express 后端服务
+├── package.json       # 根配置（统一脚本入口）
+├── pnpm-workspace.yaml
+└── pnpm-lock.yaml
+```
+
+## 环境要求
+
+- Node.js >= 20.0.0
+- pnpm 10.6.2（通过 corepack 自动管理）
+
+启用 corepack（首次使用时执行一次）：
+
+```bash
+corepack enable
+```
+
+之后在项目根目录执行任何 `pnpm` 命令时，corepack 会自动下载对应版本。
+
+## 常用命令
+
+### 依赖管理
+
+```bash
+# 安装全部依赖（前端 + 后端）
+pnpm install
+
+# 为前端添加依赖
+pnpm -F @webclaw/frontend add <包名>
+
+# 为后端添加开发依赖
+pnpm -F @webclaw/backend add -D <包名>
+
+# 为根目录添加共享开发依赖
+pnpm add -Dw <包名>
+
+# 清理所有 node_modules 和构建产物
+pnpm clean
+```
+
+### 开发
+
+```bash
+# 同时启动前端和后端
+pnpm dev
+
+# 仅启动前端（Vite 开发服务器）
+pnpm dev:frontend
+
+# 仅启动后端（tsx --watch 热重载）
+pnpm dev:backend
+```
+
+### 构建
+
+```bash
+# 构建所有子包
+pnpm build
+
+# 仅构建前端
+pnpm build:frontend
+
+# 仅构建后端
+pnpm build:backend
+```
+
+### 代码检查
+
+```bash
+# 对所有子包执行 lint
+pnpm lint
+```
+
+### 在特定子包中执行任意命令
+
+```bash
+# 语法：pnpm -F <包名> <命令>
+pnpm -F @webclaw/frontend preview
+pnpm -F @webclaw/backend start
+```
+
+## 技术栈速查
+
+| 子包 | 框架 | 构建工具 | 样式方案 |
+|------|------|----------|----------|
+| `@webclaw/frontend` | React 19 + TypeScript 5.9 | Vite 7 | Tailwind CSS 4 |
+| `@webclaw/backend` | Express 4 + TypeScript 5.9 | tsc + tsx | — |

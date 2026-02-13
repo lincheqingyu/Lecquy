@@ -14,7 +14,15 @@
       "Bash(curl:*)",
       "Bash(BASE=\"https://raw.githubusercontent.com/anthropics/skills/main/skills/webapp-testing/examples\")",
       "Bash(grep:*)",
-      "Bash(npm install tailwindcss lucide-react clsx tailwind-merge)"
+      "Bash(npm install tailwindcss lucide-react clsx tailwind-merge)",
+      "Bash(pnpm config:*)",
+      "Bash(file:*)",
+      "Bash(test:*)",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "WebFetch(domain:js.langchain.com)",
+      "Bash(pnpm -F @webclaw/backend add:*)",
+      "Bash(pnpm -F @webclaw/backend build:*)",
+      "Bash(pnpm build:backend:*)"
     ]
   }
 }

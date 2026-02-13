@@ -1,0 +1,22 @@
+{
+  "name": "webclaw",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:frontend": "pnpm -F @webclaw/frontend dev",
+    "dev:backend": "pnpm -F @webclaw/backend dev",
+    "build": "pnpm -r run build",
+    "build:frontend": "pnpm -F @webclaw/frontend build",
+    "build:backend": "pnpm -F @webclaw/backend build",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r exec rm -rf node_modules dist && rm -rf node_modules"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@10.6.2",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
