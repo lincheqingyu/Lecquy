@@ -3,22 +3,6 @@
  */
 
 export type {
-  MessageRole,
-  ChatMessage,
-  ChatOptions,
-  ChatResponse,
-  TokenUsage,
-  ChatChunk,
-} from './llm.js'
-
-export type {
-  LLMProvider,
-  ProviderConfig,
-} from './provider.js'
-
-export type {
-  ChatRequest,
-  ChatApiResponse,
   ErrorResponse,
   ApiResponse,
   HealthResponse,

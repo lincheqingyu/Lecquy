@@ -6,7 +6,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { StructuredToolInterface } from '@langchain/core/tools'
+import type { AgentTool } from '@mariozechner/pi-agent-core'
 
 /** 解析后的技能数据 */
 export interface Skill {
@@ -122,7 +122,7 @@ class SkillLoader {
   }
 
   /** 获取技能工具列表（当前不支持动态工具加载，返回空数组） */
-  getSkillTools(_name: string): StructuredToolInterface[] {
+  getSkillTools(_name: string): AgentTool[] {
     return []
   }
 

@@ -22,7 +22,9 @@
       "WebFetch(domain:js.langchain.com)",
       "Bash(pnpm -F @webclaw/backend add:*)",
       "Bash(pnpm -F @webclaw/backend build:*)",
-      "Bash(pnpm build:backend:*)"
+      "Bash(pnpm build:backend:*)",
+      "Bash(cd /mnt/d/JingshengAI/AI/WebClaw/backend && npx tsc --noEmit 2>&1 | head -60)",
+      "Bash(npx tsc --noEmit 2>&1 | head -40)"
     ]
   }
 }

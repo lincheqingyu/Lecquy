@@ -4,7 +4,6 @@
 
 import { Router, type Router as RouterType } from 'express'
 import type { HealthResponse } from '../types/index.js'
-import { listProviders } from '../providers/registry.js'
 
 const router: RouterType = Router()
 
@@ -13,7 +12,6 @@ router.get('/health', (_req, res) => {
   const response: HealthResponse = {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    providers: listProviders(),
   }
   res.json(response)
 })

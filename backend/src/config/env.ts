@@ -20,7 +20,7 @@ const envSchema = z.object({
   LLM_BASE_URL: z.string().url().default('https://open.bigmodel.cn/api/paas/v4/'),
 
   /** LLM 默认模型 */
-  LLM_MODEL: z.string().default('glm-4-plus'),
+  LLM_MODEL: z.string().default('glm-4.7'),
 
   /** LLM 温度 */
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
