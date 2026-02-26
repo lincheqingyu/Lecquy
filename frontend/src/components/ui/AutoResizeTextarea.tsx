@@ -14,6 +14,8 @@ interface AutoResizeTextareaProps {
   placeholder?: string
   /** 最大可见行数 */
   maxRows?: number
+  /** 额外样式 */
+  className?: string
 }
 
 /**
@@ -30,12 +32,13 @@ export function AutoResizeTextarea({
   onToggleThinking,
   placeholder = '有什么我可以帮你的？',
   maxRows = 8,
+  className,
 }: AutoResizeTextareaProps) {
   const textareaRef = useAutoResize(value, maxRows)
 
-  /** 键盘事件：Enter 换行，Ctrl+Enter 发送，Ctrl+P 切换模式 */
+  /** 键盘事件：Enter 发送，Ctrl+Enter 换行，Ctrl+P 切换模式 */
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    if (e.key === 'Enter' && !e.ctrlKey) {
       e.preventDefault()
       onSend()
       return
@@ -55,10 +58,10 @@ export function AutoResizeTextarea({
       placeholder={placeholder}
       rows={1}
       className={[
-        'w-full resize-none outline-none bg-transparent',
+        'w-full resize-none border-0 outline-none bg-transparent',
         'text-text-primary placeholder:text-text-muted',
         'leading-6 text-base',
-        'px-4 py-3',
+        className ?? 'px-4 py-3',
       ].join(' ')}
     />
   )

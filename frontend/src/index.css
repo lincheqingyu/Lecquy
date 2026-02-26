@@ -61,3 +61,28 @@
     --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-input-hover: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
+
+/* 对话区滚动条：细线、低对比、右侧贴边 */
+.chat-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-text-muted) 45%, transparent) transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-text-muted) 45%, transparent);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--color-text-muted) 65%, transparent);
+}

@@ -38,16 +38,18 @@ function loadModelConfig(): ModelConfig {
     try {
         const raw = localStorage.getItem(STORAGE_KEYS.modelConfig)
         if (!raw) {
-            return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192 }
+            return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '' }
         }
         const parsed = JSON.parse(raw)
         return {
             model: parsed.model ?? 'glm-4.7',
             temperature: Number(parsed.temperature ?? 0.7),
             maxTokens: Number(parsed.maxTokens ?? 8192),
+            baseUrl: parsed.baseUrl ?? '',
+            apiKey: parsed.apiKey ?? '',
         }
     } catch {
-        return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192 }
+        return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '' }
     }
 }
 
@@ -149,8 +151,6 @@ export function HomePageLayout() {
             <SettingsDrawer
                 isOpen={isSettingsOpen}
                 onClose={handleSettingsClose}
-                isDark={isDark}
-                onThemeToggle={handleThemeToggle}
                 systemPrompts={systemPrompts}
                 activePromptId={activePromptId}
                 onSystemPromptsChange={setSystemPrompts}

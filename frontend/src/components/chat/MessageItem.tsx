@@ -19,9 +19,11 @@ export function MessageItem({ message }: MessageItemProps) {
     >
       <div
         className={clsx(
-          'max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed',
-          isUser && 'bg-accent text-white',
-          isAssistant && 'bg-surface border border-border text-text-primary',
+          'max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed',
+          // 用户消息改为低饱和背景 + 深色文字，降低视觉权重
+          isUser && 'bg-hover text-text-primary border border-border/70',
+          // AI 消息去掉卡片外观，与页面背景融合
+          isAssistant && 'bg-transparent border-transparent shadow-none text-text-primary px-1 py-1',
           isEvent && 'bg-hover text-text-secondary border border-border',
           message.role === 'system' && 'bg-hover text-text-secondary border border-border',
         )}

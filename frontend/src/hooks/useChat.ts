@@ -16,6 +16,8 @@ export interface ModelConfig {
   model: string
   temperature: number
   maxTokens: number
+  baseUrl: string
+  apiKey: string
 }
 
 interface UseChatOptions {
@@ -187,6 +189,8 @@ export function useChat({ systemPrompt, modelConfig }: UseChatOptions) {
         mode: 'simple',
         stream: true,
         model: modelConfig.model,
+        baseUrl: modelConfig.baseUrl,
+        apiKey: modelConfig.apiKey,
         options: {
           temperature: modelConfig.temperature,
           maxTokens: modelConfig.maxTokens,
@@ -263,6 +267,8 @@ export function useChat({ systemPrompt, modelConfig }: UseChatOptions) {
         mode: 'thinking',
         stream: true,
         model: modelConfig.model,
+        baseUrl: modelConfig.baseUrl,
+        apiKey: modelConfig.apiKey,
         options: {
           temperature: modelConfig.temperature,
           maxTokens: modelConfig.maxTokens,
