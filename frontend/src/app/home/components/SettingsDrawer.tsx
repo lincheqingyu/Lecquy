@@ -1,8 +1,8 @@
-import { ChevronDown, Trash2, X } from 'lucide-react'
-import { clsx } from 'clsx'
-import { useEffect, useState } from 'react'
-import type { ModelConfig } from '../../../hooks/useChat'
-import { API_V1 } from '../../../config/api.ts'
+import {ChevronDown, Trash2, X} from 'lucide-react'
+import {clsx} from 'clsx'
+import {useCallback, useEffect, useRef, useState} from 'react'
+import type {ModelConfig} from '../../../hooks/useChat'
+import {API_V1} from '../../../config/api.ts'
 
 interface SystemPromptItem {
     id: string
@@ -108,16 +108,73 @@ export function SettingsDrawer({
     const [draftBaseUrl, setDraftBaseUrl] = useState('')
     const [draftApiKey, setDraftApiKey] = useState('')
     const [modelSaveStatus, setModelSaveStatus] = useState<'Saved' | 'Editing'>('Saved')
-    const [memoryConfig, setMemoryConfig] = useState<MemoryConfig>({ flushTurns: 20, embeddingBaseUrl: '' })
-    const [memoryDraftConfig, setMemoryDraftConfig] = useState<MemoryConfig>({ flushTurns: 20, embeddingBaseUrl: '' })
+    const [modelsLoading, setModelsLoading] = useState(false)
+    const [modelsError, setModelsError] = useState<string | null>(null)
+    const fetchAbortRef = useRef<AbortController | null>(null)
+    const [memoryConfig, setMemoryConfig] = useState<MemoryConfig>({flushTurns: 20, embeddingBaseUrl: ''})
+    const [memoryDraftConfig, setMemoryDraftConfig] = useState<MemoryConfig>({flushTurns: 20, embeddingBaseUrl: ''})
     const [memoryFiles, setMemoryFiles] = useState<MemoryFileMeta[]>([])
     const [selectedMemoryFile, setSelectedMemoryFile] = useState<string | null>(null)
     const [selectedMemoryContent, setSelectedMemoryContent] = useState('')
     const [memorySaveStatus, setMemorySaveStatus] = useState<'Saved' | 'Editing'>('Saved')
 
     const updateModelConfig = (partial: Partial<ModelConfig>) => {
-        onModelConfigChange({ ...modelConfig, ...partial })
+        onModelConfigChange({...modelConfig, ...partial})
     }
+
+    /** 从 vLLM /v1/models 接口获取模型名称 */
+    const fetchModelName = useCallback(async (baseUrl: string, apiKey: string, signal: AbortSignal) => {
+        setModelsLoading(true)
+        setModelsError(null)
+        try {
+            const response = await fetch(`${API_V1}/models/list`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({baseUrl, apiKey: apiKey || undefined}),
+                signal,
+            })
+            if (!response.ok) {
+                const text = await response.text().catch(() => '')
+                throw new Error(text || `请求失败: ${response.status}`)
+            }
+            const json = await response.json() as { success: boolean; data?: { data?: Array<{ id: string }> } }
+            const modelId = json?.data?.data?.[0]?.id
+            if (!modelId) {
+                throw new Error('未找到可用模型')
+            }
+            setDraftModel(modelId)
+            setModelSaveStatus('Editing')
+            setModelsError(null)
+        } catch (error: unknown) {
+            if (error instanceof DOMException && error.name === 'AbortError') return
+            const msg = error instanceof Error ? error.message : '获取模型失败'
+            setModelsError(msg)
+        } finally {
+            setModelsLoading(false)
+        }
+    }, [])
+
+    /** 监听 baseUrl / apiKey 变化，防抖 500ms 后自动获取模型名称 */
+    useEffect(() => {
+        if (!draftBaseUrl.trim()) {
+            setDraftModel('')
+            setModelsError(null)
+            setModelsLoading(false)
+            return
+        }
+
+        const timer = window.setTimeout(() => {
+            fetchAbortRef.current?.abort()
+            const controller = new AbortController()
+            fetchAbortRef.current = controller
+            void fetchModelName(draftBaseUrl.trim(), draftApiKey.trim(), controller.signal)
+        }, 500)
+
+        return () => {
+            window.clearTimeout(timer)
+            fetchAbortRef.current?.abort()
+        }
+    }, [draftBaseUrl, draftApiKey, fetchModelName])
 
     const maxTokenPreset = (() => {
         if (modelConfig.maxTokens <= 8192) return 'low'
@@ -128,9 +185,9 @@ export function SettingsDrawer({
     const activePrompt = systemPrompts.find((p) => p.id === activePromptId) ?? null
     const activeModelPreset = modelPresets.find((p) => p.id === selectedModelPresetId) ?? null
     const tokenOptions = [
-        { key: 'low', label: 'Low', hint: '8k', value: 8192 },
-        { key: 'medium', label: 'Middle', hint: '16k', value: 16384 },
-        { key: 'high', label: 'High', hint: '32k', value: 32768 },
+        {key: 'low', label: 'Low', hint: '8k', value: 8192},
+        {key: 'medium', label: 'Middle', hint: '16k', value: 16384},
+        {key: 'high', label: 'High', hint: '32k', value: 32768},
     ] as const
     const selectedTokenOption =
         tokenOptions.find((item) => item.key === maxTokenPreset) ?? tokenOptions[0]
@@ -205,7 +262,7 @@ export function SettingsDrawer({
             ])
             const configJson = await configRes.json() as { data?: MemoryConfig }
             const filesJson = await filesRes.json() as { data?: { files?: MemoryFileMeta[] } }
-            const cfg = configJson?.data ?? { flushTurns: 20, embeddingBaseUrl: '' }
+            const cfg = configJson?.data ?? {flushTurns: 20, embeddingBaseUrl: ''}
             setMemoryConfig(cfg)
             setMemoryDraftConfig(cfg)
             setMemoryFiles(filesJson?.data?.files ?? [])
@@ -227,7 +284,7 @@ export function SettingsDrawer({
                 const nextId = `prompt_${Date.now()}`
                 const nextItems = [
                     ...systemPrompts,
-                    { id: nextId, title: draftTitle, prompt: draftPrompt },
+                    {id: nextId, title: draftTitle, prompt: draftPrompt},
                 ]
                 onSystemPromptsChange(nextItems)
                 onActivePromptChange(nextId)
@@ -238,7 +295,7 @@ export function SettingsDrawer({
 
             const nextItems = systemPrompts.map((item) =>
                 item.id === selectedPromptId
-                    ? { ...item, title: draftTitle, prompt: draftPrompt }
+                    ? {...item, title: draftTitle, prompt: draftPrompt}
                     : item,
             )
             onSystemPromptsChange(nextItems)
@@ -332,7 +389,7 @@ export function SettingsDrawer({
         const timer = window.setTimeout(async () => {
             const response = await fetch(`${API_V1}/memory/config`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(memoryDraftConfig),
             })
             const json = await response.json() as { data?: MemoryConfig }
@@ -460,7 +517,7 @@ export function SettingsDrawer({
                     ].join(" ")}
                     aria-label="关闭设置"
                 >
-                    <X className="size-5" />
+                    <X className="size-5"/>
                 </button>
             </div>
 
@@ -480,7 +537,7 @@ export function SettingsDrawer({
                                     {activeModelPreset?.title || modelConfig.model || '未设置模型'}
                                 </span>
                                 <span className="mt-1 block text-xs text-gray-500">
-                                    {modelConfig.model || 'Select a model and adjust runtime parameters'}
+                                    {modelConfig.baseUrl || 'Select a model and adjust runtime parameters'}
                                 </span>
                             </button>
                         </div>
@@ -510,7 +567,7 @@ export function SettingsDrawer({
                     </button>
                 </div>
 
-                <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal" />
+                <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal"/>
 
                 <div className="settings-item-column settings-item-spacer">
                     <div className="item-about item-about-slider">
@@ -525,7 +582,7 @@ export function SettingsDrawer({
                             max={2}
                             step={0.05}
                             value={modelConfig.temperature}
-                            onChange={(e) => updateModelConfig({ temperature: Number(e.target.value) })}
+                            onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
                             className="flex-1 accent-text-primary"
                         />
                         {/* 背景色修改：数字输入框改为白底 + 浅边框 + 微阴影 */}
@@ -535,18 +592,19 @@ export function SettingsDrawer({
                             max={2}
                             step={0.05}
                             value={modelConfig.temperature}
-                            onChange={(e) => updateModelConfig({ temperature: Number(e.target.value) })}
+                            onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
                             className="w-14 rounded-lg border border-gray-200 bg-white py-1 text-center text-sm text-gray-900 shadow-sm outline-none"
                         />
                     </div>
                 </div>
 
-                <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal" />
+                <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal"/>
 
                 <div className="settings-item settings-item-column">
                     <div className="item-about">
                         <div className="item-description">
-                            <h3 className="item-description-title text-sm font-semibold text-text-primary">Max tokens</h3>
+                            <h3 className="item-description-title text-sm font-semibold text-text-primary">Max
+                                tokens</h3>
                         </div>
                     </div>
                     <div className="item-input-form-field mt-3">
@@ -563,7 +621,7 @@ export function SettingsDrawer({
                                     <span className="text-gray-900">{selectedTokenOption.label}</span>
                                     <span className="text-xs text-gray-300">{selectedTokenOption.hint}</span>
                                 </div>
-                                <ChevronDown className="size-4 text-gray-400" />
+                                <ChevronDown className="size-4 text-gray-400"/>
                             </button>
 
                             {isMaxTokensOpen && (
@@ -579,7 +637,7 @@ export function SettingsDrawer({
                                                 key={item.key}
                                                 type="button"
                                                 onClick={() => {
-                                                    updateModelConfig({ maxTokens: item.value })
+                                                    updateModelConfig({maxTokens: item.value})
                                                     setIsMaxTokensOpen(false)
                                                 }}
                                                 className={clsx(
@@ -598,6 +656,37 @@ export function SettingsDrawer({
                             )}
                         </div>
                     </div>
+
+                    {/* Function calling 纯样式区域 */}
+                    <div className="settings-item settings-tool flex items-center justify-between mt-6 pt-6 border-t border-gray-100">
+                        <div className="item-about item-about-no-icon pr-4">
+                            <div className="item-description">
+                                <h3 className="item-description-title text-sm font-semibold text-text-primary">Function calling</h3>
+                            </div>
+                        </div>
+
+                        <div className="item-input-toggle flex items-center gap-3">
+                            {/* 静态 Toggle 开关 (关闭状态) */}
+                            <button
+                                role="switch"
+                                type="button"
+                                aria-label="Function calling"
+                                aria-checked="false"
+                                className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent bg-gray-200 transition-colors duration-200 ease-in-out hover:opacity-90 focus:outline-none"
+                            >
+                                <span
+                                    className="pointer-events-none relative inline-block h-5 w-5 translate-x-0 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out">
+                                    {/* 关闭状态图标 (减号) */}
+                                    <span
+                                        className="absolute inset-0 flex h-full w-full items-center justify-center opacity-100 transition-opacity duration-200 ease-in">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3 w-3 text-gray-400 fill-current">
+                                            <path d="M20 13H4v-2h16v2z"></path>
+                                        </svg>
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 {isMemoryPanelOpen && (
@@ -610,7 +699,7 @@ export function SettingsDrawer({
                                 aria-label="关闭记忆面板"
                                 className="flex size-8 items-center justify-center rounded text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
                             >
-                                <X className="size-4" />
+                                <X className="size-4"/>
                             </button>
                         </div>
 
@@ -629,7 +718,8 @@ export function SettingsDrawer({
                                     </button>
                                     <span className="text-xs text-text-muted">{selectedMemoryFile}</span>
                                 </div>
-                                <pre className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-surface p-3 text-xs text-text-primary">
+                                <pre
+                                    className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-surface p-3 text-xs text-text-primary">
                                     {selectedMemoryContent || '(empty)'}
                                 </pre>
                             </div>
@@ -640,7 +730,10 @@ export function SettingsDrawer({
                                     <input
                                         value={memoryDraftConfig.embeddingBaseUrl}
                                         onChange={(e) => {
-                                            setMemoryDraftConfig((prev) => ({ ...prev, embeddingBaseUrl: e.target.value }))
+                                            setMemoryDraftConfig((prev) => ({
+                                                ...prev,
+                                                embeddingBaseUrl: e.target.value
+                                            }))
                                             setMemorySaveStatus('Editing')
                                         }}
                                         placeholder="http://127.0.0.1:8000/v1"
@@ -655,7 +748,10 @@ export function SettingsDrawer({
                                         min={1}
                                         value={memoryDraftConfig.flushTurns}
                                         onChange={(e) => {
-                                            setMemoryDraftConfig((prev) => ({ ...prev, flushTurns: Number(e.target.value || 20) }))
+                                            setMemoryDraftConfig((prev) => ({
+                                                ...prev,
+                                                flushTurns: Number(e.target.value || 20)
+                                            }))
                                             setMemorySaveStatus('Editing')
                                         }}
                                         className="w-24 rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:ring-2 focus:ring-[color:var(--border-strong)]"
@@ -666,7 +762,8 @@ export function SettingsDrawer({
                                     <div className="mb-2 text-xs text-text-secondary">
                                         Memory files (read-only) · {memoryFiles.length}
                                     </div>
-                                    <div className="max-h-52 space-y-2 overflow-auto rounded-xl border border-border bg-surface p-2">
+                                    <div
+                                        className="max-h-52 space-y-2 overflow-auto rounded-xl border border-border bg-surface p-2">
                                         {memoryFiles.map((file) => (
                                             <button
                                                 key={file.name}
@@ -701,7 +798,7 @@ export function SettingsDrawer({
                                 aria-label="关闭模型面板"
                                 className="flex size-8 items-center justify-center rounded text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
                             >
-                                <X className="size-4" />
+                                <X className="size-4"/>
                             </button>
                         </div>
 
@@ -720,7 +817,7 @@ export function SettingsDrawer({
                                             ? '+ Create new model setting'
                                             : modelPresets.find((item) => item.id === selectedModelPresetId)?.title || 'Untitled model'}
                                     </span>
-                                    <ChevronDown className="size-4 text-text-muted" />
+                                    <ChevronDown className="size-4 text-text-muted"/>
                                 </button>
 
                                 {isModelOptionsOpen && (
@@ -787,19 +884,21 @@ export function SettingsDrawer({
                                     className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                                     aria-label="Delete model setting"
                                 >
-                                    <Trash2 className="size-4" />
+                                    <Trash2 className="size-4"/>
                                 </button>
                             </div>
 
-                            <input
-                                value={draftModel}
-                                onChange={(e) => {
-                                    setDraftModel(e.target.value)
-                                    setModelSaveStatus('Editing')
-                                }}
-                                placeholder="model"
-                                className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:ring-2 focus:ring-[color:var(--border-strong)]"
-                            />
+                            <div className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm">
+                                {modelsLoading ? (
+                                    <span className="text-text-secondary animate-pulse">获取中...</span>
+                                ) : modelsError ? (
+                                    <span className="text-red-500">{modelsError}</span>
+                                ) : draftModel ? (
+                                    <span className="text-text-primary">{draftModel}</span>
+                                ) : (
+                                    <span className="text-text-secondary/60">填写 BaseURL 后自动获取</span>
+                                )}
+                            </div>
                             <input
                                 value={draftBaseUrl}
                                 onChange={(e) => {
@@ -836,7 +935,7 @@ export function SettingsDrawer({
                                 aria-label="关闭面板"
                                 className="flex size-8 items-center justify-center rounded text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
                             >
-                                <X className="size-4" />
+                                <X className="size-4"/>
                             </button>
                         </div>
 
@@ -856,7 +955,7 @@ export function SettingsDrawer({
                                                 ? '+ Create new instruction'
                                                 : systemPrompts.find((item) => item.id === selectedPromptId)?.title || 'Untitled instruction'}
                                         </span>
-                                        <ChevronDown className="size-4 text-text-muted" />
+                                        <ChevronDown className="size-4 text-text-muted"/>
                                     </button>
 
                                     {isPromptOptionsOpen && (
@@ -918,7 +1017,7 @@ export function SettingsDrawer({
                                     className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                                     aria-label="Delete system instruction"
                                 >
-                                    <Trash2 className="size-4" />
+                                    <Trash2 className="size-4"/>
                                 </button>
                             </div>
 
@@ -940,7 +1039,8 @@ export function SettingsDrawer({
                         </div>
 
                         {isDeleteDialogOpen && (
-                            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+                            <div
+                                className="absolute inset-0 z-30 flex items-center justify-center bg-black/20 backdrop-blur-sm">
                                 <div
                                     role="dialog"
                                     aria-modal="true"
