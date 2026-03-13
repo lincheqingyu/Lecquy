@@ -526,31 +526,29 @@ export function SettingsDrawer({
                 <div className="selector-container space-y-3">
                     <div className="settings-item settings-model-selector">
                         <div className="item-input-form-field">
-                            {/* 背景色修改：卡片改为白底 + 浅边框 + 微阴影 */}
                             <button
                                 type="button"
                                 onClick={() => setIsModelPanelOpen(true)}
-                                className="model-selector-card w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
+                                className="model-selector-card w-full rounded-2xl border border-border bg-surface-raised p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
                             >
-                                <span className="block text-sm font-semibold text-gray-900">Model selection</span>
-                                <span className="mt-1 block text-xs text-gray-500">
+                                <span className="block text-sm font-semibold text-text-primary">Model selection</span>
+                                <span className="mt-1 block text-xs text-text-secondary">
                                     {activeModelPreset?.title || modelConfig.model || '未设置模型'}
                                 </span>
-                                <span className="mt-1 block text-xs text-gray-500">
+                                <span className="mt-1 block text-xs text-text-secondary">
                                     {modelConfig.baseUrl || 'Select a model and adjust runtime parameters'}
                                 </span>
                             </button>
                         </div>
                     </div>
 
-                    {/* 背景色修改：卡片改为白底 + 浅边框 + 微阴影 */}
                     <button
                         type="button"
                         onClick={() => setIsSystemPanelOpen(true)}
-                        className="system-instructions-card w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
+                        className="system-instructions-card w-full rounded-2xl border border-border bg-surface-raised p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
                     >
-                        <span className="block text-sm font-semibold text-gray-900">System instructions</span>
-                        <span className="mt-1 block text-xs text-gray-500">
+                        <span className="block text-sm font-semibold text-text-primary">System instructions</span>
+                        <span className="mt-1 block text-xs text-text-secondary">
                             {activePrompt?.title || 'Optional tone and style instructions for the model'}
                         </span>
                     </button>
@@ -558,10 +556,10 @@ export function SettingsDrawer({
                     <button
                         type="button"
                         onClick={() => setIsMemoryPanelOpen(true)}
-                        className="memory-settings-card w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
+                        className="memory-settings-card w-full rounded-2xl border border-border bg-surface-raised p-4 text-left shadow-sm transition-shadow hover:shadow-[var(--shadow-input)]"
                     >
-                        <span className="block text-sm font-semibold text-gray-900">Memory settings</span>
-                        <span className="mt-1 block text-xs text-gray-500">
+                        <span className="block text-sm font-semibold text-text-primary">Memory settings</span>
+                        <span className="mt-1 block text-xs text-text-secondary">
                             Flush turns: {memoryConfig.flushTurns} · Embedding base URL configurable
                         </span>
                     </button>
@@ -580,12 +578,14 @@ export function SettingsDrawer({
                         role="switch"
                         aria-checked={modelConfig.enableTools}
                         onClick={() => updateModelConfig({enableTools: !modelConfig.enableTools})}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            modelConfig.enableTools ? 'bg-accent' : 'bg-gray-300'
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+                            modelConfig.enableTools
+                                ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
+                                : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
                         }`}
                     >
-                        <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                            modelConfig.enableTools ? 'translate-x-6' : 'translate-x-1'
+                        <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                            modelConfig.enableTools ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
                         }`}/>
                     </button>
                 </div>
@@ -608,7 +608,6 @@ export function SettingsDrawer({
                             onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
                             className="flex-1 accent-text-primary"
                         />
-                        {/* 背景色修改：数字输入框改为白底 + 浅边框 + 微阴影 */}
                         <input
                             type="number"
                             min={0}
@@ -616,7 +615,7 @@ export function SettingsDrawer({
                             step={0.05}
                             value={modelConfig.temperature}
                             onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
-                            className="w-14 rounded-lg border border-gray-200 bg-white py-1 text-center text-sm text-gray-900 shadow-sm outline-none"
+                            className="w-14 rounded-lg border border-border bg-surface-raised py-1 text-center text-sm text-text-primary shadow-sm outline-none"
                         />
                     </div>
                 </div>
@@ -635,21 +634,21 @@ export function SettingsDrawer({
                             <button
                                 type="button"
                                 onClick={() => setIsMaxTokensOpen((prev) => !prev)}
-                                className="flex w-full items-center justify-between rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
+                                className="flex w-full items-center justify-between rounded-2xl border border-border bg-surface-raised px-3 py-2 text-sm shadow-sm"
                                 aria-haspopup="listbox"
                                 aria-expanded={isMaxTokensOpen}
                                 aria-label="Max tokens"
                             >
                                 <div className="flex w-full items-center justify-between pr-2">
-                                    <span className="text-gray-900">{selectedTokenOption.label}</span>
-                                    <span className="text-xs text-gray-300">{selectedTokenOption.hint}</span>
+                                    <span className="text-text-primary">{selectedTokenOption.label}</span>
+                                    <span className="text-xs text-text-muted">{selectedTokenOption.hint}</span>
                                 </div>
-                                <ChevronDown className="size-4 text-gray-400"/>
+                                <ChevronDown className="size-4 text-text-muted"/>
                             </button>
 
                             {isMaxTokensOpen && (
                                 <div
-                                    className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+                                    className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-sm"
                                     role="listbox"
                                     aria-label="Max tokens options"
                                 >
@@ -665,13 +664,13 @@ export function SettingsDrawer({
                                                 }}
                                                 className={clsx(
                                                     'flex w-full items-center justify-between px-3 py-2 text-sm',
-                                                    active ? 'bg-gray-50 text-gray-900' : 'bg-white text-gray-800 hover:bg-gray-50',
+                                                    active ? 'bg-hover text-text-primary' : 'bg-surface-raised text-text-secondary hover:bg-hover hover:text-text-primary',
                                                 )}
                                                 role="option"
                                                 aria-selected={active}
                                             >
                                                 <span>{item.label}</span>
-                                                <span className="text-xs text-gray-300">{item.hint}</span>
+                                                <span className="text-xs text-text-muted">{item.hint}</span>
                                             </button>
                                         )
                                     })}
@@ -1037,17 +1036,17 @@ export function SettingsDrawer({
                                     role="dialog"
                                     aria-modal="true"
                                     aria-label="确认删除提示词"
-                                    className="mx-4 w-full max-w-xs rounded-xl border border-gray-200 bg-white p-4 shadow-lg"
+                                    className="mx-4 w-full max-w-xs rounded-xl border border-border bg-surface-raised p-4 shadow-lg"
                                 >
-                                    <div className="text-sm font-semibold text-gray-900">删除提示词？</div>
-                                    <div className="mt-2 text-xs text-gray-500">
+                                    <div className="text-sm font-semibold text-text-primary">删除提示词？</div>
+                                    <div className="mt-2 text-xs text-text-secondary">
                                         删除后无法恢复，确认继续吗？
                                     </div>
                                     <div className="mt-4 flex items-center justify-end gap-2">
                                         <button
                                             type="button"
                                             onClick={() => setIsDeleteDialogOpen(false)}
-                                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-50"
+                                            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
                                         >
                                             取消
                                         </button>

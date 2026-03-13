@@ -53,25 +53,20 @@ export function ConversationSidebar({
   return (
     <aside
       className={[
-        'h-full shrink-0 border-r border-border/60 bg-surface-alt',
+        'h-full shrink-0 border-r border-border/60',
         'transition-[width] duration-300 ease-out',
-        collapsed ? 'w-16' : 'w-80',
+        collapsed ? 'w-16 bg-surface-alt' : 'w-[16.5rem] bg-sidebar-panel',
       ].join(' ')}
       aria-label="会话管理栏"
     >
       <div className="flex h-full flex-col">
-        <div
-          className={[
-            'flex h-14 shrink-0 items-center',
-            collapsed ? 'justify-center px-2' : 'justify-between px-4',
-          ].join(' ')}
-        >
+        <div className="flex h-14 shrink-0 items-center px-3">
           <button
             type="button"
             onClick={onToggleCollapse}
             className={[
               'inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary',
-              'transition-colors hover:bg-[#f3f0e8] hover:text-text-primary',
+              'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
             ].join(' ')}
             aria-label={collapsed ? '展开会话栏' : '收起会话栏'}
             title={collapsed ? '展开会话栏' : '收起会话栏'}
@@ -80,68 +75,58 @@ export function ConversationSidebar({
           </button>
         </div>
 
-        {collapsed ? (
-          <div className="flex flex-col items-center gap-2 px-2 pb-3">
+        <div className="px-3 pb-3">
+          <div className="flex flex-col gap-1.5">
             <button
               type="button"
               onClick={onCreateConversation}
               className={[
-                'inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-secondary',
-                'transition-colors hover:bg-[#f3f0e8] hover:text-text-primary',
+                'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left',
+                'transition-colors hover:bg-sidebar-hover',
               ].join(' ')}
               aria-label="新建会话"
               title="新建会话"
             >
-              <Plus className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onOpenSessions}
-              className={[
-                'inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-primary',
-                activeView === 'sessions' ? 'bg-[#ece9e1]' : 'transition-colors hover:bg-[#f3f0e8]',
-              ].join(' ')}
-              aria-label="会话"
-              title="会话"
-            >
-              <MessageSquareText className="size-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="px-3 pb-3">
-            <button
-              type="button"
-              onClick={onCreateConversation}
-              className={[
-                'grid h-11 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-2xl px-3 text-left text-sm font-medium',
-                'text-text-primary transition-colors hover:bg-[#f3f0e8]',
-              ].join(' ')}
-              aria-label="新建会话"
-            >
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#ece9e1] text-text-secondary">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-active text-text-secondary">
                 <Plus className="size-4" />
               </span>
-              <span>新建会话</span>
+              <span
+                className={[
+                  'overflow-hidden whitespace-nowrap text-sm font-medium text-text-primary transition-[opacity,width] duration-200',
+                  collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                ].join(' ')}
+              >
+                新建会话
+              </span>
             </button>
 
             <button
               type="button"
               onClick={onOpenSessions}
               className={[
-                'mt-1.5 grid h-11 w-full grid-cols-[2rem_minmax(0,1fr)] items-center gap-3 rounded-2xl px-3 text-left text-sm',
+                'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left',
                 activeView === 'sessions'
-                  ? 'bg-[#ece9e1] text-text-primary'
-                  : 'text-text-primary transition-colors hover:bg-[#f3f0e8]',
+                  ? 'bg-sidebar-active text-text-primary'
+                  : 'text-text-primary transition-colors hover:bg-sidebar-hover',
               ].join(' ')}
+              aria-label="会话"
+              title="会话"
               aria-current={activeView === 'sessions' ? 'page' : undefined}
             >
-              <span className="inline-flex h-7 w-7 items-center justify-center text-text-primary">
+              <span className="inline-flex h-9 w-9 items-center justify-center text-text-primary">
                 <MessageSquareText className="size-5" />
               </span>
-              <span className="font-medium">会话</span>
+              <span
+                className={[
+                  'overflow-hidden whitespace-nowrap text-sm font-medium transition-[opacity,width] duration-200',
+                  collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                ].join(' ')}
+              >
+                会话
+              </span>
             </button>
           </div>
-        )}
+        </div>
 
         {!collapsed && (
           <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3">
@@ -159,7 +144,7 @@ export function ConversationSidebar({
                       <div
                         className={[
                           'group relative flex min-h-11 w-full items-center gap-2 rounded-2xl pl-3 pr-2 transition-colors',
-                          isActive ? 'bg-[#ece9e1]' : 'hover:bg-[#f3f0e8]',
+                          isActive ? 'bg-sidebar-active' : 'hover:bg-sidebar-hover',
                         ].join(' ')}
                       >
                         <button
@@ -202,7 +187,7 @@ export function ConversationSidebar({
                                     setMenuOpenId(null)
                                     onRenameConversation(conversation.id)
                                   }}
-                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-primary transition-colors hover:bg-[#f3f0e8]"
+                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-primary transition-colors hover:bg-sidebar-hover"
                                 >
                                   <Pencil className="size-4" />
                                   <span>重命名</span>
@@ -214,7 +199,7 @@ export function ConversationSidebar({
                                     setMenuOpenId(null)
                                     onDeleteConversation(conversation.id)
                                   }}
-                                  className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-500 transition-colors hover:bg-[#f3f0e8]"
+                                  className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-500 transition-colors hover:bg-sidebar-hover"
                                 >
                                   <Trash2 className="size-4" />
                                   <span>删除</span>

@@ -39,7 +39,7 @@ export function ChatsOverview({
           <button
             type="button"
             onClick={onCreateConversation}
-            className="inline-flex h-12 items-center rounded-2xl bg-[#171717] px-5 text-base font-medium text-white transition-transform hover:-translate-y-0.5"
+            className="inline-flex h-12 items-center rounded-2xl bg-text-primary px-5 text-base font-medium text-surface transition-transform hover:-translate-y-0.5"
           >
             + 新建会话
           </button>
@@ -51,7 +51,7 @@ export function ChatsOverview({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索会话..."
-            className="h-15 w-full rounded-2xl border border-border/80 bg-surface px-14 text-xl text-text-primary outline-none transition-colors placeholder:text-text-secondary focus:border-[#d6d0c4]"
+            className="h-15 w-full rounded-2xl border border-border/80 bg-surface-raised px-14 text-xl text-text-primary outline-none transition-colors placeholder:text-text-secondary focus:border-text-muted"
           />
         </div>
 
@@ -65,7 +65,7 @@ export function ChatsOverview({
               key={conversation.id}
               type="button"
               onClick={() => onSelectConversation(conversation.id)}
-              className="flex w-full items-start justify-between gap-4 border-b border-border/70 py-6 text-left transition-colors hover:bg-[#f7f4ed]"
+              className="flex w-full items-start justify-between gap-4 border-b border-border/70 py-6 text-left transition-colors hover:bg-sidebar-hover"
             >
               <div className="min-w-0">
                 <div className="truncate text-[18px] leading-7 text-text-primary">{conversation.title}</div>

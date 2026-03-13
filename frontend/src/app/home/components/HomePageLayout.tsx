@@ -37,6 +37,7 @@ const STORAGE_KEYS = {
   activePromptId: 'webclaw.activePromptId',
   modelConfig: 'webclaw.modelConfig',
   sidebarCollapsed: 'webclaw.sidebarCollapsed',
+  themeMode: 'webclaw.themeMode',
 }
 
 function loadPrompts(): SystemPromptItem[] {
@@ -88,6 +89,14 @@ function loadSidebarCollapsed(): boolean {
   }
 }
 
+function loadThemeMode(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.themeMode) === 'dark'
+  } catch {
+    return false
+  }
+}
+
 function toConversationItem(session: SessionListItemVm): ConversationItem {
   return {
     id: session.id,
@@ -113,7 +122,7 @@ export function HomePageLayout() {
   const [chatDisabledReason, setChatDisabledReason] = useState<string | null>(null)
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [isDark, setIsDark] = useState(false)
+  const [isDark, setIsDark] = useState<boolean>(() => loadThemeMode())
   const [systemPrompts, setSystemPrompts] = useState<SystemPromptItem[]>(() => loadPrompts())
   const [activePromptId, setActivePromptId] = useState<string | null>(() => loadActivePromptId())
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig())
@@ -125,6 +134,21 @@ export function HomePageLayout() {
     } else {
       document.documentElement.classList.remove('dark')
     }
+
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+
+    const themeColor = isDark ? '#1f1f1f' : '#f6f6f7'
+    let meta = document.querySelector('meta[name="theme-color"]')
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.setAttribute('name', 'theme-color')
+      document.head.appendChild(meta)
+    }
+    meta.setAttribute('content', themeColor)
+  }, [isDark])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.themeMode, isDark ? 'dark' : 'light')
   }, [isDark])
 
   useEffect(() => {
