@@ -1,14 +1,28 @@
-/*
-* Vite 是一个工厂流水线，plugins 就是流水线上的工位。原材料（你的 .tsx 文件）经过 react() 工位变成浏览器能懂的 JS，经过 tailwindcss() 工位把 flex、h-screen 这些类名变成真正的 CSS。
-* */
+/**
+ * Vite 配置
+ * 从 monorepo 根目录 .env 读取 PORT，自动派生前端 API 地址
+ */
 
-import { defineConfig } from 'vite'        // Vite 提供的配置辅助函数
-import react from '@vitejs/plugin-react'    // 让 Vite 能理解 JSX/TSX
-import tailwindcss from '@tailwindcss/vite' // 让 Vite 能处理 Tailwind 类名
+import { defineConfig, loadEnv } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
-    plugins: [
-        react(),        // 插件1：处理 React 语法
-        tailwindcss(),  // 插件2：扫描你代码里的 className，生成对应 CSS
-    ],
+export default defineConfig(({ mode }) => {
+    // 从根目录加载 .env
+    const env = loadEnv(mode, '..', '')
+    const port = env.PORT || '5000'
+
+    return {
+        plugins: [
+            react(),
+            tailwindcss(),
+        ],
+        // 从 monorepo 根目录读取 .env 文件
+        envDir: '..',
+        define: {
+            // 将 PORT 派生的地址注入前端，无需手动维护 VITE_API_BASE / VITE_WS_BASE
+            '__API_BASE__': JSON.stringify(env.VITE_API_BASE || `http://localhost:${port}`),
+            '__WS_BASE__': JSON.stringify(env.VITE_WS_BASE || `ws://localhost:${port}`),
+        },
+    }
 })

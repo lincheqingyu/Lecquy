@@ -38,6 +38,11 @@ export function getPeerId(): string {
 
 export function resetPeerId(): string {
   const id = generatePeerId()
+  setPeerId(id)
+  return id
+}
+
+export function setPeerId(id: string): string {
   try {
     localStorage.setItem(PEER_ID_KEY, id)
   } catch {

@@ -1,0 +1,432 @@
+# WebClaw 会话管理模块前后端联调文档
+
+本文档面向前端 AI 开发，目标是说明这次新增的“会话管理模块”应该如何接入、如何联调、以及前端应该依赖哪些接口和事件。
+
+## 1. 模块目标
+
+这次更新解决的是“后端已经保存了会话，但前端无法列出、恢复、查看历史、删除会话”的问题。
+
+当前后端已经具备两类能力：
+
+- HTTP 会话管理接口：用于列表、详情、历史、删除。
+- WebSocket 对话接口：用于实时聊天、流式输出、plan 模式状态事件。
+
+前端联调时请遵守一个原则：
+
+- 会话管理走 HTTP。
+- 对话收发走 WebSocket。
+
+不要试图用 WS 事件去替代会话列表和历史接口。`session_restored` 只是提示“后端恢复了上下文”，不是给前端回放整段历史用的。
+
+## 2. 接口分工
+
+基础地址默认：
+
+```txt
+http://localhost:3000
+```
+
+### 2.1 HTTP：会话管理
+
+#### 1. 获取会话列表
+
+```http
+GET /api/v1/sessions?limit=50&messageLimit=20
+```
+
+用途：
+
+- 左侧会话列表
+- 最近对话预览
+- 会话切换入口
+
+返回：
+
+```json
+{
+  "success": true,
+  "data": {
+    "sessions": [
+      {
+        "key": "agent:default:webchat:default:dm:web-user-001",
+        "sessionId": "sess_xxx",
+        "kind": "main",
+        "channel": "webchat",
+        "updatedAt": 1741590000000,
+        "createdAt": 1741589000000,
+        "displayName": "web-user-001",
+        "model": "glm-4-plus",
+        "stats": {
+          "inputTokens": 100,
+          "outputTokens": 200,
+          "totalTokens": 300,
+          "contextTokens": 1200
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "你好",
+            "timestamp": 1741589000000
+          },
+          {
+            "role": "assistant",
+            "content": [{ "type": "text", "text": "你好，我在。" }],
+            "timestamp": 1741589001000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+建议：
+
+- 会话列表页默认传 `limit=50`。
+- 如果需要列表摘要，传 `messageLimit=10` 或 `20`。
+- 如果只要元数据，不要传 `messageLimit`。
+
+#### 2. 获取单个会话详情
+
+```http
+GET /api/v1/sessions/:sessionKey?recentMessagesLimit=20
+```
+
+用途：
+
+- 打开某个会话详情页
+- 恢复当前会话的运行状态摘要
+- 判断该会话当前是否还在内存中活跃
+
+返回重点字段：
+
+- `entry`: 会话元数据
+- `snapshot`: 后端保存的运行态快照
+- `isActive`: 当前是否在服务内存中
+- `recentMessages`: 可选，最近几条消息
+
+说明：
+
+- `sessionKey` 里包含 `:`，前端请求时请使用 `encodeURIComponent(sessionKey)`。
+- 这个接口适合做详情页，不建议替代完整历史接口。
+
+#### 3. 获取会话历史
+
+```http
+GET /api/v1/sessions/:sessionKey/history?limit=100&includeTools=false
+```
+
+用途：
+
+- 点击会话后加载整段聊天记录
+- 页面刷新后恢复消息列表
+
+建议：
+
+- 聊天页首次打开时请求这个接口。
+- 默认 `includeTools=false`，避免把工具消息渲染到聊天气泡里。
+- 如果后面要做调试视图，再单独支持 `includeTools=true`。
+
+#### 4. 删除会话
+
+```http
+DELETE /api/v1/sessions/:sessionKey
+```
+
+效果：
+
+- 删除索引
+- 删除 snapshot
+- 删除 transcript
+- 删除内存中的 active state
+
+建议：
+
+- 删除前前端做二次确认。
+- 删除成功后，若当前页面正打开这个会话，前端应清空当前消息并切回“新会话”状态。
+
+## 3. WebSocket：对话接口
+
+WebSocket 地址：
+
+```txt
+ws://localhost:3000/api/v1/chat/ws
+```
+
+客户端发送格式：
+
+```json
+{
+  "event": "chat",
+  "payload": {
+    "route": {
+      "channel": "webchat",
+      "chatType": "dm",
+      "peerId": "web-user-001"
+    },
+    "mode": "simple",
+    "messages": [
+      { "role": "user", "content": "你好" }
+    ],
+    "model": "glm-4-plus",
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "apiKey": "sk-xxx",
+    "enableTools": true,
+    "options": {
+      "temperature": 0.7,
+      "maxTokens": 4096
+    }
+  }
+}
+```
+
+### 3.1 这次会话管理相关的关键事件
+
+#### `session_key_resolved`
+
+后端根据 `route` 解析出本次命中的会话。
+
+```json
+{
+  "event": "session_key_resolved",
+  "payload": {
+    "sessionKey": "agent:default:webchat:default:dm:web-user-001",
+    "sessionId": "sess_xxx",
+    "kind": "main",
+    "channel": "webchat"
+  }
+}
+```
+
+前端用途：
+
+- 记录当前实际命中的 `sessionKey`
+- 后续调用 HTTP 历史/详情/删除接口时使用它
+
+建议：
+
+- 不要再自己猜 session key。
+- 以后所有会话管理动作都以这个事件返回的 `sessionKey` 为准。
+
+#### `session_restored`
+
+后端提示“当前会话已从历史快照恢复”。
+
+```json
+{
+  "event": "session_restored",
+  "payload": {
+    "sessionId": "sess_xxx",
+    "messageCount": 12
+  }
+}
+```
+
+前端用途：
+
+- 可以作为 debug 信息
+- 可以触发一次历史同步逻辑
+
+不要这样用：
+
+- 不要把这个事件当作完整消息列表
+- 不要把 `messageCount` 当作真实 UI 消息数
+
+#### `need_user_input`
+
+仅 plan 模式相关。
+
+后端表示当前 todo 执行停在“等待用户补充信息”。
+
+前端用途：
+
+- 将输入框切回可编辑
+- 在 UI 中提示“继续补充信息后再发一次”
+
+### 3.2 前端发起聊天时的 route 规则
+
+Web 端单聊推荐固定使用：
+
+```json
+{
+  "channel": "webchat",
+  "chatType": "dm",
+  "peerId": "当前浏览器用户唯一 ID"
+}
+```
+
+关键点：
+
+- 同一个 `peerId` 会命中同一个 session key。
+- 如果前端每次都生成新的 `peerId`，会导致后端把每次聊天都当成新会话。
+- 前端必须把浏览器端的 `peerId` 做本地持久化。
+
+## 4. 推荐联调流程
+
+推荐按照下面顺序做，不要一开始就同时做“列表 + 恢复 + 删除 + 新建会话”。
+
+### 第一步：打通实时聊天并记录 sessionKey
+
+前端在现有 `useChat` 基础上补一个状态：
+
+- `currentSessionKey`
+- `currentSessionId`
+
+当收到 `session_key_resolved` 时更新这两个状态。
+
+验收标准：
+
+- 首次发送消息后，前端能拿到稳定的 `sessionKey`
+- 同一个 `peerId` 再次发送消息，命中同一个 `sessionKey`
+
+### 第二步：做会话列表
+
+页面初始化时请求：
+
+```txt
+GET /api/v1/sessions?limit=50&messageLimit=10
+```
+
+渲染建议：
+
+- 标题优先用 `displayName`
+- 副标题用最近一条消息摘要
+- 时间展示使用 `updatedAt`
+
+验收标准：
+
+- 页面刷新后能看到已有会话
+- 最近发过消息的会话排在前面
+
+### 第三步：做会话历史恢复
+
+点击某个会话后：
+
+1. 保存该会话的 `sessionKey`
+2. 请求 `/api/v1/sessions/:sessionKey/history`
+3. 将返回消息映射成前端消息结构
+4. 替换当前聊天窗口内容
+
+验收标准：
+
+- 点击列表中的旧会话后，聊天窗口能显示完整历史
+- 切换回来再次发送消息时，后端继续在同一个 session 上对话
+
+### 第四步：做删除会话
+
+用户点击删除后：
+
+1. 调用 `DELETE /api/v1/sessions/:sessionKey`
+2. 本地列表移除该会话
+3. 如果删除的是当前会话，则清空消息区并重置当前 session 状态
+
+验收标准：
+
+- 删除后刷新页面，该会话不再出现
+- 删除后再用同样 `peerId` 发消息，会重新创建新会话
+
+## 5. 前端状态设计建议
+
+至少补这些状态：
+
+```ts
+interface SessionListItem {
+  key: string
+  sessionId: string
+  displayName?: string
+  updatedAt: number
+  createdAt: number
+  channel: string
+  kind: string
+}
+
+interface ChatPageState {
+  currentSessionKey: string | null
+  currentSessionId: string | null
+  selectedSessionKey: string | null
+}
+```
+
+推荐规则：
+
+- `selectedSessionKey`: 当前 UI 正在查看哪个会话
+- `currentSessionKey`: 当前 WS 实际命中的会话
+- 默认情况下二者应一致
+
+如果前端允许“打开旧会话后继续聊天”，发送聊天消息前要确认 route 能命中这个会话。当前后端是按 `route` 解析 session key，不支持前端直接指定任意 `sessionKey` 发消息。
+
+所以当前版本最稳的产品策略是：
+
+- Web 端主聊天窗口始终绑定一个稳定 `peerId`
+- 历史会话页以“查看/回放”为主
+- 若要“继续某个旧会话”，本质上要保证该旧会话对应的 route 与当前 route 一致
+
+## 6. 当前已知限制
+
+前端联调时请接受这些现实，不要按未实现能力设计：
+
+- 后端当前没有“重命名会话”接口
+- 没有“归档/置顶/标签”能力
+- 没有“按关键词搜索会话”接口
+- WS 不提供完整历史回放
+- 当前聊天继续命中哪个 session，取决于 `route`，不是前端手传 `sessionKey`
+
+## 7. 常见坑
+
+### 1. `sessionKey` 没有 URL 编码
+
+会话 key 含有 `:`，直接拼进 URL 容易出问题。
+
+正确做法：
+
+```ts
+const url = `/api/v1/sessions/${encodeURIComponent(sessionKey)}/history`
+```
+
+### 2. 每次刷新页面都生成新的 `peerId`
+
+这样后端会认为是新用户，导致同一个人每次打开页面都是新会话。
+
+正确做法：
+
+- 浏览器本地持久化 `peerId`
+- 复用同一个值参与 route 构建
+
+### 3. 把 `session_restored` 当历史消息用
+
+这是错的。真正的历史消息请走 HTTP `history` 接口。
+
+### 4. 删除当前会话后不清空前端状态
+
+这样 UI 会残留一组实际上已不存在的消息。
+
+正确做法：
+
+- 删除成功后同步清空 `currentSessionKey`
+- 清空消息区
+- 让下一次发消息走新会话创建
+
+## 8. 推荐给前端 AI 的最小实现任务
+
+如果要让前端 AI 直接开始开发，可以按下面顺序拆任务：
+
+1. 在 `useChat` 中接收并保存 `session_key_resolved` 返回的 `sessionKey/sessionId`
+2. 新增会话列表请求函数：`fetchSessions()`
+3. 新增会话历史请求函数：`fetchSessionHistory(sessionKey)`
+4. 新增删除会话请求函数：`deleteSession(sessionKey)`
+5. 在页面中增加会话列表区域
+6. 点击会话时回放历史消息
+7. 删除会话后刷新列表并重置当前聊天状态
+
+## 9. 联调验收清单
+
+联调完成后，至少手测下面场景：
+
+1. 首次聊天后，前端能拿到 `sessionKey`
+2. 刷新页面后，会话列表能加载出刚才的会话
+3. 点击旧会话后，历史消息能完整显示
+4. 再发一条消息，后端仍能在同一 route 下继续上下文
+5. 删除会话后，列表消失，刷新后也不会再出现
+6. plan 模式下收到 `need_user_input` 时，前端输入框能正确恢复可交互状态
+
+这份文档只覆盖本次“会话管理模块”联调，不覆盖模型配置、memory、tools 调试等其他模块。

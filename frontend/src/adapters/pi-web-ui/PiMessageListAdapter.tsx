@@ -6,6 +6,7 @@ interface PiMessageListAdapterProps {
   isStreaming: boolean
   isWaiting: boolean
   onResendUser?: (message: string) => void
+  scrollRequestVersion?: number
 }
 
 /**

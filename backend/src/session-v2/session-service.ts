@@ -72,6 +72,12 @@ interface SendRunResult {
   error?: string
 }
 
+export interface SessionDetail {
+  entry: SessionEntry
+  snapshot: ReturnType<typeof serializeRuntimeState> | null
+  isActive: boolean
+}
+
 export class SessionService {
   private readonly cfg: Env
   private readonly store: SessionStore
@@ -201,6 +207,21 @@ export class SessionService {
     return null
   }
 
+  async getSession(keyOrSessionId: string): Promise<SessionDetail | null> {
+    const entry = this.getEntryByKeyOrSessionId(keyOrSessionId)
+    if (!entry) return null
+    const state = this.states.get(entry.key)
+    const snapshot = state
+      ? serializeRuntimeState(state)
+      : await this.store.loadSnapshot(entry.sessionId)
+
+    return {
+      entry,
+      snapshot,
+      isActive: this.states.has(entry.key),
+    }
+  }
+
   async listSessions(args: { limit?: number; activeMinutes?: number; messageLimit?: number } = {}): Promise<Array<SessionEntry & { messages?: unknown[] }>> {
     const now = Date.now()
     let rows = Array.from(this.entries.values())
@@ -231,6 +252,22 @@ export class SessionService {
     const rows = await this.store.readTranscript(entry.sessionId, limit)
     if (includeTools) return rows
     return rows.filter((row) => row.role !== 'toolResult')
+  }
+
+  async deleteSession(keyOrSessionId: string): Promise<boolean> {
+    const entry = this.getEntryByKeyOrSessionId(keyOrSessionId)
+    if (!entry) return false
+
+    this.states.delete(entry.key)
+    this.notifiers.delete(entry.key)
+    this.entries.delete(entry.key)
+
+    await Promise.all([
+      this.store.deleteSnapshot(entry.sessionId),
+      this.store.deleteTranscript(entry.sessionId),
+    ])
+    await this.persistIndex()
+    return true
   }
 
   private async withLock<T>(sessionKey: string, task: () => Promise<T>): Promise<T> {

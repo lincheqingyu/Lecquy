@@ -43,3 +43,8 @@ pnpm-debug.log*
 # 本地临时文件
 *.local
 dist-ssr/
+
+# CLAUDE.md
+CLAUDE.md
+backend/CLAUDE.md
+frontend/CLAUDE.md

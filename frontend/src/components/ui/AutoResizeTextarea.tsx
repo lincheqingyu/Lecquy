@@ -18,6 +18,8 @@ interface AutoResizeTextareaProps {
   className?: string
   /** 布局变化（是否多行 / 是否超出最大行） */
   onLayoutChange?: (state: { multiline: boolean; overflowing: boolean }) => void
+  /** 是否禁用输入 */
+  disabled?: boolean
 }
 
 /**
@@ -36,11 +38,13 @@ export function AutoResizeTextarea({
   maxRows = 10,
   className,
   onLayoutChange,
+  disabled = false,
 }: AutoResizeTextareaProps) {
   const textareaRef = useAutoResize(value, maxRows, onLayoutChange)
 
   /** 键盘事件：Enter 发送，Ctrl+Enter 换行，Ctrl+P 切换模式 */
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return
     if (e.key === 'Enter' && !e.ctrlKey) {
       e.preventDefault()
       onSend()
@@ -60,6 +64,7 @@ export function AutoResizeTextarea({
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
       rows={1}
+      disabled={disabled}
       className={[
         'chat-scrollbar w-full resize-none border-0 outline-none bg-transparent',
         'text-text-primary placeholder:text-text-muted',

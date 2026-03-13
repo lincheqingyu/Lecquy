@@ -3,7 +3,12 @@
  * 加载配置 → 初始化 Provider → 启动服务
  */
 
-import 'dotenv/config'
+import dotenv from 'dotenv'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: resolve(__dirname, '../../.env') })
 import { loadConfig } from './config/index.js'
 import { createServer } from 'node:http'
 import { createApp } from './app.js'

@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { Plus } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AutoResizeTextarea } from './AutoResizeTextarea'
 import { CategoryTags } from './CategoryTags'
 import type { ChatMode } from '../../hooks/useChat'
@@ -10,6 +10,9 @@ interface ChatInputProps {
   onModeChange: (mode: ChatMode) => void
   onSend: (message: string) => void
   showSuggestions?: boolean
+  disabled?: boolean
+  disabledReason?: string | null
+  rightSlot?: ReactNode
 }
 
 /**
@@ -18,13 +21,21 @@ interface ChatInputProps {
  * 管理输入状态，组合 AutoResizeTextarea + InputToolbar + CategoryTags。
  * 容器采用圆角 + 阴影样式，hover/focus-within 时阴影增强。
  */
-export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }: ChatInputProps) {
+export function ChatInput({
+  mode,
+  onModeChange,
+  onSend,
+  showSuggestions = true,
+  disabled = false,
+  disabledReason = null,
+  rightSlot,
+}: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [isMultiline, setIsMultiline] = useState(false)
 
   /** 发送消息（暂时为空操作，后续接入） */
   const handleSend = () => {
-    if (!message.trim()) return
+    if (disabled || !message.trim()) return
     onSend(message)
     setMessage('')
     setIsMultiline(false)
@@ -61,8 +72,8 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
           isMultiline ? 'rounded-[20px]' : compact ? 'rounded-full' : 'rounded-[20px]',
           'shadow-[var(--shadow-input)]',
           'transition-shadow duration-200',
-          'hover:shadow-[var(--shadow-input-hover)]',
-          'focus-within:shadow-[var(--shadow-input-hover)]',
+          disabled ? 'opacity-60' : 'hover:shadow-[var(--shadow-input-hover)]',
+          !disabled && 'focus-within:shadow-[var(--shadow-input-hover)]',
         )}
       >
         {!isMultiline ? (
@@ -76,6 +87,7 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
                 'text-text-secondary transition-colors hover:bg-hover hover:text-text-primary',
               )}
               aria-label="添加附件"
+              disabled={disabled}
             >
               <Plus className="size-4" />
             </button>
@@ -88,7 +100,9 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
               maxRows={10}
               onLayoutChange={({ multiline }) => setIsMultiline(multiline)}
               className={clsx('px-1 py-1', 'max-h-[15rem] min-h-8')}
+              disabled={disabled}
             />
+            {rightSlot && <div className="shrink-0">{rightSlot}</div>}
           </div>
         ) : (
           <div className={clsx('px-3 pt-3 pb-2')}>
@@ -100,8 +114,9 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
               maxRows={10}
               onLayoutChange={({ multiline }) => setIsMultiline(multiline)}
               className={clsx('px-1 py-0', 'max-h-[15rem] min-h-8')}
+              disabled={disabled}
             />
-            <div className="mt-1 flex h-8 items-center px-1">
+            <div className="mt-1 flex h-8 items-center justify-between px-1">
               <button
                 type="button"
                 onClick={handlePlusClick}
@@ -111,9 +126,11 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
                   'text-text-secondary transition-colors hover:bg-hover hover:text-text-primary',
                 )}
                 aria-label="添加附件"
+                disabled={disabled}
               >
                 <Plus className="size-4" />
               </button>
+              {rightSlot && <div className="shrink-0">{rightSlot}</div>}
             </div>
           </div>
         )}
@@ -129,6 +146,12 @@ export function ChatInput({ mode, onModeChange, onSend, showSuggestions = true }
           </button>
         )}
       </div>
+
+      {disabledReason && (
+        <div className="mt-2 text-center text-xs text-text-muted">
+          {disabledReason}
+        </div>
+      )}
 
       {/* 分类标签（输入框下方） */}
       {showSuggestions && <CategoryTags onSelect={handleCategorySelect} />}

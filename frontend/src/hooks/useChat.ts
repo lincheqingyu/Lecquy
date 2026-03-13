@@ -25,10 +25,26 @@ export interface ModelConfig {
   enableTools: boolean
 }
 
+export interface SessionResolvedPayload {
+  sessionKey: string
+  sessionId: string
+  kind: string
+  channel: string
+}
+
+interface WsEventPayloadMap {
+  session_key_resolved: SessionResolvedPayload
+  session_restored: { sessionId: string; messageCount: number }
+  need_user_input: { prompt: string }
+  done: Record<string, never>
+  error: { message?: string; code?: string }
+}
+
 interface UseChatOptions {
   systemPrompt: string
   modelConfig: ModelConfig
   peerId?: string
+  onWsEvent?: <T extends keyof WsEventPayloadMap>(event: T, payload: WsEventPayloadMap[T]) => void
 }
 
 function createId(prefix: string) {
@@ -42,6 +58,19 @@ function appendMessage(
   setMessages((prev) => [...prev, msg])
 }
 
+function removeMessages(
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  ids: string[],
+) {
+  setMessages((prev) => prev.filter((msg) => !ids.includes(msg.id)))
+}
+
+function isSessionBusyError(eventPayload: Record<string, unknown>): boolean {
+  const code = typeof eventPayload.code === 'string' ? eventPayload.code : ''
+  const message = typeof eventPayload.message === 'string' ? eventPayload.message : ''
+  return code === 'SESSION_BUSY' || message.includes('当前会话正在运行')
+}
+
 /** 处理 WS 消息的纯函数 */
 function handleWsEvent(
   payload: Record<string, unknown>,
@@ -51,6 +80,8 @@ function handleWsEvent(
   updateContent: (id: string, delta: string) => void,
   setIsStreaming: Dispatch<SetStateAction<boolean>>,
   setIsWaiting: Dispatch<SetStateAction<boolean>>,
+  clearPendingOptimisticMessage: () => void,
+  onWsEvent?: <T extends keyof WsEventPayloadMap>(event: T, payload: WsEventPayloadMap[T]) => void,
 ): void {
   const eventType = payload.event as string
   const eventPayload = (payload.payload as Record<string, unknown>) ?? {}
@@ -78,6 +109,9 @@ function handleWsEvent(
 
   if (eventType === 'need_user_input') {
     setIsWaiting(true)
+    onWsEvent?.('need_user_input', {
+      prompt: (eventPayload.prompt as string) ?? '需要补充信息',
+    })
     appendMessage(setMessages, {
       id: createId('event'),
       role: 'event',
@@ -91,16 +125,27 @@ function handleWsEvent(
   if (eventType === 'done') {
     setIsStreaming(false)
     setIsWaiting(false)
+    onWsEvent?.('done', {})
     return
   }
 
   if (eventType === 'session_restored') {
     // 会话恢复属于后台状态，避免污染对话 UI
+    onWsEvent?.('session_restored', {
+      sessionId: (eventPayload.sessionId as string) ?? '',
+      messageCount: Number(eventPayload.messageCount ?? 0),
+    })
     return
   }
 
   if (eventType === 'session_key_resolved') {
     // 路由解析是内部事件，不在消息流展示
+    onWsEvent?.('session_key_resolved', {
+      sessionKey: (eventPayload.sessionKey as string) ?? '',
+      sessionId: (eventPayload.sessionId as string) ?? '',
+      kind: (eventPayload.kind as string) ?? '',
+      channel: (eventPayload.channel as string) ?? '',
+    })
     return
   }
 
@@ -116,6 +161,13 @@ function handleWsEvent(
   }
 
   if (eventType === 'error') {
+    if (isSessionBusyError(eventPayload)) {
+      clearPendingOptimisticMessage()
+    }
+    onWsEvent?.('error', {
+      message: (eventPayload.message as string) ?? '发生错误',
+      code: (eventPayload.code as string) ?? undefined,
+    })
     appendMessage(setMessages, {
       id: createId('system'),
       role: 'system',
@@ -161,21 +213,47 @@ function handleWsEvent(
   })
 }
 
-export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
+export function useChat({ systemPrompt, modelConfig, peerId, onWsEvent }: UseChatOptions) {
   const [mode, setMode] = useState<ChatMode>('simple')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isWaiting, setIsWaiting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null)
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
 
   const reconnectWsRef = useRef<ReconnectableWs | null>(null)
   const lastAssistantIdRef = useRef<string | null>(null)
   const lastWorkerIdRef = useRef<string | null>(null)
+  const pendingOptimisticMessageIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
 
   const updateMessageContent = useCallback((id: string, delta: string) => {
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, content: m.content + delta } : m)),
     )
+  }, [])
+
+  const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
+    lastAssistantIdRef.current = null
+    lastWorkerIdRef.current = null
+    setMessages(nextMessages)
+    setIsStreaming(false)
+    setIsWaiting(false)
+  }, [])
+
+  const clearMessages = useCallback(() => {
+    replaceMessages([])
+  }, [replaceMessages])
+
+  const clearPendingOptimisticMessage = useCallback(() => {
+    const pending = pendingOptimisticMessageIdsRef.current
+    if (!pending) return
+
+    removeMessages(setMessages, [pending.userId, pending.assistantId])
+    if (lastAssistantIdRef.current === pending.assistantId) {
+      lastAssistantIdRef.current = null
+    }
+    pendingOptimisticMessageIdsRef.current = null
   }, [])
 
   /** 获取或创建 ReconnectableWs */
@@ -197,6 +275,15 @@ export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
             updateMessageContent,
             setIsStreaming,
             setIsWaiting,
+            clearPendingOptimisticMessage,
+            (event, eventPayload) => {
+              if (event === 'session_key_resolved') {
+                const resolved = eventPayload as SessionResolvedPayload
+                setCurrentSessionKey(resolved.sessionKey)
+                setCurrentSessionId(resolved.sessionId)
+              }
+              onWsEvent?.(event, eventPayload)
+            },
           )
         } catch {
           appendMessage(setMessages, {
@@ -222,7 +309,7 @@ export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
 
     reconnectWsRef.current = rws
     return rws
-  }, [updateMessageContent, setMessages, setIsStreaming, setIsWaiting, setConnectionStatus])
+  }, [clearPendingOptimisticMessage, onWsEvent, updateMessageContent, setMessages, setIsStreaming, setIsWaiting, setConnectionStatus])
 
   const buildMessages = useCallback(
     (text: string) => {
@@ -267,6 +354,10 @@ export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
         content: '',
         timestamp: Date.now(),
       })
+      pendingOptimisticMessageIdsRef.current = {
+        userId,
+        assistantId,
+      }
 
       setIsStreaming(true)
       setIsWaiting(false)
@@ -296,11 +387,22 @@ export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
 
   const send = useCallback(
     (text: string) => {
-      if (!text.trim()) return
+      if (!text.trim()) return false
+      if (isStreaming) return false
+      if (isWaiting && mode !== 'plan') return false
       sendWs(text)
+      return true
     },
-    [sendWs],
+    [isStreaming, isWaiting, mode, sendWs],
   )
+
+  const stop = useCallback(() => {
+    const rws = ensureWs()
+    rws.send(JSON.stringify({
+      event: 'cancel',
+      payload: {},
+    }))
+  }, [ensureWs])
 
   // 组件卸载时清理
   useEffect(() => {
@@ -314,9 +416,14 @@ export function useChat({ systemPrompt, modelConfig, peerId }: UseChatOptions) {
     mode,
     setMode,
     messages,
+    replaceMessages,
+    clearMessages,
     send,
+    stop,
     isStreaming,
     isWaiting,
     connectionStatus,
+    currentSessionKey,
+    currentSessionId,
   }
 }

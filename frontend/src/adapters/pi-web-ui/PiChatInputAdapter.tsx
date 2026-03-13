@@ -1,11 +1,15 @@
 import { ChatInput } from '../../components/ui/ChatInput'
 import type { ChatMode } from '../../hooks/useChat'
+import type { ReactNode } from 'react'
 
 interface PiChatInputAdapterProps {
   mode: ChatMode
   onModeChange: (mode: ChatMode) => void
   onSend: (message: string) => void
   showSuggestions?: boolean
+  disabled?: boolean
+  disabledReason?: string | null
+  rightSlot?: ReactNode
 }
 
 /**

@@ -1,24 +1,31 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ConversationArea } from './ConversationArea'
+import { ChatsOverview } from './ChatsOverview'
 import { SettingsDrawer } from './SettingsDrawer'
 import {
   ConversationSidebar,
   type ConversationItem,
 } from './ConversationSidebar'
-import type { ModelConfig } from '../../../hooks/useChat'
+import type { ChatMessage, ModelConfig, SessionResolvedPayload } from '../../../hooks/useChat'
+import { fetchSessionHistory, fetchSessions, deleteSession as deleteSessionByKey } from '../../../lib/session-api'
+import {
+  parsePeerIdFromSessionKey,
+  toChatMessages,
+  toSessionListItemVm,
+  type SessionListItemVm,
+} from '../../../lib/session-management'
+import { getPeerId, resetPeerId, setPeerId } from '../../../lib/session'
 
 interface SystemPromptItem {
-    id: string
-    title: string
-    prompt: string
+  id: string
+  title: string
+  prompt: string
 }
 
 const STORAGE_KEYS = {
   prompts: 'webclaw.systemPrompts',
   activePromptId: 'webclaw.activePromptId',
   modelConfig: 'webclaw.modelConfig',
-  conversations: 'webclaw.conversations',
-  activeConversationId: 'webclaw.activeConversationId',
   sidebarCollapsed: 'webclaw.sidebarCollapsed',
 }
 
@@ -61,58 +68,6 @@ function loadModelConfig(): ModelConfig {
   }
 }
 
-function createPeerId() {
-  return `peer_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-}
-
-function createConversation(title = '新会话'): ConversationItem {
-  const now = Date.now()
-  return {
-    id: `conv_${now}_${Math.random().toString(36).slice(2, 8)}`,
-    title,
-    preview: '开始一段新的对话',
-    peerId: createPeerId(),
-    updatedAt: now,
-  }
-}
-
-function loadConversations(): ConversationItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.conversations)
-    if (!raw) return [createConversation()]
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return [createConversation()]
-    }
-
-    const normalized = parsed
-      .filter((item: unknown) => typeof item === 'object' && item !== null)
-      .map((item) => {
-        const candidate = item as Partial<ConversationItem>
-        return {
-          id: candidate.id || `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          title: candidate.title?.trim() || '新会话',
-          preview: candidate.preview?.trim() || '开始一段新的对话',
-          peerId: candidate.peerId?.trim() || createPeerId(),
-          updatedAt: Number(candidate.updatedAt) || Date.now(),
-        }
-      })
-
-    return normalized.length > 0 ? normalized : [createConversation()]
-  } catch {
-    return [createConversation()]
-  }
-}
-
-function loadActiveConversationId(): string {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.activeConversationId)
-    return raw ?? ''
-  } catch {
-    return ''
-  }
-}
-
 function loadSidebarCollapsed(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)
@@ -123,32 +78,36 @@ function loadSidebarCollapsed(): boolean {
   }
 }
 
-function deriveTitleFromMessage(content: string): string {
-  const normalized = content.replace(/\s+/g, ' ').trim()
-  if (!normalized) return '新会话'
-  const snippet = normalized.slice(0, 18)
-  return normalized.length > 18 ? `${snippet}...` : snippet
+function toConversationItem(session: SessionListItemVm): ConversationItem {
+  return {
+    id: session.id,
+    title: session.title,
+    preview: session.preview,
+    sessionId: session.sessionId,
+    updatedAt: session.updatedAt,
+  }
 }
 
-/**
- * 主布局容器
- *
- * 职责：
- * 1. 管理设置抽屉的开关状态（isSettingsOpen）
- * 2. 管理亮/暗色主题切换（isDark）
- * 3. 用 Flexbox 横向排列：对话区域 | 设置抽屉
- */
 export function HomePageLayout() {
-  const [conversations, setConversations] = useState<ConversationItem[]>(() => loadConversations())
-  const [activeConversationId, setActiveConversationId] = useState<string>(() => loadActiveConversationId())
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed())
+  const [activeView, setActiveView] = useState<'chat' | 'chats'>('chat')
+  const [sessionItems, setSessionItems] = useState<SessionListItemVm[]>([])
+  const [selectedSessionKey, setSelectedSessionKey] = useState<string | null>(null)
+  const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null)
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [activePeerId, setActivePeerId] = useState<string>(() => getPeerId())
+  const [messageSeed, setMessageSeed] = useState<ChatMessage[]>([])
+  const [messageVersion, setMessageVersion] = useState(0)
+  const [isSessionListLoading, setIsSessionListLoading] = useState(true)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [chatDisabledReason, setChatDisabledReason] = useState<string | null>(null)
 
-  // ---------- 状态管理 ----------
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isDark, setIsDark] = useState(false)
   const [systemPrompts, setSystemPrompts] = useState<SystemPromptItem[]>(() => loadPrompts())
   const [activePromptId, setActivePromptId] = useState<string | null>(() => loadActivePromptId())
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig())
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed())
 
   useEffect(() => {
     if (isDark) {
@@ -175,93 +134,115 @@ export function HomePageLayout() {
   }, [modelConfig])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.conversations, JSON.stringify(conversations))
-  }, [conversations])
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.activeConversationId, activeConversationId)
-  }, [activeConversationId])
-
-  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, isSidebarCollapsed ? '1' : '0')
   }, [isSidebarCollapsed])
-
-  useEffect(() => {
-    if (conversations.length === 0) {
-      const initial = createConversation()
-      setConversations([initial])
-      setActiveConversationId(initial.id)
-      return
-    }
-    const exists = conversations.some((item) => item.id === activeConversationId)
-    if (!exists) {
-      setActiveConversationId(conversations[0].id)
-    }
-  }, [activeConversationId, conversations])
 
   const activePrompt = useMemo(() => {
     return systemPrompts.find((p) => p.id === activePromptId) ?? null
   }, [systemPrompts, activePromptId])
 
-  const activeConversation = useMemo(() => {
-    return conversations.find((item) => item.id === activeConversationId) ?? conversations[0]
-  }, [conversations, activeConversationId])
+  const activeSession = useMemo(() => {
+    const targetKey = selectedSessionKey ?? currentSessionKey
+    return sessionItems.find((item) => item.id === targetKey) ?? null
+  }, [currentSessionKey, selectedSessionKey, sessionItems])
 
-  const handleSettingsToggle = () => {
-    setIsSettingsOpen((prev) => !prev)
-  }
+  const conversationTitle = activeSession?.title ?? '新会话'
+  const canSend = !isHistoryLoading && !chatDisabledReason
+  const inputHint = isHistoryLoading ? '正在加载会话历史...' : chatDisabledReason
 
-  const handleSettingsClose = () => {
-    setIsSettingsOpen(false)
-  }
-
-  const handleThemeToggle = () => {
-    setIsDark((prev) => !prev)
-  }
-
-  const handleCreateConversation = () => {
-    const next = createConversation()
-    setConversations((prev) => [next, ...prev])
-    setActiveConversationId(next.id)
-  }
-
-  const handleSelectConversation = (conversationId: string) => {
-    setActiveConversationId(conversationId)
-  }
-
-  const handleDeleteConversation = (conversationId: string) => {
-    const filtered = conversations.filter((item) => item.id !== conversationId)
-    if (filtered.length === 0) {
-      const created = createConversation()
-      setConversations([created])
-      setActiveConversationId(created.id)
-      return
-    }
-    setConversations(filtered)
-    if (activeConversationId === conversationId) {
-      setActiveConversationId(filtered[0].id)
+  const refreshSessions = async () => {
+    setIsSessionListLoading(true)
+    setSessionError(null)
+    try {
+      const rows = await fetchSessions()
+      setSessionItems(rows.map(toSessionListItemVm))
+    } catch {
+      setSessionError('会话列表加载失败')
+    } finally {
+      setIsSessionListLoading(false)
     }
   }
 
-  const handleConversationActivity = (content: string) => {
-    if (!activeConversation) return
-    const title = deriveTitleFromMessage(content)
-    const preview = content.replace(/\s+/g, ' ').trim().slice(0, 40)
-    setConversations((prev) => {
-      const updated = prev.map((item) => {
-        if (item.id !== activeConversation.id) return item
-        return {
-          ...item,
-          title: item.title === '新会话' ? title : item.title,
-          preview: preview || item.preview,
-          updatedAt: Date.now(),
-        }
-      })
-      return updated.sort((a, b) => b.updatedAt - a.updatedAt)
-    })
+  useEffect(() => {
+    void refreshSessions()
+  }, [])
+
+  const replaceMessageSeed = (messages: ChatMessage[]) => {
+    setMessageSeed(messages)
+    setMessageVersion((prev) => prev + 1)
   }
 
-  if (!activeConversation) return null
+  const handleStartNewConversation = () => {
+    const nextPeerId = resetPeerId()
+    setActivePeerId(nextPeerId)
+    setActiveView('chat')
+    setSelectedSessionKey(null)
+    setCurrentSessionKey(null)
+    setCurrentSessionId(null)
+    setChatDisabledReason(null)
+    replaceMessageSeed([])
+  }
+
+  const handleSelectConversation = async (sessionKey: string) => {
+    const target = sessionItems.find((item) => item.id === sessionKey) ?? null
+    setActiveView('chat')
+    setSelectedSessionKey(sessionKey)
+    setCurrentSessionKey(sessionKey)
+    setCurrentSessionId(target?.sessionId ?? null)
+    setChatDisabledReason(null)
+    setIsHistoryLoading(true)
+    setSessionError(null)
+
+    try {
+      const history = await fetchSessionHistory(sessionKey)
+      replaceMessageSeed(toChatMessages(history))
+
+      const peerId = parsePeerIdFromSessionKey(sessionKey)
+      if (!peerId) {
+        setChatDisabledReason('当前会话无法恢复发送绑定，仅支持查看历史。')
+        return
+      }
+
+      setPeerId(peerId)
+      setActivePeerId(peerId)
+    } catch {
+      setSessionError('会话历史加载失败')
+    } finally {
+      setIsHistoryLoading(false)
+    }
+  }
+
+  const handleDeleteConversation = async (sessionKey: string) => {
+    const confirmed = window.confirm('删除后将清空该会话的历史记录，确定继续吗？')
+    if (!confirmed) return
+
+    try {
+      await deleteSessionByKey(sessionKey)
+      setSessionItems((prev) => prev.filter((item) => item.id !== sessionKey))
+
+      if (selectedSessionKey === sessionKey || currentSessionKey === sessionKey) {
+        handleStartNewConversation()
+      }
+    } catch {
+      setSessionError('删除会话失败')
+    }
+  }
+
+  const handleSessionResolved = (payload: SessionResolvedPayload) => {
+    setCurrentSessionKey(payload.sessionKey)
+    setCurrentSessionId(payload.sessionId)
+    setSelectedSessionKey(payload.sessionKey)
+    void refreshSessions()
+  }
+
+  const handleChatLifecycleEvent = (event: 'done' | 'need_user_input' | 'error') => {
+    if (event === 'done' || event === 'need_user_input') {
+      void refreshSessions()
+    }
+  }
+
+  const sidebarItems = useMemo(() => sessionItems.map(toConversationItem), [sessionItems])
+  const sessionMetaText = currentSessionId ? `会话 ID: ${currentSessionId}` : null
 
   return (
     <div
@@ -272,28 +253,57 @@ export function HomePageLayout() {
       ].join(' ')}
     >
       <ConversationSidebar
-        conversations={conversations}
-        activeConversationId={activeConversation.id}
+        conversations={sidebarItems}
+        activeConversationId={selectedSessionKey}
+        activeView={activeView}
         collapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-        onCreateConversation={handleCreateConversation}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
+        onCreateConversation={handleStartNewConversation}
+        onOpenChats={() => setActiveView('chats')}
+        onSelectConversation={(conversationId) => {
+          void handleSelectConversation(conversationId)
+        }}
+        onDeleteConversation={(conversationId) => {
+          void handleDeleteConversation(conversationId)
+        }}
+        isLoading={isSessionListLoading}
       />
-      <ConversationArea
-        key={activeConversation.id}
-        onSettingsToggle={handleSettingsToggle}
-        isDark={isDark}
-        onThemeToggle={handleThemeToggle}
-        systemPrompt={activePrompt?.prompt ?? ''}
-        modelConfig={modelConfig}
-        conversationTitle={activeConversation.title}
-        peerId={activeConversation.peerId}
-        onConversationActivity={handleConversationActivity}
-      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {sessionError && (
+          <div className="shrink-0 border-b border-border bg-surface px-4 py-2 text-xs text-text-muted">
+            {sessionError}
+          </div>
+        )}
+        {activeView === 'chats' ? (
+          <ChatsOverview
+            conversations={sidebarItems}
+            onCreateConversation={handleStartNewConversation}
+            onSelectConversation={(conversationId) => {
+              void handleSelectConversation(conversationId)
+            }}
+          />
+        ) : (
+          <ConversationArea
+            onSettingsToggle={() => setIsSettingsOpen((prev) => !prev)}
+            isDark={isDark}
+            onThemeToggle={() => setIsDark((prev) => !prev)}
+            systemPrompt={activePrompt?.prompt ?? ''}
+            modelConfig={modelConfig}
+            conversationTitle={conversationTitle}
+            sessionMetaText={sessionMetaText}
+            peerId={activePeerId}
+            externalMessages={messageSeed}
+            messageVersion={messageVersion}
+            canSend={canSend}
+            disabledReason={inputHint}
+            onSessionResolved={handleSessionResolved}
+            onChatLifecycleEvent={handleChatLifecycleEvent}
+          />
+        )}
+      </div>
       <SettingsDrawer
         isOpen={isSettingsOpen}
-        onClose={handleSettingsClose}
+        onClose={() => setIsSettingsOpen(false)}
         systemPrompts={systemPrompts}
         activePromptId={activePromptId}
         onSystemPromptsChange={setSystemPrompts}

@@ -1,9 +1,12 @@
 /**
  * API 地址配置
- * 通过环境变量覆盖，消除硬编码
+ * 优先使用 VITE_ 环境变量，否则从 PORT 自动派生（见 vite.config.ts）
  */
 
-export const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5000'
-export const WS_BASE = import.meta.env.VITE_WS_BASE ?? 'ws://localhost:5000'
+declare const __API_BASE__: string
+declare const __WS_BASE__: string
+
+export const API_BASE = __API_BASE__
+export const WS_BASE = __WS_BASE__
 export const API_V1 = `${API_BASE}/api/v1`
 export const USE_PI_WEB_UI_PARTIAL = import.meta.env.VITE_USE_PI_WEB_UI_PARTIAL === 'true'
