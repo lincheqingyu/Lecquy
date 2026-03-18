@@ -1,14 +1,14 @@
-import type { SessionService } from '../../../session-v2/index.js'
+import type { SessionRuntimeService } from '../../../runtime/index.js'
 
-let serviceRef: SessionService | null = null
+let serviceRef: SessionRuntimeService | null = null
 let currentSessionKeyRef: string | null = null
 
-export function bindSessionService(service: SessionService): void {
+export function bindSessionService(service: SessionRuntimeService): void {
   serviceRef = service
 }
 
-export function getBoundSessionService(): SessionService {
-  if (!serviceRef) throw new Error('SessionService 未绑定到 tools runtime')
+export function getBoundSessionService(): SessionRuntimeService {
+  if (!serviceRef) throw new Error('SessionRuntimeService 未绑定到 tools runtime')
   return serviceRef
 }
 

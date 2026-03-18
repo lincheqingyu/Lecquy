@@ -1,11 +1,12 @@
 import clsx from 'clsx'
-import { Check, Copy, RotateCcw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, RotateCcw, Sparkles } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { ChatMessage } from '../../hooks/useChat'
 
 interface MessageItemProps {
   message: ChatMessage
   onResendUser?: (message: string) => void
+  onToggleThinking?: (messageId: string) => void
 }
 
 function CodeBlock({ code, language }: { code: string; language?: string }) {
@@ -480,10 +481,14 @@ function renderMarkdown(text: string): ReactNode {
   )
 }
 
-export function MessageItem({ message, onResendUser }: MessageItemProps) {
+export function MessageItem({ message, onResendUser, onToggleThinking }: MessageItemProps) {
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isEvent = message.role === 'event'
+  const hasPrimaryContent = message.content.trim().length > 0
+  const hasThinkingContent = Boolean(message.hasThinking && message.thinkingContent?.trim())
+  const showThoughtsCard = Boolean((isAssistant || isEvent) && hasThinkingContent)
+  const canCopyMessage = message.content.trim().length > 0
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -503,7 +508,7 @@ export function MessageItem({ message, onResendUser }: MessageItemProps) {
         isUser ? 'justify-end' : 'justify-start',
       )}
     >
-      <div className={clsx('group flex flex-col', isUser ? 'max-w-[88%]' : 'w-full')}>
+      <div className={clsx('group/message relative flex flex-col', canCopyMessage && 'pb-0', isUser ? 'max-w-[88%]' : 'w-full')}>
         <div
           className={clsx(
             'rounded-2xl px-4 py-2 text-sm leading-relaxed',
@@ -518,17 +523,51 @@ export function MessageItem({ message, onResendUser }: MessageItemProps) {
               {message.eventType}
             </div>
           )}
+
+          {showThoughtsCard && (
+            <div className="mb-4 overflow-hidden rounded-[1.35rem] border border-border bg-surface-alt">
+              <button
+                type="button"
+                onClick={() => onToggleThinking?.(message.id)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-hover/60"
+                aria-expanded={message.isThinkingExpanded}
+                aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex size-6 items-center justify-center rounded-full bg-surface-alt text-accent-text">
+                    <Sparkles className="size-3.5" />
+                  </span>
+                  <span className="text-sm font-semibold text-text-primary">Thoughts</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                  <span>{message.isThinkingExpanded ? '隐藏模型思考' : '展开查看模型思考'}</span>
+                  {message.isThinkingExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </div>
+              </button>
+
+              {message.isThinkingExpanded && (
+                <div className="border-t border-border px-4 py-4 text-text-primary [&_p]:text-text-primary [&_li]:text-text-primary [&_blockquote]:text-text-primary [&_td]:text-text-primary [&_code]:text-text-primary">
+                  {renderMarkdown(message.thinkingContent ?? '')}
+                </div>
+              )}
+            </div>
+          )}
+
           {isAssistant ? (
-            renderMarkdown(message.content)
+            hasPrimaryContent ? (
+              renderMarkdown(message.content)
+            ) : null
           ) : (
             <div className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</div>
           )}
         </div>
-        {(isUser || isAssistant) && (
+        {(isUser || isAssistant) && canCopyMessage && (
           <div
             className={clsx(
-              'mt-1 flex w-full items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100',
-              isUser ? 'justify-end' : 'justify-start',
+              'absolute top-full mt-0 flex items-center gap-1 invisible opacity-0 pointer-events-none',
+              'group-hover/message:visible group-hover/message:opacity-100 group-hover/message:pointer-events-auto',
+              'group-focus-within/message:visible group-focus-within/message:opacity-100 group-focus-within/message:pointer-events-auto',
+              isUser ? 'right-0 justify-end' : 'left-2 justify-start',
             )}
           >
             <button

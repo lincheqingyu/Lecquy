@@ -14,7 +14,7 @@ import { createServer } from 'node:http'
 import { createApp } from './app.js'
 import { logger } from './utils/logger.js'
 import { initChatWebSocketServer } from './ws/chat-ws.js'
-import { createSessionService } from './session-v2/index.js'
+import { createSessionRuntimeService } from './runtime/index.js'
 import { initializeSessionTools } from './agent/tools/index.js'
 
 /** 优雅关闭超时（毫秒） */
@@ -29,11 +29,11 @@ async function main(): Promise<void> {
   const server = createServer(app)
 
   // 3. 创建会话服务并绑定 session tools
-  const sessionService = await createSessionService()
-  initializeSessionTools(sessionService)
+  const sessionRuntime = await createSessionRuntimeService()
+  initializeSessionTools(sessionRuntime)
 
   // 4. 初始化 WebSocket（传入 registry）
-  const wss = initChatWebSocketServer(server, sessionService)
+  const wss = initChatWebSocketServer(server, sessionRuntime)
 
   // 5. 启动服务器
   server.listen(config.PORT, () => {
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
       client.close(1001, '服务器关闭')
     }
 
-    await sessionService.shutdown()
+    await sessionRuntime.shutdown()
     server.close(() => {
       clearTimeout(forceTimer)
       logger.info('服务器已关闭')

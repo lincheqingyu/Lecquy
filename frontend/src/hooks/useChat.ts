@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import type { ClientEventPayloadMap, ServerEventPayloadMap, StepKind, ThinkingConfig } from '@webclaw/shared'
 import { WS_BASE } from '../config/api.ts'
 import { getPeerId } from '../lib/session.ts'
 import { buildDefaultRoute } from '../lib/session-route.ts'
 import { ReconnectableWs, type ConnectionStatus } from '../lib/ws-reconnect.ts'
 
 export type ChatMode = 'simple' | 'plan'
-
 export type MessageRole = 'user' | 'assistant' | 'system' | 'event'
 
 export interface ChatMessage {
   id: string
   role: MessageRole
   content: string
+  thinkingContent?: string
+  hasThinking?: boolean
+  isThinkingExpanded?: boolean
   timestamp: number
   eventType?: string
+  stepId?: string
 }
 
 export interface ModelConfig {
@@ -23,36 +27,18 @@ export interface ModelConfig {
   baseUrl: string
   apiKey: string
   enableTools: boolean
+  thinking: ThinkingConfig
 }
 
-export interface SessionResolvedPayload {
-  sessionKey: string
-  sessionId: string
-  kind: string
-  channel: string
-}
-
-export interface SessionTitleUpdatedPayload {
-  sessionKey: string
-  sessionId: string
-  title: string
-  titleSource: 'route' | 'auto' | 'manual' | string
-}
-
-interface WsEventPayloadMap {
-  session_key_resolved: SessionResolvedPayload
-  session_title_updated: SessionTitleUpdatedPayload
-  session_restored: { sessionId: string; messageCount: number }
-  need_user_input: { prompt: string }
-  done: Record<string, never>
-  error: { message?: string; code?: string }
-}
+export type SessionResolvedPayload = ServerEventPayloadMap['session_bound']
+export type SessionTitleUpdatedPayload = ServerEventPayloadMap['session_title_updated']
 
 interface UseChatOptions {
   systemPrompt: string
   modelConfig: ModelConfig
   peerId?: string
-  onWsEvent?: <T extends keyof WsEventPayloadMap>(event: T, payload: WsEventPayloadMap[T]) => void
+  currentSessionKey?: string | null
+  onWsEvent?: <T extends keyof ServerEventPayloadMap>(event: T, payload: ServerEventPayloadMap[T]) => void
 }
 
 function createId(prefix: string) {
@@ -66,243 +52,251 @@ function appendMessage(
   setMessages((prev) => [...prev, msg])
 }
 
-function removeMessages(
+function updateMessage(
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
-  ids: string[],
+  id: string,
+  updater: (message: ChatMessage) => ChatMessage,
 ) {
-  setMessages((prev) => prev.filter((msg) => !ids.includes(msg.id)))
+  setMessages((prev) => prev.map((message) => (message.id === id ? updater(message) : message)))
 }
 
-function isSessionBusyError(eventPayload: Record<string, unknown>): boolean {
-  const code = typeof eventPayload.code === 'string' ? eventPayload.code : ''
-  const message = typeof eventPayload.message === 'string' ? eventPayload.message : ''
-  return code === 'SESSION_BUSY' || message.includes('当前会话正在运行')
+function stepTitle(kind: StepKind, title?: string, todoIndex?: number): string {
+  if (title?.trim()) return title.trim()
+  if (kind === 'planner') return '正在生成计划'
+  if (kind === 'task') return `任务 ${typeof todoIndex === 'number' ? todoIndex + 1 : ''}`.trim()
+  if (kind === 'session_tool') return '正在执行会话工具'
+  return '正在生成回复'
 }
 
-/** 处理 WS 消息的纯函数 */
-function handleWsEvent(
-  payload: Record<string, unknown>,
-  lastAssistantIdRef: { current: string | null },
-  lastWorkerIdRef: { current: string | null },
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
-  updateContent: (id: string, delta: string) => void,
-  setIsStreaming: Dispatch<SetStateAction<boolean>>,
-  setIsWaiting: Dispatch<SetStateAction<boolean>>,
-  clearPendingOptimisticMessage: () => void,
-  onWsEvent?: <T extends keyof WsEventPayloadMap>(event: T, payload: WsEventPayloadMap[T]) => void,
-): void {
-  const eventType = payload.event as string
-  const eventPayload = (payload.payload as Record<string, unknown>) ?? {}
-
-  if (eventType === 'message_delta') {
-    const last = lastAssistantIdRef.current
-    if (last) {
-      updateContent(last, (eventPayload.content as string) ?? '')
-    }
-    return
-  }
-
-  if (eventType === 'worker_delta') {
-    const last = lastWorkerIdRef.current
-    if (last) {
-      updateContent(last, (eventPayload.content as string) ?? '')
-    }
-    return
-  }
-
-  if (eventType === 'message_end') {
-    setIsStreaming(false)
-    return
-  }
-
-  if (eventType === 'need_user_input') {
-    setIsWaiting(true)
-    onWsEvent?.('need_user_input', {
-      prompt: (eventPayload.prompt as string) ?? '需要补充信息',
+function renderTodo(items: ServerEventPayloadMap['todo_state']['items']): string {
+  if (items.length === 0) return '当前没有任务。'
+  return items
+    .map((item) => {
+      const mark =
+        item.status === 'completed' ? '[x]' :
+        item.status === 'in_progress' ? '[>]' : '[ ]'
+      return `${mark} ${item.content}`
     })
-    appendMessage(setMessages, {
-      id: createId('event'),
-      role: 'event',
-      content: (eventPayload.prompt as string) ?? '需要补充信息',
-      timestamp: Date.now(),
-      eventType,
-    })
-    return
-  }
-
-  if (eventType === 'done') {
-    setIsStreaming(false)
-    setIsWaiting(false)
-    onWsEvent?.('done', {})
-    return
-  }
-
-  if (eventType === 'session_restored') {
-    // 会话恢复属于后台状态，避免污染对话 UI
-    onWsEvent?.('session_restored', {
-      sessionId: (eventPayload.sessionId as string) ?? '',
-      messageCount: Number(eventPayload.messageCount ?? 0),
-    })
-    return
-  }
-
-  if (eventType === 'session_key_resolved') {
-    // 路由解析是内部事件，不在消息流展示
-    onWsEvent?.('session_key_resolved', {
-      sessionKey: (eventPayload.sessionKey as string) ?? '',
-      sessionId: (eventPayload.sessionId as string) ?? '',
-      kind: (eventPayload.kind as string) ?? '',
-      channel: (eventPayload.channel as string) ?? '',
-    })
-    return
-  }
-
-  if (eventType === 'session_title_updated') {
-    onWsEvent?.('session_title_updated', {
-      sessionKey: (eventPayload.sessionKey as string) ?? '',
-      sessionId: (eventPayload.sessionId as string) ?? '',
-      title: (eventPayload.title as string) ?? '',
-      titleSource: (eventPayload.titleSource as string) ?? 'auto',
-    })
-    return
-  }
-
-  if (eventType === 'session_tool_result') {
-    appendMessage(setMessages, {
-      id: createId('event'),
-      role: 'event',
-      content: JSON.stringify(eventPayload, null, 2),
-      timestamp: Date.now(),
-      eventType,
-    })
-    return
-  }
-
-  if (eventType === 'error') {
-    if (isSessionBusyError(eventPayload)) {
-      clearPendingOptimisticMessage()
-    }
-    onWsEvent?.('error', {
-      message: (eventPayload.message as string) ?? '发生错误',
-      code: (eventPayload.code as string) ?? undefined,
-    })
-    appendMessage(setMessages, {
-      id: createId('system'),
-      role: 'system',
-      content: (eventPayload.message as string) ?? '发生错误',
-      timestamp: Date.now(),
-    })
-    setIsStreaming(false)
-    setIsWaiting(false)
-    return
-  }
-
-  if (eventType === 'worker_start') {
-    const id = createId('worker')
-    lastWorkerIdRef.current = id
-    const content = `Worker #${eventPayload.todoIndex ?? ''}: ${eventPayload.content ?? ''}`
-    appendMessage(setMessages, {
-      id,
-      role: 'event',
-      content,
-      timestamp: Date.now(),
-      eventType,
-    })
-    return
-  }
-
-  if (eventType === 'worker_end') {
-    lastWorkerIdRef.current = null
-  }
-
-  // 其他事件（todo_write, subagent_start 等）
-  const content =
-    (eventPayload.content as string) ??
-    (eventPayload.result as string) ??
-    (eventPayload.prompt as string) ??
-    JSON.stringify(eventPayload, null, 2)
-
-  appendMessage(setMessages, {
-    id: createId('event'),
-    role: 'event',
-    content,
-    timestamp: Date.now(),
-    eventType,
-  })
+    .join('\n')
 }
 
-export function useChat({ systemPrompt, modelConfig, peerId, onWsEvent }: UseChatOptions) {
+export function useChat({ systemPrompt, modelConfig, peerId, currentSessionKey, onWsEvent }: UseChatOptions) {
   const [mode, setMode] = useState<ChatMode>('simple')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isWaiting, setIsWaiting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
-  const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null)
+  const [boundSessionKey, setBoundSessionKey] = useState<string | null>(currentSessionKey ?? null)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
 
   const reconnectWsRef = useRef<ReconnectableWs | null>(null)
-  const lastAssistantIdRef = useRef<string | null>(null)
-  const lastWorkerIdRef = useRef<string | null>(null)
-  const pendingOptimisticMessageIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
+  const currentRunIdRef = useRef<string | null>(null)
+  const currentPauseIdRef = useRef<string | null>(null)
+  const stepMessageIdsRef = useRef<Map<string, string>>(new Map())
+  const todoMessageIdRef = useRef<string | null>(null)
+  const pendingUserIdRef = useRef<string | null>(null)
 
-  const updateMessageContent = useCallback((id: string, delta: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, content: m.content + delta } : m)),
-    )
-  }, [])
+  useEffect(() => {
+    setBoundSessionKey(currentSessionKey ?? null)
+  }, [currentSessionKey])
 
-  const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
-    lastAssistantIdRef.current = null
-    lastWorkerIdRef.current = null
-    setMessages(nextMessages)
+  const clearDerivedState = useCallback(() => {
+    currentRunIdRef.current = null
+    currentPauseIdRef.current = null
+    stepMessageIdsRef.current.clear()
+    todoMessageIdRef.current = null
+    pendingUserIdRef.current = null
     setIsStreaming(false)
     setIsWaiting(false)
   }, [])
+
+  const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
+    clearDerivedState()
+    setMessages(nextMessages)
+  }, [clearDerivedState])
 
   const clearMessages = useCallback(() => {
     replaceMessages([])
   }, [replaceMessages])
 
-  const clearPendingOptimisticMessage = useCallback(() => {
-    const pending = pendingOptimisticMessageIdsRef.current
-    if (!pending) return
-
-    removeMessages(setMessages, [pending.userId, pending.assistantId])
-    if (lastAssistantIdRef.current === pending.assistantId) {
-      lastAssistantIdRef.current = null
-    }
-    pendingOptimisticMessageIdsRef.current = null
+  const toggleThinking = useCallback((id: string) => {
+    updateMessage(setMessages, id, (message) => ({
+      ...message,
+      isThinkingExpanded: !message.isThinkingExpanded,
+    }))
   }, [])
 
-  /** 获取或创建 ReconnectableWs */
+  const ensureStepMessage = useCallback((stepId: string, kind: StepKind, title?: string, todoIndex?: number) => {
+    const existing = stepMessageIdsRef.current.get(stepId)
+    if (existing) return existing
+
+    const id = createId(kind === 'simple_reply' ? 'assistant' : 'event')
+    stepMessageIdsRef.current.set(stepId, id)
+    appendMessage(setMessages, {
+      id,
+      role: kind === 'simple_reply' ? 'assistant' : 'event',
+      content: kind === 'simple_reply' ? '' : stepTitle(kind, title, todoIndex),
+      thinkingContent: '',
+      hasThinking: false,
+      isThinkingExpanded: false,
+      timestamp: Date.now(),
+      eventType: 'step',
+      stepId,
+    })
+    return id
+  }, [])
+
   const ensureWs = useCallback(() => {
     if (reconnectWsRef.current) return reconnectWsRef.current
 
-    const url = `${WS_BASE}/api/v1/chat/ws`
-
-    const rws = new ReconnectableWs({
-      url,
+    const ws = new ReconnectableWs({
+      url: `${WS_BASE}/api/v1/chat/ws`,
       onMessage: (data) => {
         try {
-          const payload = JSON.parse(data) as Record<string, unknown>
-          handleWsEvent(
-            payload,
-            lastAssistantIdRef,
-            lastWorkerIdRef,
-            setMessages,
-            updateMessageContent,
-            setIsStreaming,
-            setIsWaiting,
-            clearPendingOptimisticMessage,
-            (event, eventPayload) => {
-              if (event === 'session_key_resolved') {
-                const resolved = eventPayload as SessionResolvedPayload
-                setCurrentSessionKey(resolved.sessionKey)
-                setCurrentSessionId(resolved.sessionId)
+          const parsed = JSON.parse(data) as { event?: keyof ServerEventPayloadMap; payload?: Record<string, unknown> }
+          const event = parsed.event
+          if (!event) return
+          const payload = (parsed.payload ?? {}) as ServerEventPayloadMap[keyof ServerEventPayloadMap]
+
+          if (event === 'session_bound') {
+            const bound = payload as ServerEventPayloadMap['session_bound']
+            setBoundSessionKey(bound.sessionKey)
+            setCurrentSessionId(bound.sessionId)
+            onWsEvent?.(event, bound)
+            return
+          }
+
+          if (event === 'session_restored') {
+            onWsEvent?.(event, payload as ServerEventPayloadMap['session_restored'])
+            return
+          }
+
+          if (event === 'session_title_updated') {
+            onWsEvent?.(event, payload as ServerEventPayloadMap['session_title_updated'])
+            return
+          }
+
+          if (event === 'run_state') {
+            const run = payload as ServerEventPayloadMap['run_state']
+            currentRunIdRef.current = run.runId
+            setIsStreaming(run.status === 'running')
+            setIsWaiting(run.status === 'paused')
+            if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+              currentPauseIdRef.current = null
+              pendingUserIdRef.current = null
+            }
+            if (run.status === 'failed' && run.error) {
+              appendMessage(setMessages, {
+                id: createId('system'),
+                role: 'system',
+                content: run.error,
+                timestamp: Date.now(),
+              })
+            }
+            onWsEvent?.(event, run)
+            return
+          }
+
+          if (event === 'step_state') {
+            const step = payload as ServerEventPayloadMap['step_state']
+            const messageId = ensureStepMessage(step.stepId, step.kind, step.title, step.todoIndex)
+            if (step.summary && step.status === 'completed') {
+              const summary = step.summary
+              updateMessage(setMessages, messageId, (message) => ({
+                ...message,
+                content: summary,
+              }))
+            }
+            onWsEvent?.(event, step)
+            return
+          }
+
+          if (event === 'step_delta') {
+            const delta = payload as ServerEventPayloadMap['step_delta']
+            const messageId = ensureStepMessage(delta.stepId, delta.kind)
+            const stream = delta.stream ?? 'text'
+            updateMessage(setMessages, messageId, (message) => {
+              if (stream === 'thinking') {
+                return {
+                  ...message,
+                  hasThinking: true,
+                  thinkingContent: (message.thinkingContent ?? '') + delta.content,
+                }
               }
-              onWsEvent?.(event, eventPayload)
-            },
-          )
+
+              return {
+                ...message,
+                content: message.content + delta.content,
+              }
+            })
+            return
+          }
+
+          if (event === 'todo_state') {
+            const todo = payload as ServerEventPayloadMap['todo_state']
+            if (!todoMessageIdRef.current) {
+              todoMessageIdRef.current = createId('todo')
+              appendMessage(setMessages, {
+                id: todoMessageIdRef.current,
+                role: 'event',
+                content: renderTodo(todo.items),
+                timestamp: Date.now(),
+                eventType: 'todo',
+              })
+            } else {
+              updateMessage(setMessages, todoMessageIdRef.current, (message) => ({
+                ...message,
+                content: renderTodo(todo.items),
+              }))
+            }
+            onWsEvent?.(event, todo)
+            return
+          }
+
+          if (event === 'pause_requested') {
+            const pause = payload as ServerEventPayloadMap['pause_requested']
+            currentPauseIdRef.current = pause.pause.pauseId
+            setIsStreaming(false)
+            setIsWaiting(true)
+            appendMessage(setMessages, {
+              id: createId('pause'),
+              role: 'event',
+              content: pause.pause.prompt,
+              timestamp: Date.now(),
+              eventType: 'pause',
+            })
+            onWsEvent?.(event, pause)
+            return
+          }
+
+          if (event === 'tool_state') {
+            return
+          }
+
+          if (event === 'session_tool_result') {
+            const toolResult = payload as ServerEventPayloadMap['session_tool_result']
+            appendMessage(setMessages, {
+              id: createId('event'),
+              role: 'event',
+              content: toolResult.detail ?? JSON.stringify(toolResult, null, 2),
+              timestamp: Date.now(),
+              eventType: 'session_tool_result',
+            })
+            onWsEvent?.(event, toolResult)
+            return
+          }
+
+          if (event === 'error') {
+            const error = payload as ServerEventPayloadMap['error']
+            appendMessage(setMessages, {
+              id: createId('system'),
+              role: 'system',
+              content: error.message,
+              timestamp: Date.now(),
+            })
+            setIsStreaming(false)
+            onWsEvent?.(event, error)
+          }
         } catch {
           appendMessage(setMessages, {
             id: createId('system'),
@@ -325,104 +319,77 @@ export function useChat({ systemPrompt, modelConfig, peerId, onWsEvent }: UseCha
       },
     })
 
-    reconnectWsRef.current = rws
-    return rws
-  }, [clearPendingOptimisticMessage, onWsEvent, updateMessageContent, setMessages, setIsStreaming, setIsWaiting, setConnectionStatus])
+    reconnectWsRef.current = ws
+    return ws
+  }, [WS_BASE, ensureStepMessage, onWsEvent])
 
-  const buildMessages = useCallback(
-    (text: string) => {
-      const result: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
-      if (systemPrompt.trim()) {
-        result.push({ role: 'system', content: systemPrompt.trim() })
-      }
-      const history = messages
-        .filter(
-          (m) =>
-            (m.role === 'user' || m.role === 'assistant') &&
-            m.content.trim().length > 0,
-        )
-        .map((m) => ({
-          role: m.role,
-          content: m.content,
-        })) as Array<{ role: 'user' | 'assistant'; content: string }>
-
-      result.push(...history)
-      result.push({ role: 'user', content: text })
-      return result
+  const buildModelOptions = useCallback(() => ({
+    model: modelConfig.model,
+    baseUrl: modelConfig.baseUrl || undefined,
+    apiKey: modelConfig.apiKey || undefined,
+    enableTools: modelConfig.enableTools,
+    thinking: modelConfig.thinking,
+    systemPrompt: systemPrompt.trim() || undefined,
+    options: {
+      temperature: modelConfig.temperature,
+      maxTokens: modelConfig.maxTokens,
     },
-    [messages, systemPrompt],
-  )
+  }), [modelConfig, systemPrompt])
 
-  const sendWs = useCallback(
-    (text: string) => {
-      const userId = createId('user')
-      appendMessage(setMessages, {
-        id: userId,
-        role: 'user',
-        content: text,
-        timestamp: Date.now(),
-      })
+  const send = useCallback((text: string) => {
+    const input = text.trim()
+    if (!input) return false
+    if (isStreaming) return false
+    if (isWaiting && mode !== 'plan') return false
 
-      const assistantId = createId('assistant')
-      lastAssistantIdRef.current = assistantId
-      lastWorkerIdRef.current = null
-      appendMessage(setMessages, {
-        id: assistantId,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-      })
-      pendingOptimisticMessageIdsRef.current = {
-        userId,
-        assistantId,
+    const ws = ensureWs()
+    const userId = createId('user')
+    pendingUserIdRef.current = userId
+    appendMessage(setMessages, {
+      id: userId,
+      role: 'user',
+      content: input,
+      timestamp: Date.now(),
+    })
+
+    stepMessageIdsRef.current.clear()
+    todoMessageIdRef.current = null
+    setIsStreaming(true)
+    setIsWaiting(false)
+
+    if (isWaiting && mode === 'plan' && boundSessionKey && currentRunIdRef.current && currentPauseIdRef.current) {
+      const payload: ClientEventPayloadMap['run_resume'] = {
+        sessionKey: boundSessionKey,
+        runId: currentRunIdRef.current,
+        pauseId: currentPauseIdRef.current,
+        input,
+        ...buildModelOptions(),
       }
-
-      setIsStreaming(true)
-      setIsWaiting(false)
-
-      const payload = JSON.stringify({
-        event: 'chat',
-        payload: {
-          route: buildDefaultRoute({ peerId: peerId ?? getPeerId() }),
-          mode,
-          model: modelConfig.model,
-          baseUrl: modelConfig.baseUrl || undefined,
-          apiKey: modelConfig.apiKey || undefined,
-          enableTools: modelConfig.enableTools,
-          options: {
-            temperature: modelConfig.temperature,
-            maxTokens: modelConfig.maxTokens,
-          },
-          messages: buildMessages(text),
-        },
-      })
-
-      const rws = ensureWs()
-      rws.send(payload)
-    },
-    [buildMessages, ensureWs, mode, modelConfig.apiKey, modelConfig.baseUrl, modelConfig.enableTools, modelConfig.maxTokens, modelConfig.model, modelConfig.temperature, peerId],
-  )
-
-  const send = useCallback(
-    (text: string) => {
-      if (!text.trim()) return false
-      if (isStreaming) return false
-      if (isWaiting && mode !== 'plan') return false
-      sendWs(text)
+      ws.send(JSON.stringify({ event: 'run_resume', payload }))
       return true
-    },
-    [isStreaming, isWaiting, mode, sendWs],
-  )
+    }
+
+    const payload: ClientEventPayloadMap['run_start'] = {
+      route: buildDefaultRoute({ peerId: peerId ?? getPeerId() }),
+      mode,
+      input,
+      sessionKey: boundSessionKey ?? undefined,
+      ...buildModelOptions(),
+    }
+    ws.send(JSON.stringify({ event: 'run_start', payload }))
+    return true
+  }, [boundSessionKey, buildModelOptions, ensureWs, isStreaming, isWaiting, mode, peerId])
 
   const stop = useCallback(() => {
-    const rws = ensureWs()
-    rws.send(JSON.stringify({
-      event: 'cancel',
-      payload: {},
-    }))
-  }, [ensureWs])
+    if (!boundSessionKey) return
+    const ws = ensureWs()
+    const payload: ClientEventPayloadMap['run_cancel'] = {
+      sessionKey: boundSessionKey,
+      runId: currentRunIdRef.current ?? undefined,
+    }
+    ws.send(JSON.stringify({ event: 'run_cancel', payload }))
+  }, [boundSessionKey, ensureWs])
 
-  // 组件卸载时清理
   useEffect(() => {
     return () => {
       reconnectWsRef.current?.close()
@@ -436,12 +403,13 @@ export function useChat({ systemPrompt, modelConfig, peerId, onWsEvent }: UseCha
     messages,
     replaceMessages,
     clearMessages,
+    toggleThinking,
     send,
     stop,
     isStreaming,
     isWaiting,
     connectionStatus,
-    currentSessionKey,
+    currentSessionKey: boundSessionKey,
     currentSessionId,
   }
 }

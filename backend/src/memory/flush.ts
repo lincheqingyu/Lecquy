@@ -1,4 +1,5 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
+import { extractSessionText } from '@webclaw/shared'
 import { getMemoryConfig } from '../core/memory/index.js'
 import { appendDailyMemoryEntry } from './store.js'
 import { logger } from '../utils/logger.js'
@@ -14,22 +15,7 @@ const MEMORY_ENTRY_TEMPLATE = {
 
 function extractText(msg: AgentMessage | undefined): string {
   if (!msg) return ''
-  const content = msg.content as unknown
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part
-        if (part && typeof part === 'object' && 'text' in part) {
-          const text = (part as { text?: unknown }).text
-          return typeof text === 'string' ? text : ''
-        }
-        return ''
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-  return ''
+  return extractSessionText(msg.content)
 }
 
 function buildFlushEntry(messages: AgentMessage[]): string {

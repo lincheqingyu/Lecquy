@@ -13,5 +13,12 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/session-v2",
+    "src/session",
+    "src/ws/simple-handler.ts",
+    "src/ws/plan-handler.ts"
+  ]
 }

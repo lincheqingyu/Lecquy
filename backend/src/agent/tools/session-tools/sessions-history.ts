@@ -5,7 +5,6 @@ import { getBoundSessionService } from './runtime.js'
 const parameters = Type.Object({
   sessionKey: Type.String({ minLength: 1 }),
   limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
-  includeTools: Type.Optional(Type.Boolean({ default: false })),
 })
 
 export function createSessionsHistoryTool(): AgentTool<typeof parameters> {
@@ -16,7 +15,7 @@ export function createSessionsHistoryTool(): AgentTool<typeof parameters> {
     parameters,
     execute: async (_id, params): Promise<AgentToolResult<Record<string, never>>> => {
       const service = getBoundSessionService()
-      const rows = await service.history(params.sessionKey, params.limit, params.includeTools)
+      const rows = await service.history(params.sessionKey, params.limit)
       return {
         content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }],
         details: {},

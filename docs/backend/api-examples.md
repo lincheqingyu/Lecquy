@@ -1,0 +1,285 @@
+# WebClaw 后端接口文档
+
+本文档基于当前代码实现整理，覆盖后端已经可用的 HTTP 接口和 WebSocket 对话入口。
+
+## 基础信息
+
+| 项目 | 说明 |
+|------|------|
+| HTTP 基础地址 | `http://localhost:3000` |
+| WebSocket 地址 | `ws://localhost:3000/api/v1/chat/ws` |
+| 内容类型 | `application/json` |
+| 字符编码 | UTF-8 |
+
+## 通用响应格式
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "data": {}
+}
+```
+
+错误响应：
+
+```json
+{
+  "success": false,
+  "error": "错误描述信息"
+}
+```
+
+## 1. 健康检查
+
+```http
+GET /health
+```
+
+示例：
+
+```bash
+curl http://localhost:3000/health
+```
+
+返回：
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-16T10:00:00.000Z"
+}
+```
+
+说明：当前健康检查只返回状态和时间戳。
+
+## 2. 模型列表
+
+```http
+POST /api/v1/models/list
+```
+
+请求体：
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "apiKey": "sk-xxx"
+}
+```
+
+示例：
+
+```bash
+curl -X POST http://localhost:3000/api/v1/models/list \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "apiKey": "sk-xxx"
+  }'
+```
+
+说明：后端会自动把 `baseUrl` 规范化为 `/v1/models` 请求地址。
+
+## 3. Memory 配置与文件
+
+### 获取 memory 配置
+
+```http
+GET /api/v1/memory/config
+```
+
+### 更新 memory 配置
+
+```http
+PUT /api/v1/memory/config
+```
+
+请求体示例：
+
+```json
+{
+  "flushTurns": 12,
+  "embeddingBaseUrl": "http://127.0.0.1:11434"
+}
+```
+
+### 列出 memory 文件
+
+```http
+GET /api/v1/memory/files
+```
+
+### 读取单个 memory 文件
+
+```http
+GET /api/v1/memory/file?name=MEMORY.md
+```
+
+## 4. 会话管理
+
+### 获取会话列表
+
+```http
+GET /api/v1/sessions?limit=50&messageLimit=20
+```
+
+### 获取会话详情
+
+```http
+GET /api/v1/sessions/:sessionKey?recentMessagesLimit=20
+```
+
+说明：`sessionKey` 含有 `:`，前端调用时应先 `encodeURIComponent(sessionKey)`。
+
+### 获取会话历史
+
+```http
+GET /api/v1/sessions/:sessionKey/history?limit=100&includeTools=false
+```
+
+### 更新会话标题
+
+```http
+PATCH /api/v1/sessions/:sessionKey
+```
+
+请求体：
+
+```json
+{
+  "title": "新的会话标题"
+}
+```
+
+### 删除会话
+
+```http
+DELETE /api/v1/sessions/:sessionKey
+```
+
+## 5. WebSocket 对话
+
+当前主对话链路使用 WebSocket，而不是 HTTP `/api/v1/chat`。
+
+### 连接地址
+
+```txt
+ws://localhost:3000/api/v1/chat/ws
+```
+
+### 客户端发送事件
+
+可发送事件：
+
+- `chat`
+- `cancel`
+- `pong`
+
+`chat` 请求示例：
+
+```json
+{
+  "event": "chat",
+  "payload": {
+    "mode": "simple",
+    "route": {
+      "channel": "webchat",
+      "chatType": "dm",
+      "peerId": "web-user-001"
+    },
+    "messages": [
+      { "role": "user", "content": "你好，请介绍一下你自己" }
+    ],
+    "model": "glm-4-plus",
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "apiKey": "sk-xxx",
+    "enableTools": true,
+    "options": {
+      "temperature": 0.7,
+      "maxTokens": 4096
+    }
+  }
+}
+```
+
+### 服务端常见事件
+
+所有模式共享：
+
+- `session_key_resolved`
+- `session_restored`
+- `message_delta`
+- `message_end`
+- `tool_start`
+- `tool_end`
+- `done`
+- `error`
+- `ping`
+
+plan 模式额外事件：
+
+- `plan_created`
+- `worker_start`
+- `worker_delta`
+- `worker_end`
+- `todo_update`
+- `need_user_input`
+
+### simple 模式示例
+
+```json
+{
+  "event": "chat",
+  "payload": {
+    "mode": "simple",
+    "route": {
+      "channel": "webchat",
+      "chatType": "dm",
+      "peerId": "web-user-001"
+    },
+    "messages": [
+      { "role": "user", "content": "用三句话介绍 TypeScript" }
+    ],
+    "enableTools": false
+  }
+}
+```
+
+### plan 模式示例
+
+```json
+{
+  "event": "chat",
+  "payload": {
+    "mode": "plan",
+    "route": {
+      "channel": "webchat",
+      "chatType": "dm",
+      "peerId": "web-user-001"
+    },
+    "messages": [
+      { "role": "user", "content": "请帮我分析这个仓库并列出需要修改的文件" }
+    ],
+    "options": {
+      "temperature": 0.2
+    }
+  }
+}
+```
+
+如果 plan 执行过程中触发 `need_user_input`，客户端应继续发送 `mode: "plan"` 的新消息来恢复执行。
+
+## 6. 已废弃接口
+
+```http
+POST /api/v1/chat
+```
+
+当前该接口会返回 `410 Gone`，提示改用 WebSocket `/api/v1/chat/ws`。
+
+## 7. 相关文档
+
+- 会话联调：[`session-management-integration.md`](./session-management-integration.md)
+- simple/plan 模式分析：[`../../backend/simple-plan-modes-analysis.md`](../../backend/simple-plan-modes-analysis.md)

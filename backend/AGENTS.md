@@ -19,15 +19,16 @@ Node.js 24.13 · Express 4.x · TypeScript 5.9 · ESM 模式
 ### 请求流程
 
 ```
-请求 → Controller → runMainAgent() → agentLoop (pi-agent-core) → streamSimple (pi-ai) → vLLM HTTP
+WebSocket chat → chat-ws → simple-handler / plan-handler → Agent Runner → vLLM/OpenAI API
 ```
 
 | 层级 | 职责 |
 |------|------|
-| Controller | HTTP 路由，参数校验，SSE 流式推送 |
-| agent-runner | 主 Agent 循环，迭代控制，todo 自动执行 |
-| sub-agent-runner | 子 Agent 分发，执行 pending todo items |
-| tools/ | 工具实现（bash, read_file, skill, todo_write） |
+| ws/ | WebSocket 路由分发、会话恢复、事件推送 |
+| agent-runner | simple 模式主 Agent |
+| manager-runner | plan 模式规划 Agent |
+| worker-runner | plan 模式执行 Agent |
+| tools/ | 工具实现（bash, read_file, edit_file, write_file, skill, todo_write, session-tools） |
 | vllm-model | Model 工厂，连接 vLLM/OpenAI 兼容 API |
 
 ### 前端传参
@@ -44,38 +45,23 @@ src/
 ├── server.ts               # 服务器启动入口
 ├── app.ts                  # Express 应用配置
 ├── config/                 # 配置管理
-│   ├── index.ts
-│   └── env.ts              # 环境变量校验
-├── agent/                  # Agent 核心（pi-agent-core）
-│   ├── index.ts            # 统一导出
-│   ├── types.ts            # 共享常量和类型
-│   ├── vllm-model.ts       # vLLM Model 工厂
-│   ├── agent-runner.ts     # 主 Agent 运行器
-│   ├── sub-agent-runner.ts # 子 Agent 运行器
-│   └── tools/              # 工具实现
-│       ├── index.ts
-│       ├── bash.ts
-│       ├── read-file.ts
-│       ├── skill.ts
-│       └── todo-write.ts
-├── core/                   # 业务核心
-│   ├── agent/agent-config.ts   # Agent 类型配置
-│   ├── prompts/system-prompts.ts # 系统提示词
-│   ├── skills/skill-loader.ts   # 技能加载器
-│   └── todo/todo-manager.ts     # 任务管理器
-├── types/                  # 全局类型定义
-│   ├── api.ts              # API 响应类型
-│   └── index.ts
-├── controllers/            # 路由控制层
-│   ├── chat.ts             # 对话路由
-│   └── health.ts           # 健康检查
-├── middlewares/             # 中间件
-│   ├── error-handler.ts    # 全局错误处理
-│   └── request-logger.ts   # 请求日志
-└── utils/                  # 工具函数
-    ├── logger.ts           # 日志工具
-    └── stream.ts           # SSE 流式工具
+├── ws/                     # WebSocket chat 入口与模式处理
+├── agent/                  # Agent 核心（simple / manager / worker）
+├── controllers/            # HTTP 路由（health, models, memory, sessions）
+├── session-v2/             # 会话服务、持久化、裁剪与恢复
+├── core/                   # prompts、skills、todo、memory
+├── extensions/             # 扩展工具
+├── middlewares/            # 请求日志、错误处理
+├── memory/                 # memory 文件与 flush 逻辑
+└── utils/                  # 日志等工具函数
 ```
+
+## 文档导航
+
+- 后端架构决策分析：`../docs/backend/backend-architecture-analysis.md`
+- 后端接口文档：`../docs/backend/api-examples.md`
+- 会话联调文档：`../docs/backend/session-management-integration.md`
+- simple / plan 模式分析：`./simple-plan-modes-analysis.md`
 
 ## 开发规范
 
@@ -108,7 +94,7 @@ pnpm dev              # 前后端并行启动
 
 ### 环境变量
 
-复制 `.env.example` 为 `.env` 并填入：
+在项目根目录维护 `.env`，后端启动时会从根目录加载配置：
 
 ```bash
 PORT=3000

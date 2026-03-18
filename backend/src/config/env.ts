@@ -43,7 +43,7 @@ const envSchema = z.object({
   /** Session 空闲重置分钟 */
   SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).default(120),
   /** Session 存储目录 */
-  SESSION_STORE_DIR: z.string().default('.sessions-v2'),
+  SESSION_STORE_DIR: z.string().default('.sessions-v3'),
   /** 上下文修剪模式 */
   SESSION_PRUNING_MODE: z.enum(['off', 'cache-ttl']).default('cache-ttl'),
   /** 修剪 TTL */

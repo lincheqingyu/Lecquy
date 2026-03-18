@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createDefaultThinkingConfig } from '@webclaw/shared'
 import { ConversationArea } from './ConversationArea'
 import { ChatsOverview } from './ChatsOverview'
 import { SettingsDrawer } from './SettingsDrawer'
@@ -19,7 +20,6 @@ import {
   updateSessionTitle,
 } from '../../../lib/session-api'
 import {
-  parsePeerIdFromSessionKey,
   toChatMessages,
   toSessionListItemVm,
   type SessionListItemVm,
@@ -60,10 +60,11 @@ function loadActivePromptId(): string | null {
 }
 
 function loadModelConfig(): ModelConfig {
+  const defaultThinking = createDefaultThinkingConfig()
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.modelConfig)
     if (!raw) {
-      return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false }
+      return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false, thinking: defaultThinking }
     }
     const parsed = JSON.parse(raw)
     return {
@@ -73,9 +74,14 @@ function loadModelConfig(): ModelConfig {
       baseUrl: parsed.baseUrl ?? '',
       apiKey: parsed.apiKey ?? '',
       enableTools: Boolean(parsed.enableTools ?? false),
+      thinking: {
+        enabled: Boolean(parsed.thinking?.enabled ?? defaultThinking.enabled),
+        level: parsed.thinking?.level ?? defaultThinking.level,
+        protocol: parsed.thinking?.protocol ?? defaultThinking.protocol,
+      },
     }
   } catch {
-    return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false }
+    return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false, thinking: defaultThinking }
   }
 }
 
@@ -231,7 +237,7 @@ export function HomePageLayout() {
       const history = await fetchSessionHistory(sessionKey)
       replaceMessageSeed(toChatMessages(history))
 
-      const peerId = parsePeerIdFromSessionKey(sessionKey)
+      const peerId = target?.peerId ?? null
       if (!peerId) {
         setChatDisabledReason('当前会话无法恢复发送绑定，仅支持查看历史。')
         return
@@ -304,8 +310,8 @@ export function HomePageLayout() {
     )
   }
 
-  const handleChatLifecycleEvent = (event: 'done' | 'need_user_input' | 'error') => {
-    if (event === 'done' || event === 'need_user_input') {
+  const handleChatLifecycleEvent = (event: 'run_completed' | 'run_paused' | 'run_failed') => {
+    if (event === 'run_completed' || event === 'run_paused') {
       void refreshSessions()
     }
   }
@@ -364,6 +370,7 @@ export function HomePageLayout() {
             conversationTitle={conversationTitle}
             sessionMetaText={sessionMetaText}
             peerId={activePeerId}
+            currentSessionKey={selectedSessionKey ?? currentSessionKey}
             externalMessages={messageSeed}
             messageVersion={messageVersion}
             canSend={canSend}

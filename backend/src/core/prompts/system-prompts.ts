@@ -40,6 +40,7 @@ export function buildManagerPrompt(): string {
 - todo 的 content 应包含：任务目标、涉及文件、具体步骤
 - todo 的 activeForm 应是简短的进行时描述（如 "正在重构路由层..."）
 - 计划创建后，系统会自动分配 Worker 执行
+- 如果缺少继续规划所必需的信息，调用 request_user_input，并立即停止继续输出
 
 ## 可用技能
 ${SKILLS.getDescriptions()}`
@@ -54,6 +55,7 @@ export function buildWorkerPrompt(): string {
 - 使用 edit_file 进行精确编辑，使用 write_file 创建新文件
 - 用 bash 验证修改结果（如运行测试、检查编译）
 - 需要专业知识时用 skill 加载
+- 如果缺少继续执行所必需的信息，调用 request_user_input，并立即停止继续输出
 - 完成后返回简明的执行摘要
 
 ## 可用技能

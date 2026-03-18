@@ -1,5 +1,5 @@
 import { API_V1 } from '../config/api'
-import type { SessionListEntry, SessionMessageRecord } from './session-management'
+import type { SessionMessageRecord, SessionProjection } from '@webclaw/shared'
 
 interface ApiEnvelope<T> {
   success: boolean
@@ -7,7 +7,7 @@ interface ApiEnvelope<T> {
 }
 
 interface SessionListResponse {
-  sessions: SessionListEntry[]
+  sessions: SessionProjection[]
 }
 
 interface SessionHistoryResponse {
@@ -16,7 +16,7 @@ interface SessionHistoryResponse {
 }
 
 interface SessionUpdateResponse {
-  session: SessionListEntry
+  session: SessionProjection
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -27,7 +27,7 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload
 }
 
-export async function fetchSessions(limit = 50, messageLimit = 10): Promise<SessionListEntry[]> {
+export async function fetchSessions(limit = 50, messageLimit = 10): Promise<SessionProjection[]> {
   const response = await fetch(`${API_V1}/sessions?limit=${limit}&messageLimit=${messageLimit}`)
   const payload = await readJson<ApiEnvelope<SessionListResponse>>(response)
   return payload.data.sessions
@@ -35,7 +35,7 @@ export async function fetchSessions(limit = 50, messageLimit = 10): Promise<Sess
 
 export async function fetchSessionHistory(sessionKey: string, limit = 100): Promise<SessionMessageRecord[]> {
   const encodedKey = encodeURIComponent(sessionKey)
-  const response = await fetch(`${API_V1}/sessions/${encodedKey}/history?limit=${limit}&includeTools=false`)
+  const response = await fetch(`${API_V1}/sessions/${encodedKey}/history?limit=${limit}`)
   const payload = await readJson<ApiEnvelope<SessionHistoryResponse>>(response)
   return payload.data.messages
 }
@@ -46,7 +46,7 @@ export async function deleteSession(sessionKey: string): Promise<void> {
   await readJson<ApiEnvelope<{ deleted: boolean; sessionKey: string }>>(response)
 }
 
-export async function updateSessionTitle(sessionKey: string, title: string): Promise<SessionListEntry> {
+export async function updateSessionTitle(sessionKey: string, title: string): Promise<SessionProjection> {
   const encodedKey = encodeURIComponent(sessionKey)
   const response = await fetch(`${API_V1}/sessions/${encodedKey}`, {
     method: 'PATCH',

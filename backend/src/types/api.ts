@@ -22,7 +22,7 @@ export interface HealthResponse {
   readonly timestamp: string
 }
 
-export const chatRequestSchema = z.object({
+export const sessionRouteSchema = z.object({
   route: z.object({
     channel: z.enum(['webchat', 'internal', 'telegram', 'discord', 'whatsapp', 'unknown']),
     chatType: z.enum(['dm', 'group', 'channel', 'thread']),
@@ -34,23 +34,42 @@ export const chatRequestSchema = z.object({
     senderName: z.string().optional(),
     conversationLabel: z.string().optional(),
   }),
-  messages: z
-      .array(
-          z.object({
-            role: z.enum(['system', 'user', 'assistant']),
-            content: z.string().min(1, '消息内容不能为空'),
-          }),
-      )
-      .min(1, '至少需要一条消息'),
-  mode: z.enum(['simple', 'plan']).default('simple'),
+})
+
+export const modelOptionsSchema = z.object({
   model: z.string().optional(),
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
   enableTools: z.boolean().default(false),
+  thinking: z.object({
+    enabled: z.boolean().default(false),
+    level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('medium'),
+    protocol: z.enum(['off', 'qwen', 'zai', 'openai_reasoning']).default('off'),
+  }).optional(),
+  systemPrompt: z.string().optional(),
   options: z
       .object({
         temperature: z.number().min(0).max(2).optional(),
         maxTokens: z.number().int().min(1).optional(),
       })
       .optional(),
+})
+
+export const runStartSchema = sessionRouteSchema.extend({
+  route: sessionRouteSchema.shape.route,
+  input: z.string().min(1, '消息内容不能为空'),
+  mode: z.enum(['simple', 'plan']).default('simple'),
+  sessionKey: z.string().optional(),
+}).merge(modelOptionsSchema)
+
+export const runResumeSchema = z.object({
+  sessionKey: z.string().min(1, 'sessionKey 不能为空'),
+  runId: z.string().min(1, 'runId 不能为空'),
+  pauseId: z.string().min(1, 'pauseId 不能为空'),
+  input: z.string().min(1, '消息内容不能为空'),
+}).merge(modelOptionsSchema)
+
+export const runCancelSchema = z.object({
+  sessionKey: z.string().min(1, 'sessionKey 不能为空'),
+  runId: z.string().optional(),
 })

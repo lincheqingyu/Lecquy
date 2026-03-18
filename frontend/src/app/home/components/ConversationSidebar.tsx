@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Ellipsis, MessageSquareText, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Ellipsis, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 export interface ConversationItem {
@@ -60,19 +60,42 @@ export function ConversationSidebar({
       aria-label="会话管理栏"
     >
       <div className="flex h-full flex-col">
-        <div className="flex h-14 shrink-0 items-center px-3">
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className={[
-              'inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary',
-              'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
-            ].join(' ')}
-            aria-label={collapsed ? '展开会话栏' : '收起会话栏'}
-            title={collapsed ? '展开会话栏' : '收起会话栏'}
-          >
-            {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
-          </button>
+        <div className={collapsed ? 'flex h-16 shrink-0 items-center justify-center px-3' : 'flex h-[4.5rem] shrink-0 items-center px-4'}>
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className={[
+                'inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-secondary',
+                'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
+              ].join(' ')}
+              aria-label="展开会话栏"
+              title="展开会话栏"
+            >
+              <PanelLeftOpen className="size-[18px] shrink-0" />
+            </button>
+          ) : (
+            <div className="flex w-full items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-serif text-[2.1rem] leading-none tracking-[-0.06em] text-text-primary">
+                  ZxhClaw
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className={[
+                  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-secondary',
+                  'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
+                ].join(' ')}
+                aria-label="收起会话栏"
+                title="收起会话栏"
+              >
+                <PanelLeftClose className="size-[18px] shrink-0" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="px-3 pb-3">

@@ -7,27 +7,56 @@ interface MessageListProps {
   isStreaming: boolean
   isWaiting: boolean
   onResendUser?: (message: string) => void
+  onToggleThinking?: (messageId: string) => void
   scrollRequestVersion?: number
 }
 
 const BOTTOM_THRESHOLD_PX = 48
+const USER_SCROLL_COOLDOWN_MS = 180
 
 export function MessageList({
   messages,
   isStreaming,
   isWaiting,
   onResendUser,
+  onToggleThinking,
   scrollRequestVersion = 0,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
+  const userInteractingRef = useRef(false)
+  const userScrollCooldownRef = useRef<number | null>(null)
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true)
 
-  const syncPinnedState = () => {
+  const isNearBottom = () => {
     const el = containerRef.current
-    if (!el) return
+    if (!el) return true
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    setIsPinnedToBottom(distanceToBottom <= BOTTOM_THRESHOLD_PX)
+    return distanceToBottom <= BOTTOM_THRESHOLD_PX
+  }
+
+  const syncPinnedState = () => {
+    setIsPinnedToBottom(isNearBottom())
+  }
+
+  const scheduleUserInteractionRelease = () => {
+    if (userScrollCooldownRef.current) {
+      window.clearTimeout(userScrollCooldownRef.current)
+    }
+
+    userScrollCooldownRef.current = window.setTimeout(() => {
+      userInteractingRef.current = false
+      userScrollCooldownRef.current = null
+      if (isNearBottom()) {
+        setIsPinnedToBottom(true)
+      }
+    }, USER_SCROLL_COOLDOWN_MS)
+  }
+
+  const markUserInteraction = () => {
+    userInteractingRef.current = true
+    scheduleUserInteractionRelease()
   }
 
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -50,13 +79,49 @@ export function MessageList({
 
   useEffect(() => {
     if (messages.length === 0 || !(isStreaming || isWaiting) || !isPinnedToBottom) return
+    if (userInteractingRef.current) return
     scrollToBottom('auto')
   }, [isPinnedToBottom, isStreaming, isWaiting, messages])
+
+  useEffect(() => {
+    if (!(isStreaming || isWaiting)) return
+
+    const observed = contentRef.current
+    if (!observed || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => {
+      if (!isPinnedToBottom) return
+      if (userInteractingRef.current) return
+      window.requestAnimationFrame(() => {
+        scrollToBottom('auto')
+      })
+    })
+
+    observer.observe(observed)
+    return () => observer.disconnect()
+  }, [isPinnedToBottom, isStreaming, isWaiting])
+
+  useEffect(() => {
+    if (!(isStreaming || isWaiting) || !isPinnedToBottom) return
+    if (userInteractingRef.current) return
+    scrollToBottom('auto')
+  }, [isPinnedToBottom, isStreaming, isWaiting])
+
+  useEffect(() => {
+    return () => {
+      if (userScrollCooldownRef.current) {
+        window.clearTimeout(userScrollCooldownRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div
       ref={containerRef}
       onScroll={syncPinnedState}
+      onWheel={markUserInteraction}
+      onTouchMove={markUserInteraction}
+      onPointerDown={markUserInteraction}
       className="chat-scroll-mask chat-scrollbar flex h-full w-full flex-col gap-3 overflow-y-auto px-4 pt-6 pb-28 md:px-2"
       style={{
         WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, black 20px, black calc(100% - 28px), transparent 100%)',
@@ -68,9 +133,14 @@ export function MessageList({
           发送消息开始对话
         </div>
       )}
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+      <div ref={contentRef} className="mx-auto flex w-full max-w-3xl flex-col gap-3">
         {messages.map((message) => (
-          <MessageItem key={message.id} message={message} onResendUser={onResendUser} />
+          <MessageItem
+            key={message.id}
+            message={message}
+            onResendUser={onResendUser}
+            onToggleThinking={onToggleThinking}
+          />
         ))}
       </div>
       {(isStreaming || isWaiting) && (

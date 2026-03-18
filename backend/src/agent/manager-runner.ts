@@ -4,6 +4,7 @@
 
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-agent-core'
+import type { ThinkingLevel } from '@webclaw/shared'
 import { buildManagerPrompt } from '../core/prompts/system-prompts.js'
 import { createManagerTools } from './tools/index.js'
 import { createTracker, MAX_ITERATIONS, MAX_TOOL_FAILURES } from './types.js'
@@ -14,6 +15,7 @@ export interface ManagerAgentOptions {
   messages: AgentMessage[]
   model: Model<'openai-completions'>
   apiKey: string
+  thinkingLevel?: ThinkingLevel
   temperature?: number
   extraSystemPrompt?: string
   signal?: AbortSignal
@@ -24,6 +26,9 @@ export interface ManagerAgentOptions {
 
 export interface ManagerAgentResult {
   messages: AgentMessage[]
+  pause?: {
+    prompt: string
+  }
 }
 
 export async function runManagerAgent(options: ManagerAgentOptions): Promise<ManagerAgentResult> {
@@ -31,6 +36,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
     messages,
     model,
     apiKey,
+    thinkingLevel,
     temperature,
     extraSystemPrompt,
     signal,
@@ -58,6 +64,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
     {
       model,
       apiKey,
+      reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(
@@ -89,6 +96,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
   )
 
   const allMessages: AgentMessage[] = []
+  let pausePrompt: string | undefined
 
   for await (const event of stream) {
     if (event.type === 'turn_end') {
@@ -98,6 +106,13 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
       tracker.toolFailCount++
     }
 
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_end') {
+      const toolCall = (event.assistantMessageEvent as { toolCall?: { name?: string; arguments?: { prompt?: unknown } } }).toolCall
+      if (toolCall?.name === 'request_user_input' && typeof toolCall.arguments?.prompt === 'string' && toolCall.arguments.prompt.trim()) {
+        pausePrompt = toolCall.arguments.prompt.trim()
+      }
+    }
+
     if (event.type === 'message_end') {
       allMessages.push(event.message)
     }
@@ -105,5 +120,8 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
     onEvent?.(event)
   }
 
-  return { messages: [...contextMessages, ...allMessages] }
+  return {
+    messages: [...contextMessages, ...allMessages],
+    pause: pausePrompt ? { prompt: pausePrompt } : undefined,
+  }
 }

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm -F @webclaw/shared build && cross-env NODE_OPTIONS=--openssl-legacy-provider tsx --watch src/server.ts",
     "build": "pnpm -F @webclaw/shared build && tsc",
+    "test": "pnpm -F @webclaw/shared build && tsc && node --test dist/**/*.test.js",
     "start": "node dist/server.js"
   },
   "dependencies": {

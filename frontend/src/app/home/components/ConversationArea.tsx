@@ -22,13 +22,14 @@ interface ConversationAreaProps {
   conversationTitle: string
   sessionMetaText?: string | null
   peerId: string
+  currentSessionKey?: string | null
   externalMessages: ChatMessage[]
   messageVersion: number
   canSend: boolean
   disabledReason?: string | null
   onSessionResolved: (payload: SessionResolvedPayload) => void
   onSessionTitleUpdated: (payload: SessionTitleUpdatedPayload) => void
-  onChatLifecycleEvent: (event: 'done' | 'need_user_input' | 'error') => void
+  onChatLifecycleEvent: (event: 'run_completed' | 'run_paused' | 'run_failed') => void
 }
 
 export function ConversationArea({
@@ -40,6 +41,7 @@ export function ConversationArea({
   conversationTitle,
   sessionMetaText = null,
   peerId,
+  currentSessionKey = null,
   externalMessages,
   messageVersion,
   canSend,
@@ -55,6 +57,7 @@ export function ConversationArea({
     messages,
     send,
     stop,
+    toggleThinking,
     isStreaming,
     isWaiting,
     replaceMessages,
@@ -62,8 +65,9 @@ export function ConversationArea({
     systemPrompt,
     modelConfig,
     peerId,
+    currentSessionKey,
     onWsEvent: (event, payload) => {
-      if (event === 'session_key_resolved') {
+      if (event === 'session_bound') {
         onSessionResolved(payload as SessionResolvedPayload)
         return
       }
@@ -73,8 +77,18 @@ export function ConversationArea({
         return
       }
 
-      if (event === 'done' || event === 'need_user_input' || event === 'error') {
-        onChatLifecycleEvent(event)
+      if (event === 'pause_requested') {
+        onChatLifecycleEvent('run_paused')
+        return
+      }
+
+      if (event === 'run_state') {
+        const state = payload as { status: string }
+        if (state.status === 'completed') {
+          onChatLifecycleEvent('run_completed')
+        } else if (state.status === 'failed' || state.status === 'cancelled') {
+          onChatLifecycleEvent('run_failed')
+        }
       }
     },
   })
@@ -199,6 +213,7 @@ export function ConversationArea({
                 showSuggestions
                 disabled={!effectiveCanSend}
                 disabledReason={effectiveDisabledReason}
+                rightSlot={stopButton}
               />
             </div>
           ) : (
@@ -209,6 +224,7 @@ export function ConversationArea({
                   isStreaming={isStreaming}
                   isWaiting={isWaiting}
                   onResendUser={handleResendUser}
+                  onToggleThinking={toggleThinking}
                   scrollRequestVersion={scrollRequestVersion}
                 />
               </div>

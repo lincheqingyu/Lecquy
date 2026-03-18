@@ -42,7 +42,7 @@
 
 ```
 WebClaw/
-├── frontend/          # React SPA（详见 frontend/CLAUDE.md）
+├── frontend/          # React SPA（详见 frontend/README.md 与 docs/frontend/）
 │   └── src/
 │       ├── app/home/  # 首页：HomePageLayout, ConversationArea, SettingsDrawer
 │       ├── components/chat/  # 消息组件：MessageItem, MessageList
@@ -50,12 +50,13 @@ WebClaw/
 │       ├── hooks/     # useChat, useAutoResize
 │       ├── lib/       # ws-reconnect, session
 │       └── config/    # api.ts（API 地址配置）
-├── backend/           # Express 服务（详见 backend/CLAUDE.md）
+├── backend/           # Express 服务（详见 backend/AGENTS.md 与 backend/simple-plan-modes-analysis.md）
 │   └── src/
 │       ├── agent/     # Agent 核心：agent-runner, vllm-model, tools/
-│       ├── controllers/  # chat, health, memory, models
+│       ├── controllers/  # health, memory, models, sessions
 │       ├── core/      # prompts, skills, todo, memory
-│       └── session/   # session-registry, session-state
+│       ├── ws/        # WebSocket chat handlers
+│       └── session-v2/ # 会话服务与持久化
 ├── shared/            # 共享类型包
 │   └── src/
 │       ├── ws-events.ts  # WebSocket 事件类型
@@ -63,17 +64,23 @@ WebClaw/
 └── pnpm-workspace.yaml
 ```
 
+## 文档导航
+
+- 统一文档入口：`docs/README.md`
+- 前端文档目录：`docs/frontend/`
+- 后端文档目录：`docs/backend/`
+
 ## 关键开发路径
 
 ### 前后端联调常见任务
 
 | 任务 | 涉及文件 |
 |------|---------|
-| 新增 WS 事件 | `shared/src/ws-events.ts` → 后端 controller → 前端 hook |
+| 新增 WS 事件 | `shared/src/ws-events.ts` → `backend/src/ws/` → 前端 hook |
 | 修改消息格式 | `shared/src/session.ts` → 后端 agent-runner → 前端 MessageItem |
 | 新增工具 | `backend/src/agent/tools/` → `tools/index.ts` 注册 |
 | 修改 UI 组件 | `frontend/src/components/` 或 `app/home/components/` |
-| 会话管理 | `backend/src/session/` + `frontend/src/lib/session.ts` |
+| 会话管理 | `backend/src/session-v2/` + `frontend/src/lib/session.ts` |
 
 ### 开发命令
 
@@ -89,4 +96,4 @@ pnpm build            # 全量构建
 - **语言**：中文注释/对话，英文代码/配置
 - **样式**：Tailwind CSS 4
 - **不可变性**：ALWAYS 创建新对象，NEVER 直接修改
-- **详细规范**见各子目录 CLAUDE.md 和 `.claude/rules/`
+- **详细规范**见各子目录说明文档和 `.claude/rules/`

@@ -4,6 +4,7 @@
 
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-agent-core'
+import type { ThinkingLevel } from '@webclaw/shared'
 import { buildWorkerPrompt } from '../core/prompts/system-prompts.js'
 import { createWorkerTools } from './tools/index.js'
 import { createTracker, MAX_SUB_ITERATIONS, MAX_SUB_TOOL_FAILURES } from './types.js'
@@ -12,6 +13,7 @@ export interface WorkerAgentOptions {
   prompt: string
   model: Model<'openai-completions'>
   apiKey: string
+  thinkingLevel?: ThinkingLevel
   temperature?: number
   extraSystemPrompt?: string
   signal?: AbortSignal
@@ -20,10 +22,13 @@ export interface WorkerAgentOptions {
 
 export interface WorkerAgentResult {
   result: string
+  pause?: {
+    prompt: string
+  }
 }
 
 export async function runWorkerAgent(options: WorkerAgentOptions): Promise<WorkerAgentResult> {
-  const { prompt, model, apiKey, temperature, extraSystemPrompt, signal, onEvent } = options
+  const { prompt, model, apiKey, thinkingLevel, temperature, extraSystemPrompt, signal, onEvent } = options
 
   const baseSystemPrompt = buildWorkerPrompt()
   const systemPrompt = [baseSystemPrompt, extraSystemPrompt?.trim()]
@@ -50,6 +55,7 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
     {
       model,
       apiKey,
+      reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
       convertToLlm: (messages: AgentMessage[]) =>
         messages.filter(
@@ -81,6 +87,7 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
   )
 
   let lastAssistantText = ''
+  let pausePrompt: string | undefined
 
   for await (const event of stream) {
     if (event.type === 'turn_end') {
@@ -88,6 +95,12 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
     }
     if (event.type === 'tool_execution_end' && event.isError) {
       tracker.toolFailCount++
+    }
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_end') {
+      const toolCall = (event.assistantMessageEvent as { toolCall?: { name?: string; arguments?: { prompt?: unknown } } }).toolCall
+      if (toolCall?.name === 'request_user_input' && typeof toolCall.arguments?.prompt === 'string' && toolCall.arguments.prompt.trim()) {
+        pausePrompt = toolCall.arguments.prompt.trim()
+      }
     }
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const textParts = (event.message.content as Array<{ type: string; text?: string }>)
@@ -101,5 +114,8 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
     onEvent?.(event)
   }
 
-  return { result: lastAssistantText || '(Worker 未返回文本)' }
+  return {
+    result: lastAssistantText || '(Worker 未返回文本)',
+    pause: pausePrompt ? { prompt: pausePrompt } : undefined,
+  }
 }

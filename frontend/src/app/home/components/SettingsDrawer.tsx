@@ -1,6 +1,7 @@
 import {ChevronDown, Trash2, X} from 'lucide-react'
 import {clsx} from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
+import {createDefaultThinkingConfig, type ThinkingConfig, type ThinkingProtocol} from '@webclaw/shared'
 import type {ModelConfig} from '../../../hooks/useChat'
 import {API_V1} from '../../../config/api.ts'
 
@@ -43,6 +44,8 @@ interface SettingsDrawerProps {
     modelConfig: ModelConfig
     onModelConfigChange: (config: ModelConfig) => void
 }
+
+type InlineDropdownId = 'maxTokens' | 'thinkingProtocol' | 'thinkingLevel'
 
 const MODEL_PRESET_STORAGE_KEY = 'webclaw.modelPresets'
 const ACTIVE_MODEL_PRESET_STORAGE_KEY = 'webclaw.activeModelPresetId'
@@ -91,7 +94,7 @@ export function SettingsDrawer({
     const [isSystemPanelOpen, setIsSystemPanelOpen] = useState(false)
     const [isPromptOptionsOpen, setIsPromptOptionsOpen] = useState(false)
     const [isModelOptionsOpen, setIsModelOptionsOpen] = useState(false)
-    const [isMaxTokensOpen, setIsMaxTokensOpen] = useState(false)
+    const [activeInlineDropdown, setActiveInlineDropdown] = useState<InlineDropdownId | null>(null)
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
     const [isModelPanelOpen, setIsModelPanelOpen] = useState(false)
     const [isMemoryPanelOpen, setIsMemoryPanelOpen] = useState(false)
@@ -111,15 +114,29 @@ export function SettingsDrawer({
     const [modelsLoading, setModelsLoading] = useState(false)
     const [modelsError, setModelsError] = useState<string | null>(null)
     const fetchAbortRef = useRef<AbortController | null>(null)
+    const settingsScrollRef = useRef<HTMLDivElement | null>(null)
+    const maxTokensDropdownRef = useRef<HTMLDivElement | null>(null)
+    const thinkingProtocolDropdownRef = useRef<HTMLDivElement | null>(null)
+    const thinkingLevelDropdownRef = useRef<HTMLDivElement | null>(null)
     const [memoryConfig, setMemoryConfig] = useState<MemoryConfig>({flushTurns: 20, embeddingBaseUrl: ''})
     const [memoryDraftConfig, setMemoryDraftConfig] = useState<MemoryConfig>({flushTurns: 20, embeddingBaseUrl: ''})
     const [memoryFiles, setMemoryFiles] = useState<MemoryFileMeta[]>([])
     const [selectedMemoryFile, setSelectedMemoryFile] = useState<string | null>(null)
     const [selectedMemoryContent, setSelectedMemoryContent] = useState('')
     const [memorySaveStatus, setMemorySaveStatus] = useState<'Saved' | 'Editing'>('Saved')
+    const thinkingConfig = modelConfig.thinking ?? createDefaultThinkingConfig()
 
     const updateModelConfig = (partial: Partial<ModelConfig>) => {
         onModelConfigChange({...modelConfig, ...partial})
+    }
+
+    const updateThinkingConfig = (partial: Partial<ThinkingConfig>) => {
+        updateModelConfig({
+            thinking: {
+                ...thinkingConfig,
+                ...partial,
+            },
+        })
     }
 
     /** 从 vLLM /v1/models 接口获取模型名称 */
@@ -189,8 +206,35 @@ export function SettingsDrawer({
         {key: 'medium', label: 'Middle', hint: '16k', value: 16384},
         {key: 'high', label: 'High', hint: '32k', value: 32768},
     ] as const
+    const thinkingProtocolOptions = [
+        {value: 'off', label: 'Off'},
+        {value: 'qwen', label: 'Qwen'},
+        {value: 'zai', label: 'Z.ai'},
+        {value: 'openai_reasoning', label: 'OpenAI'},
+    ] as const satisfies ReadonlyArray<{value: ThinkingProtocol; label: string}>
+    const thinkingLevelOptions = [
+        {value: 'off', label: 'Off'},
+        {value: 'minimal', label: 'Minimal'},
+        {value: 'low', label: 'Low'},
+        {value: 'medium', label: 'Medium'},
+        {value: 'high', label: 'High'},
+        {value: 'xhigh', label: 'XHigh'},
+    ] as const satisfies ReadonlyArray<{value: ThinkingConfig['level']; label: string}>
     const selectedTokenOption =
         tokenOptions.find((item) => item.key === maxTokenPreset) ?? tokenOptions[0]
+    const selectedThinkingProtocol =
+        thinkingProtocolOptions.find((item) => item.value === thinkingConfig.protocol) ?? thinkingProtocolOptions[0]
+    const selectedThinkingLevel =
+        thinkingLevelOptions.find((item) => item.value === thinkingConfig.level) ?? thinkingLevelOptions[3]
+    const thinkingProtocolSelected = thinkingConfig.protocol !== 'off'
+    const thinkingEnabled = thinkingProtocolSelected && thinkingConfig.enabled
+    const isMaxTokensOpen = activeInlineDropdown === 'maxTokens'
+    const isThinkingProtocolOpen = activeInlineDropdown === 'thinkingProtocol'
+    const isThinkingLevelOpen = activeInlineDropdown === 'thinkingLevel'
+
+    const toggleInlineDropdown = (dropdownId: InlineDropdownId) => {
+        setActiveInlineDropdown((current) => current === dropdownId ? null : dropdownId)
+    }
 
     useEffect(() => {
         // 首次没有模型预设时，按当前模型配置创建一个默认预设，便于后续编辑/切换。
@@ -402,6 +446,59 @@ export function SettingsDrawer({
         return () => window.clearTimeout(timer)
     }, [isMemoryPanelOpen, memoryDraftConfig, memorySaveStatus])
 
+    useEffect(() => {
+        if (!activeInlineDropdown) return
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target
+            if (!(target instanceof Node)) return
+
+            if (
+                maxTokensDropdownRef.current?.contains(target)
+                || thinkingProtocolDropdownRef.current?.contains(target)
+                || thinkingLevelDropdownRef.current?.contains(target)
+            ) {
+                return
+            }
+
+            setActiveInlineDropdown(null)
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setActiveInlineDropdown(null)
+            }
+        }
+
+        document.addEventListener('pointerdown', handlePointerDown)
+        document.addEventListener('keydown', handleKeyDown)
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown)
+            document.removeEventListener('keydown', handleKeyDown)
+        }
+    }, [activeInlineDropdown])
+
+    useEffect(() => {
+        if (!activeInlineDropdown) return
+
+        const node = settingsScrollRef.current
+        if (!node) return
+
+        const handleScroll = () => {
+            setActiveInlineDropdown(null)
+        }
+
+        node.addEventListener('scroll', handleScroll, {passive: true})
+        return () => node.removeEventListener('scroll', handleScroll)
+    }, [activeInlineDropdown])
+
+    useEffect(() => {
+        if (!isOpen || isSystemPanelOpen || isModelPanelOpen || isMemoryPanelOpen) {
+            setActiveInlineDropdown(null)
+        }
+    }, [isMemoryPanelOpen, isModelPanelOpen, isOpen, isSystemPanelOpen])
+
     const handlePromptSelection = (value: string) => {
         setSelectedPromptId(value)
         if (value === NEW_PROMPT_VALUE) {
@@ -522,7 +619,7 @@ export function SettingsDrawer({
             </div>
 
             {/* ---------- 抽屉内容 ---------- */}
-            <div className="relative h-[calc(100vh-48px)] overflow-y-auto px-6 py-5">
+            <div ref={settingsScrollRef} className="relative h-[calc(100vh-48px)] overflow-y-auto px-6 py-5">
                 <div className="selector-container space-y-3">
                     <div className="settings-item settings-model-selector">
                         <div className="item-input-form-field">
@@ -567,27 +664,52 @@ export function SettingsDrawer({
 
                 <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal"/>
 
-                {/* Function Calling 开关 */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h3 className="text-sm font-semibold text-text-primary">Function Calling</h3>
-                        <p className="text-xs text-text-secondary mt-0.5">启用后模型可调用工具</p>
+                <div className="space-y-5">
+                    {/* Function Calling 开关 */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-sm font-semibold text-text-primary">Function Calling</h3>
+                            <p className="text-xs text-text-secondary mt-0.5">启用后模型可调用工具</p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={modelConfig.enableTools}
+                            onClick={() => updateModelConfig({enableTools: !modelConfig.enableTools})}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+                                modelConfig.enableTools
+                                    ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
+                                    : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
+                            }`}
+                        >
+                            <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                                modelConfig.enableTools ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
+                            }`}/>
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={modelConfig.enableTools}
-                        onClick={() => updateModelConfig({enableTools: !modelConfig.enableTools})}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
-                            modelConfig.enableTools
-                                ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
-                                : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
-                        }`}
-                    >
-                        <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
-                            modelConfig.enableTools ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
-                        }`}/>
-                    </button>
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <h3 className="text-sm font-semibold text-text-primary">Thinking enabled</h3>
+                            <p className="mt-0.5 text-xs text-text-secondary">显示折叠思考</p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={thinkingEnabled}
+                            disabled={!thinkingProtocolSelected}
+                            onClick={() => updateThinkingConfig({enabled: !thinkingConfig.enabled})}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors ${
+                                thinkingEnabled
+                                    ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
+                                    : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
+                            } ${!thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''}`}
+                        >
+                            <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                                thinkingEnabled ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
+                            }`}/>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal"/>
@@ -622,60 +744,181 @@ export function SettingsDrawer({
 
                 <div className="my-6 h-px w-full bg-border" role="separator" aria-orientation="horizontal"/>
 
-                <div className="settings-item settings-item-column">
-                    <div className="item-about">
-                        <div className="item-description">
-                            <h3 className="item-description-title text-sm font-semibold text-text-primary">Max
-                                tokens</h3>
+                <div className="space-y-5">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-semibold text-text-primary">Max tokens</h3>
+                            <p className="mt-0.5 text-xs text-text-secondary">回复上限</p>
+                        </div>
+                        <div ref={maxTokensDropdownRef} className="relative w-[128px] shrink-0">
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleInlineDropdown('maxTokens')}
+                                    className="flex w-full items-center justify-between rounded-2xl border border-border bg-surface-raised px-3 py-2 text-sm shadow-sm"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={isMaxTokensOpen}
+                                    aria-label="Max tokens"
+                                >
+                                    <div className="flex w-full min-w-0 items-center justify-between pr-2">
+                                        <span className="truncate text-text-primary">{selectedTokenOption.label}</span>
+                                        <span className="text-xs text-text-muted">{selectedTokenOption.hint}</span>
+                                    </div>
+                                    <ChevronDown className="size-4 text-text-muted"/>
+                                </button>
+
+                                {isMaxTokensOpen && (
+                                    <div
+                                        className="absolute right-0 z-20 mt-2 max-h-56 w-full overflow-auto rounded-2xl border border-border bg-surface-raised shadow-sm"
+                                        role="listbox"
+                                        aria-label="Max tokens options"
+                                    >
+                                        {tokenOptions.map((item) => {
+                                            const active = item.key === maxTokenPreset
+                                            return (
+                                                <button
+                                                    key={item.key}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        updateModelConfig({maxTokens: item.value})
+                                                        setActiveInlineDropdown(null)
+                                                    }}
+                                                    className={clsx(
+                                                        'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                        active ? 'bg-hover text-text-primary' : 'bg-surface-raised text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                    )}
+                                                    role="option"
+                                                    aria-selected={active}
+                                                >
+                                                    <span>{item.label}</span>
+                                                    <span className="text-xs text-text-muted">{item.hint}</span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                    <div className="item-input-form-field mt-3">
-                        <div className="relative">
-                            <button
-                                type="button"
-                                onClick={() => setIsMaxTokensOpen((prev) => !prev)}
-                                className="flex w-full items-center justify-between rounded-2xl border border-border bg-surface-raised px-3 py-2 text-sm shadow-sm"
-                                aria-haspopup="listbox"
-                                aria-expanded={isMaxTokensOpen}
-                                aria-label="Max tokens"
-                            >
-                                <div className="flex w-full items-center justify-between pr-2">
-                                    <span className="text-text-primary">{selectedTokenOption.label}</span>
-                                    <span className="text-xs text-text-muted">{selectedTokenOption.hint}</span>
-                                </div>
-                                <ChevronDown className="size-4 text-text-muted"/>
-                            </button>
 
-                            {isMaxTokensOpen && (
-                                <div
-                                    className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-sm"
-                                    role="listbox"
-                                    aria-label="Max tokens options"
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-semibold text-text-primary">Thinking protocol</h3>
+                            <p className="mt-0.5 text-xs text-text-secondary">思考协议</p>
+                        </div>
+                        <div ref={thinkingProtocolDropdownRef} className="relative w-[128px] shrink-0">
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleInlineDropdown('thinkingProtocol')}
+                                    className="flex w-full items-center justify-between rounded-2xl border border-border bg-surface-raised px-3 py-2 text-sm shadow-sm"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={isThinkingProtocolOpen}
+                                    aria-label="Thinking protocol"
                                 >
-                                    {tokenOptions.map((item) => {
-                                        const active = item.key === maxTokenPreset
-                                        return (
-                                            <button
-                                                key={item.key}
-                                                type="button"
-                                                onClick={() => {
-                                                    updateModelConfig({maxTokens: item.value})
-                                                    setIsMaxTokensOpen(false)
-                                                }}
-                                                className={clsx(
-                                                    'flex w-full items-center justify-between px-3 py-2 text-sm',
-                                                    active ? 'bg-hover text-text-primary' : 'bg-surface-raised text-text-secondary hover:bg-hover hover:text-text-primary',
-                                                )}
-                                                role="option"
-                                                aria-selected={active}
-                                            >
-                                                <span>{item.label}</span>
-                                                <span className="text-xs text-text-muted">{item.hint}</span>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
+                                    <div className="flex w-full min-w-0 items-center justify-between pr-2">
+                                        <span className="truncate text-text-primary">{selectedThinkingProtocol.label}</span>
+                                        <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'set' : 'off'}</span>
+                                    </div>
+                                    <ChevronDown className="size-4 text-text-muted"/>
+                                </button>
+
+                                {isThinkingProtocolOpen && (
+                                    <div
+                                        className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-2xl border border-border bg-surface-raised shadow-sm"
+                                        role="listbox"
+                                        aria-label="Thinking protocol options"
+                                    >
+                                        {thinkingProtocolOptions.map((item) => {
+                                            const active = item.value === thinkingConfig.protocol
+                                            return (
+                                                <button
+                                                    key={item.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        updateThinkingConfig({
+                                                            protocol: item.value,
+                                                            enabled: item.value === 'off' ? false : thinkingConfig.enabled,
+                                                        })
+                                                        setActiveInlineDropdown(null)
+                                                    }}
+                                                    className={clsx(
+                                                        'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                        active ? 'bg-hover text-text-primary' : 'bg-surface-raised text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                    )}
+                                                    role="option"
+                                                    aria-selected={active}
+                                                >
+                                                    <span>{item.label}</span>
+                                                    <span className="text-xs text-text-muted">{item.value === 'off' ? 'off' : 'on'}</span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-semibold text-text-primary">Thinking level</h3>
+                            <p className="mt-0.5 text-xs text-text-secondary">思考强度</p>
+                        </div>
+                        <div ref={thinkingLevelDropdownRef} className="relative w-[128px] shrink-0">
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!thinkingProtocolSelected) return
+                                        toggleInlineDropdown('thinkingLevel')
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-2xl border border-border bg-surface-raised px-3 py-2 text-sm shadow-sm ${
+                                        !thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''
+                                    }`}
+                                    aria-haspopup="listbox"
+                                    aria-expanded={isThinkingLevelOpen}
+                                    aria-label="Thinking level"
+                                    disabled={!thinkingProtocolSelected}
+                                >
+                                    <div className="flex w-full min-w-0 items-center justify-between pr-2">
+                                        <span className="truncate text-text-primary">{selectedThinkingLevel.label}</span>
+                                        <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'on' : 'off'}</span>
+                                    </div>
+                                    <ChevronDown className="size-4 text-text-muted"/>
+                                </button>
+
+                                {isThinkingLevelOpen && thinkingProtocolSelected && (
+                                    <div
+                                        className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-2xl border border-border bg-surface-raised shadow-sm"
+                                        role="listbox"
+                                        aria-label="Thinking level options"
+                                    >
+                                        {thinkingLevelOptions.map((item) => {
+                                            const active = item.value === thinkingConfig.level
+                                            return (
+                                                <button
+                                                    key={item.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        updateThinkingConfig({level: item.value})
+                                                        setActiveInlineDropdown(null)
+                                                    }}
+                                                    className={clsx(
+                                                        'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                        active ? 'bg-hover text-text-primary' : 'bg-surface-raised text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                    )}
+                                                    role="option"
+                                                    aria-selected={active}
+                                                >
+                                                    <span>{item.label}</span>
+                                                    <span className="text-xs text-text-muted">{item.value}</span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

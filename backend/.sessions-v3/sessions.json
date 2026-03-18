@@ -1,0 +1,296 @@
+{
+  "entries": {
+    "agent:default:webchat:default:dm:peer_1773381329943_mkl9xwqw": {
+      "key": "agent:default:webchat:default:dm:peer_1773381329943_mkl9xwqw",
+      "sessionId": "sess_1773757463938_wg612ooa",
+      "branchId": "0f8fd524",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773760536528,
+      "createdAt": 1773757463938,
+      "title": "你好",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773381329943_mkl9xwqw",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773381329943_mkl9xwqw"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773381329943_mkl9xwqw",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "contextTokens": 0
+      },
+      "model": "Qwen3-4B-Instruct-2507-FP8",
+      "latestPreview": "你是谁",
+      "workflow": {
+        "runId": "run_1773760536034_wdr30z6j",
+        "mode": "simple",
+        "status": "completed",
+        "startedAt": 1773760536035,
+        "updatedAt": 1773760536528,
+        "completedAt": 1773760536528
+      }
+    },
+    "agent:default:webchat:default:dm:peer_1773760555066_8m18k0vw": {
+      "key": "agent:default:webchat:default:dm:peer_1773760555066_8m18k0vw",
+      "sessionId": "sess_1773760557786_sayf00um",
+      "branchId": "02abc0fc",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773763072337,
+      "createdAt": 1773760557786,
+      "title": "你好",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773760555066_8m18k0vw",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773760555066_8m18k0vw"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773760555066_8m18k0vw",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "contextTokens": 0
+      },
+      "model": "Qwen3-4B-Instruct-2507-FP8",
+      "latestPreview": "你好",
+      "workflow": {
+        "runId": "run_1773763070991_xmt568b2",
+        "mode": "simple",
+        "status": "completed",
+        "startedAt": 1773763070992,
+        "updatedAt": 1773763072337,
+        "completedAt": 1773763072337
+      }
+    },
+    "agent:default:webchat:default:dm:peer_1773763078693_djo351im": {
+      "key": "agent:default:webchat:default:dm:peer_1773763078693_djo351im",
+      "sessionId": "sess_1773763087089_qhndnsp7",
+      "branchId": "61b8ee4a",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773797245371,
+      "createdAt": 1773763087089,
+      "title": "111",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773763078693_djo351im",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773763078693_djo351im"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773763078693_djo351im",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "contextTokens": 0
+      },
+      "model": "qwen3-coder-30b-instruct",
+      "latestPreview": "我是通义千问，是阿里巴巴集团旗下的通义实验室自主研发的超大规模语言模型。我能够回答问题、创作文字、进行逻辑推理、编程等。如果你有任何问题或需要帮助，我会尽力提供支持。",
+      "workflow": {
+        "runId": "run_1773797243782_ox14izur",
+        "mode": "simple",
+        "status": "completed",
+        "startedAt": 1773797243783,
+        "updatedAt": 1773797245371,
+        "completedAt": 1773797245371
+      }
+    },
+    "agent:default:webchat:default:dm:peer_1773797257681_b4jrzaqp": {
+      "key": "agent:default:webchat:default:dm:peer_1773797257681_b4jrzaqp",
+      "sessionId": "sess_1773797274253_tvgd11fa",
+      "branchId": "b27e0e50",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773798302108,
+      "createdAt": 1773797274253,
+      "title": "查看张三的信息",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773797257681_b4jrzaqp",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773797257681_b4jrzaqp"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773797257681_b4jrzaqp",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 8502,
+        "outputTokens": 2537,
+        "totalTokens": 35939,
+        "contextTokens": 0
+      },
+      "model": "glm-4.7",
+      "latestPreview": "查询到 **2条** 张三的详细信息： --- ### 1. 张三（已退休） | 字段 | 信息 | |------|------| | 姓名 | 张三 | | 性别 | 男 | | 出生年月 | 1957.09 | | 民族 | 黎族 |...",
+      "workflow": {
+        "runId": "run_1773798281936_22zsivug",
+        "mode": "simple",
+        "status": "completed",
+        "startedAt": 1773798281940,
+        "updatedAt": 1773798302108,
+        "completedAt": 1773798302108
+      }
+    },
+    "agent:default:webchat:default:dm:peer_1773798681340_kthsxkys": {
+      "key": "agent:default:webchat:default:dm:peer_1773798681340_kthsxkys",
+      "sessionId": "sess_1773798683609_avblfqro",
+      "branchId": "4c06cc77",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773800892861,
+      "createdAt": 1773798683610,
+      "title": "查看张三的信息",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773798681340_kthsxkys",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773798681340_kthsxkys"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773798681340_kthsxkys",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 25227,
+        "outputTokens": 6323,
+        "totalTokens": 68247,
+        "contextTokens": 0
+      },
+      "model": "glm-4.7",
+      "latestPreview": "写一个py",
+      "workflow": {
+        "runId": "run_1773800876536_1v0six4y",
+        "mode": "simple",
+        "status": "completed",
+        "startedAt": 1773800876536,
+        "updatedAt": 1773800892861,
+        "completedAt": 1773800892861
+      }
+    },
+    "agent:default:webchat:default:dm:peer_1773800959618_luxxh1fb": {
+      "key": "agent:default:webchat:default:dm:peer_1773800959618_luxxh1fb",
+      "sessionId": "sess_1773800985421_9sie4rn7",
+      "branchId": "7118703d",
+      "kind": "main",
+      "channel": "webchat",
+      "updatedAt": 1773801232410,
+      "createdAt": 1773800985421,
+      "title": "查看比张三年龄大的人",
+      "titleSource": "manual",
+      "titleStatus": "ready",
+      "displayName": "peer_1773800959618_luxxh1fb",
+      "origin": {
+        "provider": "webchat",
+        "accountId": "default",
+        "peerId": "peer_1773800959618_luxxh1fb"
+      },
+      "route": {
+        "channel": "webchat",
+        "chatType": "dm",
+        "peerId": "peer_1773800959618_luxxh1fb",
+        "accountId": "default"
+      },
+      "deliveryContext": {
+        "channel": "webchat",
+        "accountId": "default"
+      },
+      "stats": {
+        "inputTokens": 1168,
+        "outputTokens": 790,
+        "totalTokens": 3430,
+        "contextTokens": 0
+      },
+      "model": "glm-4.7",
+      "latestPreview": "已为你创建任务计划： ## 查询比张三年龄大的人员 **任务列表：** 1. **查询张三的基本信息，获取其年龄数据** - 正在查询张三的基本信息和年龄 2. **根据张三的年龄，查询比他年龄大的所有人员信息** - 正在查询比张三年龄大...",
+      "workflow": {
+        "runId": "run_1773801130399_r27jx4n9",
+        "mode": "plan",
+        "status": "paused",
+        "todo": {
+          "items": [
+            {
+              "content": "查询张三的基本信息，获取其年龄数据",
+              "status": "completed",
+              "activeForm": "正在查询张三的基本信息和年龄",
+              "result": "查询到2个名为\"张三\"的人员，以下是他们的基本信息和年龄数据：\n\n## 张三（第1位）\n- **性别**：男\n- **出生年月**：1957年9月\n- **年龄**：约67岁（按2024年计算）\n- **工作单位及职务**：2017年10月退休\n- **机构名称**：1ab44fdabc31baaf84776637f0aa2585\n\n## 张三（第2位）\n- **性别**：未填写\n- **出生年月**：2000年1月\n- **年龄**：约24岁（按2024年计算）\n- **工作单位及职务**：市委秘书\n- **机构名称**：1ab44fdabc31baaf84776637f0aa2585\n\n**说明**：查询到2个同名人员，年龄分别为约67岁和24岁。年龄是根据出生年月按2024年计算的近似值。如需更精确的年龄或需要特定某位张三的详细信息，请提供更多区分信息。"
+            },
+            {
+              "content": "根据张三的年龄，查询比他年龄大的所有人员信息",
+              "status": "in_progress",
+              "activeForm": "正在查询比张三年龄大的人员"
+            },
+            {
+              "content": "整理并展示查询结果，包括人员姓名、年龄等关键信息",
+              "status": "pending",
+              "activeForm": "正在整理和展示查询结果"
+            }
+          ],
+          "updatedAt": 1773801232410
+        },
+        "pause": {
+          "pauseId": "pause_1773801232408_rpa46smy",
+          "runId": "run_1773801130399_r27jx4n9",
+          "stepId": "step_1773801210704_72r5k16q",
+          "prompt": "数据库中找到两个叫\"张三\"的人员：\n1. 张三（男），出生年月：1957.09\n2. 张三（性别未填写），出生年月：2000.01\n\n请问您想根据哪个张三的年龄来查询比他大的人员？",
+          "createdAt": 1773801232408
+        },
+        "startedAt": 1773801130400,
+        "updatedAt": 1773801232410,
+        "completedAt": 1773801232410
+      }
+    }
+  }
+}

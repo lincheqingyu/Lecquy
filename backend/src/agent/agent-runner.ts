@@ -6,6 +6,7 @@
 
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentMessage, type AgentEvent } from '@mariozechner/pi-agent-core'
+import type { ThinkingLevel } from '@webclaw/shared'
 import { buildSimpleSystemPrompt } from '../core/prompts/system-prompts.js'
 import { createSimpleTools } from './tools/index.js'
 import { createTracker, MAX_ITERATIONS, MAX_TOOL_FAILURES } from './types.js'
@@ -22,6 +23,7 @@ export interface SimpleAgentOptions {
   messages: AgentMessage[]
   model: Model<'openai-completions'>
   apiKey: string
+  thinkingLevel?: ThinkingLevel
   temperature?: number
   extraSystemPrompt?: string
   signal?: AbortSignal
@@ -45,6 +47,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     messages,
     model,
     apiKey,
+    thinkingLevel,
     temperature,
     extraSystemPrompt,
     signal,
@@ -76,6 +79,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     {
       model,
       apiKey,
+      reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(

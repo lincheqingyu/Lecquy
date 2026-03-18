@@ -10,6 +10,7 @@ import { createEditFileTool } from './edit-file.js'
 import { createWriteFileTool } from './write-file.js'
 import { createSkillTool } from './skill.js'
 import { createTodoWriteTool } from './todo-write.js'
+import { createRequestUserInputTool } from './request-user-input.js'
 import { createExtensionTools } from '../../extensions/index.js'
 import {
   bindSessionService,
@@ -18,9 +19,9 @@ import {
   createSessionsSendTool,
   createSessionsSpawnTool,
 } from './session-tools/index.js'
-import type { SessionService } from '../../session-v2/index.js'
+import type { SessionRuntimeService } from '../../runtime/index.js'
 
-export function initializeSessionTools(service: SessionService): void {
+export function initializeSessionTools(service: SessionRuntimeService): void {
   bindSessionService(service)
 }
 
@@ -46,6 +47,7 @@ export function createManagerTools(todoManager: TodoManager): AgentTool<any>[] {
     createReadFileTool(),
     createSkillTool(),
     createTodoWriteTool(todoManager),
+    createRequestUserInputTool(),
     createSessionsListTool(),
     createSessionsHistoryTool(),
     createSessionsSendTool(),
@@ -61,6 +63,7 @@ export function createWorkerTools(): AgentTool<any>[] {
     createEditFileTool(),
     createWriteFileTool(),
     createSkillTool(),
+    createRequestUserInputTool(),
     createSessionsListTool(),
     createSessionsHistoryTool(),
     createSessionsSendTool(),
@@ -74,3 +77,4 @@ export { createEditFileTool } from './edit-file.js'
 export { createWriteFileTool } from './write-file.js'
 export { createSkillTool } from './skill.js'
 export { createTodoWriteTool } from './todo-write.js'
+export { createRequestUserInputTool } from './request-user-input.js'

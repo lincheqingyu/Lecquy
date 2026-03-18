@@ -1,24 +1,10 @@
+import {
+  extractSessionText,
+  extractSessionThinking,
+  type SessionMessageRecord,
+  type SessionProjection,
+} from '@webclaw/shared'
 import type { ChatMessage } from '../hooks/useChat'
-
-export interface SessionMessageRecord {
-  role: string
-  content: unknown
-  timestamp?: number
-}
-
-export interface SessionListEntry {
-  key: string
-  sessionId: string
-  kind: string
-  channel: string
-  updatedAt: number
-  createdAt: number
-  title?: string
-  titleSource?: 'route' | 'auto' | 'manual'
-  titleStatus?: 'pending' | 'ready' | 'failed'
-  displayName?: string
-  messages?: SessionMessageRecord[]
-}
 
 export interface SessionListItemVm {
   id: string
@@ -28,31 +14,11 @@ export interface SessionListItemVm {
   createdAt: number
   sessionId: string
   channel: string
+  peerId?: string
 }
 
 export function extractMessageText(content: unknown): string {
-  if (typeof content === 'string') return content
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part
-        if (!part || typeof part !== 'object') return ''
-        const candidate = part as { type?: string; text?: unknown }
-        return candidate.type === 'text' && typeof candidate.text === 'string'
-          ? candidate.text
-          : ''
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-
-  if (content && typeof content === 'object') {
-    const candidate = content as { text?: unknown }
-    if (typeof candidate.text === 'string') return candidate.text
-  }
-
-  return ''
+  return extractSessionText(content)
 }
 
 function normalizePreview(text: string): string {
@@ -61,8 +27,8 @@ function normalizePreview(text: string): string {
   return normalized.length > 40 ? `${normalized.slice(0, 40)}...` : normalized
 }
 
-export function toSessionListItemVm(entry: SessionListEntry): SessionListItemVm {
-  const latest = entry.messages?.[entry.messages.length - 1]
+export function toSessionListItemVm(entry: SessionProjection): SessionListItemVm {
+  const latest = entry.recentMessages?.[entry.recentMessages.length - 1]
   const latestText = latest ? extractMessageText(latest.content) : ''
 
   return {
@@ -73,18 +39,25 @@ export function toSessionListItemVm(entry: SessionListEntry): SessionListItemVm 
     createdAt: entry.createdAt,
     sessionId: entry.sessionId,
     channel: entry.channel,
+    peerId: entry.origin?.peerId,
   }
 }
 
 export function toChatMessages(records: SessionMessageRecord[]): ChatMessage[] {
   return records
     .filter((record) => record.role === 'user' || record.role === 'assistant')
-    .map((record, index) => ({
-      id: `history_${record.role}_${record.timestamp ?? Date.now()}_${index}`,
-      role: record.role as ChatMessage['role'],
-      content: extractMessageText(record.content),
-      timestamp: record.timestamp ?? Date.now(),
-    }))
+    .map((record, index) => {
+      const thinkingContent = extractSessionThinking(record.content)
+      return {
+        id: `history_${record.role}_${record.timestamp ?? Date.now()}_${index}`,
+        role: record.role as ChatMessage['role'],
+        content: extractMessageText(record.content),
+        thinkingContent: thinkingContent || undefined,
+        hasThinking: thinkingContent.trim().length > 0,
+        isThinkingExpanded: false,
+        timestamp: record.timestamp ?? Date.now(),
+      }
+    })
 }
 
 export function parsePeerIdFromSessionKey(sessionKey: string): string | null {
