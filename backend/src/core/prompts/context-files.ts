@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolveRuntimePaths, resolveWorkspaceRoot } from '../runtime-paths.js'
 
 export type PromptContextRole = 'simple' | 'manager' | 'worker'
 export type ContextFileName = (typeof ALL_CONTEXT_FILE_NAMES)[number]
@@ -10,6 +10,8 @@ export type ManagedContextFileName = (typeof MANAGED_CONTEXT_FILE_NAMES)[number]
 
 export interface PromptContextPaths {
   readonly workspaceDir: string
+  readonly backendDir: string
+  readonly skillsDir: string
   readonly rootDir: string
   readonly memoryDir: string
   readonly artifactsDir: string
@@ -69,9 +71,6 @@ const WORKER_CONTEXT_FILE_ORDER = [
   'TOOLS.md',
 ] as const
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_WORKSPACE_DIR = path.resolve(MODULE_DIR, '../../../../')
-
 const CONTEXT_FILE_META: Record<ContextFileName, { label: string; description: string; editable: boolean }> = {
   'SOUL.md': {
     label: '.ZxhClaw/SOUL.md',
@@ -103,10 +102,6 @@ const CONTEXT_FILE_META: Record<ContextFileName, { label: string; description: s
     description: '系统托管的工具环境说明与使用约定。',
     editable: false,
   },
-}
-
-function toAbsolute(workspaceDir?: string): string {
-  return path.resolve(workspaceDir ?? DEFAULT_WORKSPACE_DIR)
 }
 
 async function readTextIfExists(filePath: string): Promise<string> {
@@ -152,7 +147,7 @@ function buildManagedToolsContent(paths: PromptContextPaths): string {
     `- Prompt 上下文目录：${paths.rootDir}`,
     `- AI 产物目录：${paths.artifactsDir}`,
     `- 文档产物目录：${paths.artifactsDocsDir}`,
-    `- 技能目录：${path.join(paths.workspaceDir, 'skills')}`,
+    `- 技能目录：${paths.skillsDir}`,
     `- 文档目录：${path.join(paths.workspaceDir, 'docs')}`,
     '',
     '## 使用约定',
@@ -166,15 +161,18 @@ function buildManagedToolsContent(paths: PromptContextPaths): string {
 }
 
 export function resolvePromptContextPaths(workspaceDir?: string): PromptContextPaths {
-  const baseDir = toAbsolute(workspaceDir)
-  const rootDir = path.join(baseDir, '.ZxhClaw')
-  const memoryDir = path.join(rootDir, 'memory')
-  const artifactsDir = path.join(rootDir, 'artifacts')
-  const artifactsDocsDir = path.join(artifactsDir, 'docs')
+  const baseDir = resolveWorkspaceRoot(workspaceDir)
+  const runtimePaths = resolveRuntimePaths(baseDir)
+  const rootDir = runtimePaths.runtimeRootDir
+  const memoryDir = runtimePaths.memoryDir
+  const artifactsDir = runtimePaths.artifactsDir
+  const artifactsDocsDir = runtimePaths.artifactsDocsDir
   const legacyMemoryDir = path.join(baseDir, '.memory')
 
   return {
     workspaceDir: baseDir,
+    backendDir: runtimePaths.backendDir,
+    skillsDir: runtimePaths.backendSkillsDir,
     rootDir,
     memoryDir,
     artifactsDir,

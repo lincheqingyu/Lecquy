@@ -38,6 +38,8 @@ export function ConversationSidebar({
 }: ConversationSidebarProps) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const collapsedIconShellClass = 'inline-flex h-9 w-9 items-center justify-center rounded-full'
+  const collapsedGlyphClass = 'size-[18px] shrink-0'
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -60,25 +62,38 @@ export function ConversationSidebar({
       aria-label="会话管理栏"
     >
       <div className="flex h-full flex-col">
-        <div className={collapsed ? 'flex h-16 shrink-0 items-center justify-center px-3' : 'flex h-[4.5rem] shrink-0 items-center px-4'}>
-          {collapsed ? (
+        {collapsed ? (
+          <div className="shrink-0 px-3 pb-1.5 pt-3">
             <button
               type="button"
               onClick={onToggleCollapse}
               className={[
-                'inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-secondary',
+                'flex h-11 w-full items-center justify-center rounded-2xl text-text-secondary',
                 'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
               ].join(' ')}
               aria-label="展开会话栏"
               title="展开会话栏"
             >
-              <PanelLeftOpen className="size-[18px] shrink-0" />
+              <span className={collapsedIconShellClass}>
+                <PanelLeftOpen className={[collapsedGlyphClass, 'translate-x-px'].join(' ')} />
+              </span>
             </button>
-          ) : (
-            <div className="flex w-full items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-serif text-[2.1rem] leading-none tracking-[-0.06em] text-text-primary">
-                  ZxhClaw
+          </div>
+        ) : (
+          <div className="shrink-0 px-3 pb-2 pt-3">
+            <div className="grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-3 rounded-2xl">
+              <div className="inline-flex h-9 w-9 items-center justify-center justify-self-center overflow-visible">
+                <img
+                  src="/lecquy-mark.png"
+                  alt="Lecquy"
+                  className="block h-7.5 w-7.5 shrink-0 translate-y-[3px] scale-[1.24] object-contain"
+                  loading="eager"
+                />
+              </div>
+
+              <div className="flex min-w-0 items-center">
+                <div className="overflow-visible whitespace-nowrap pb-[3px] text-[1.5rem] font-semibold leading-[1.08] tracking-[-0.045em] text-text-primary">
+                  Lecquy
                 </div>
               </div>
 
@@ -86,7 +101,7 @@ export function ConversationSidebar({
                 type="button"
                 onClick={onToggleCollapse}
                 className={[
-                  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-text-secondary',
+                  'inline-flex h-9 w-9 shrink-0 items-center justify-center justify-self-end rounded-xl text-text-secondary',
                   'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
                 ].join(' ')}
                 aria-label="收起会话栏"
@@ -95,8 +110,8 @@ export function ConversationSidebar({
                 <PanelLeftClose className="size-[18px] shrink-0" />
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="px-3 pb-3">
           <div className="flex flex-col gap-1.5">
@@ -104,49 +119,65 @@ export function ConversationSidebar({
               type="button"
               onClick={onCreateConversation}
               className={[
-                'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left',
-                'transition-colors hover:bg-sidebar-hover',
+                collapsed
+                  ? 'flex h-11 w-full items-center justify-center rounded-2xl text-text-primary transition-colors hover:bg-sidebar-hover'
+                  : 'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left transition-colors hover:bg-sidebar-hover',
               ].join(' ')}
               aria-label="新建会话"
               title="新建会话"
             >
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-active text-text-secondary">
-                <Plus className="size-4" />
-              </span>
               <span
                 className={[
-                  'overflow-hidden whitespace-nowrap text-sm font-medium text-text-primary transition-[opacity,width] duration-200',
-                  collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                  collapsedIconShellClass,
+                  'bg-sidebar-active text-text-secondary',
+                  collapsed ? 'shrink-0' : '',
                 ].join(' ')}
               >
-                新建会话
+                <Plus className={[collapsedGlyphClass, 'translate-y-px'].join(' ')} />
               </span>
+              {!collapsed && (
+                <span className="overflow-hidden whitespace-nowrap text-sm font-medium text-text-primary transition-[opacity,width] duration-200">
+                  新建会话
+                </span>
+              )}
             </button>
 
             <button
               type="button"
               onClick={onOpenSessions}
               className={[
-                'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left',
-                activeView === 'sessions'
-                  ? 'bg-sidebar-active text-text-primary'
-                  : 'text-text-primary transition-colors hover:bg-sidebar-hover',
+                collapsed
+                  ? [
+                      'flex h-11 w-full items-center justify-center rounded-2xl transition-colors',
+                      activeView === 'sessions'
+                        ? 'text-text-primary'
+                        : 'text-text-primary hover:bg-sidebar-hover',
+                    ].join(' ')
+                  : [
+                      'grid h-11 w-full grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3 rounded-2xl text-left',
+                      activeView === 'sessions'
+                        ? 'bg-sidebar-active text-text-primary'
+                        : 'text-text-primary transition-colors hover:bg-sidebar-hover',
+                    ].join(' '),
               ].join(' ')}
               aria-label="会话"
               title="会话"
               aria-current={activeView === 'sessions' ? 'page' : undefined}
             >
-              <span className="inline-flex h-9 w-9 items-center justify-center text-text-primary">
-                <MessageSquareText className="size-5" />
-              </span>
               <span
                 className={[
-                  'overflow-hidden whitespace-nowrap text-sm font-medium transition-[opacity,width] duration-200',
-                  collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                  collapsedIconShellClass,
+                  'text-text-primary',
+                  collapsed && activeView === 'sessions' ? 'rounded-full bg-sidebar-active' : '',
                 ].join(' ')}
               >
-                会话
+                <MessageSquareText className={[collapsedGlyphClass, 'translate-y-px'].join(' ')} />
               </span>
+              {!collapsed && (
+                <span className="overflow-hidden whitespace-nowrap text-sm font-medium transition-[opacity,width] duration-200">
+                  会话
+                </span>
+              )}
             </button>
           </div>
         </div>

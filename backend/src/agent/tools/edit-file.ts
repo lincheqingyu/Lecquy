@@ -3,21 +3,17 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { Type } from '@sinclair/typebox'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import { TOOL_OUTPUT_LIMIT } from '../types.js'
+import { resolvePathWithinRoot, resolveWorkspaceRoot } from '../../core/runtime-paths.js'
 
 /** 工作空间根目录 */
-const PROJECT_ROOT = process.cwd()
+const PROJECT_ROOT = resolveWorkspaceRoot()
 
 /** 确保路径保持在工作空间内 */
 function safePath(p: string): string {
-  const resolved = resolve(PROJECT_ROOT, p)
-  if (!resolved.startsWith(PROJECT_ROOT)) {
-    throw new Error(`路径逃逸工作空间: ${p}`)
-  }
-  return resolved
+  return resolvePathWithinRoot(PROJECT_ROOT, p)
 }
 
 export function createEditFileTool(): AgentTool<typeof parameters> {

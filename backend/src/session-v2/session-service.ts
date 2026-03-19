@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import { completeSimple, type AssistantMessage, type UserMessage } from '@mariozechner/pi-ai'
 import type { SessionEntry, SessionRouteContext, SessionStats, SessionTitleSource, SessionTitleStatus } from '@webclaw/shared'
@@ -7,6 +6,7 @@ import { getConfig, type Env } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runSimpleAgent, runWorkerAgent } from '../agent/index.js'
+import { resolveRuntimePaths } from '../core/runtime-paths.js'
 import { resolveSessionKey } from './session-key.js'
 import { shouldRotateSession } from './session-policy.js'
 import { applyContextPruning } from './session-pruner.js'
@@ -98,7 +98,7 @@ export class SessionService {
 
   constructor(config = getConfig()) {
     this.cfg = config
-    this.store = new SessionStore(join(process.cwd(), this.cfg.SESSION_STORE_DIR))
+    this.store = new SessionStore(resolveRuntimePaths(undefined, this.cfg.SESSION_STORE_DIR).sessionStoreDir)
     this.pruner = {
       mode: this.cfg.SESSION_PRUNING_MODE,
       ttlMs: parseDurationMs(this.cfg.SESSION_PRUNING_TTL),

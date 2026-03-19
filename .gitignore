@@ -11,8 +11,13 @@ dist/
 .env.*.local
 
 # 会话数据
-.sessions/
+.ZxhClaw/sessions/
 .sessions-v2/
+.sessions-v3/
+backend/.memory/
+backend/.sessions-v2/
+backend/.sessions-v3/
+backend/.ZxhClaw/
 .ZxhClaw/artifacts/docs/*
 !.ZxhClaw/artifacts/docs/.gitkeep
 

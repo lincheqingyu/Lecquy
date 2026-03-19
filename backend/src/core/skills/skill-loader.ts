@@ -7,6 +7,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { AgentTool } from '@mariozechner/pi-agent-core'
+import { resolveRuntimePaths } from '../runtime-paths.js'
 
 /** 解析后的技能数据 */
 export interface Skill {
@@ -157,9 +158,9 @@ class SkillLoader {
   }
 }
 
-/** 获取技能目录路径（项目根目录下的 skills/） */
+/** 获取技能目录路径（backend/skills） */
 function getSkillsDir(): string {
-  return resolve(process.cwd(), 'skills')
+  return resolveRuntimePaths().backendSkillsDir
 }
 
 /** 全局技能加载器实例 */

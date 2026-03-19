@@ -6,9 +6,10 @@ import { execSync } from 'node:child_process'
 import { Type } from '@sinclair/typebox'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import { TOOL_OUTPUT_LIMIT } from '../types.js'
+import { resolveWorkspaceRoot } from '../../core/runtime-paths.js'
 
 /** 工作空间根目录 */
-const PROJECT_ROOT = process.cwd()
+const PROJECT_ROOT = resolveWorkspaceRoot()
 
 /** 创建 bash 工具 */
 export function createBashTool(): AgentTool<typeof parameters> {

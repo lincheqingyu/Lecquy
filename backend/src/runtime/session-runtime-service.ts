@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { AgentEvent, AgentMessage } from '@mariozechner/pi-agent-core'
 import type { ImageContent, Message, Model, TextContent, UserMessage } from '@mariozechner/pi-ai'
 import type {
@@ -41,6 +41,14 @@ import { logger } from '../utils/logger.js'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runManagerAgent, runSimpleAgent, runWorkerAgent } from '../agent/index.js'
 import { createTodoManager } from '../core/todo/todo-manager.js'
+import { migrateLegacyRuntimeStorage } from '../core/runtime-storage-migration.js'
+import {
+  type RuntimePaths,
+  isWithinRoot,
+  normalizeWorkspaceRelativePath,
+  resolvePathWithinRoot,
+  resolveRuntimePaths,
+} from '../core/runtime-paths.js'
 import { clearCurrentToolSessionKey, setCurrentToolSessionKey } from '../agent/tools/session-tools/index.js'
 import { resolveSessionKey } from './session-key.js'
 import { SessionManager } from './pi-session-core/session-manager.js'
@@ -111,18 +119,12 @@ function summarizeToolResultDetail(result: unknown): string | undefined {
   return summary.length > 0 ? summary : undefined
 }
 
-const ARTIFACT_DOCS_DIR = '.ZxhClaw/artifacts/docs'
-const ARTIFACT_DOCS_ROOT = resolve(process.cwd(), ARTIFACT_DOCS_DIR)
 const WHITESPACE_PATTERN = /\s+/g
 
-function normalizeWorkspacePath(filePath: string): string {
-  return filePath.trim().replace(/\\/g, '/').replace(/^\.\//, '')
-}
-
-function resolveArtifactPath(filePath: string): string {
-  const normalized = normalizeWorkspacePath(filePath)
-  const absolutePath = resolve(process.cwd(), normalized)
-  if (!absolutePath.startsWith(ARTIFACT_DOCS_ROOT)) {
+function resolveArtifactPath(filePath: string, paths: RuntimePaths): string {
+  const normalized = normalizeWorkspaceRelativePath(filePath)
+  const absolutePath = resolvePathWithinRoot(paths.workspaceDir, normalized)
+  if (!isWithinRoot(paths.artifactsDocsDir, absolutePath)) {
     throw new Error(`artifact 路径不在允许目录内: ${filePath}`)
   }
   return absolutePath
@@ -380,6 +382,7 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 
 export class SessionRuntimeService {
   private readonly cfg: Env
+  private readonly runtimePaths: RuntimePaths
   private readonly paths: ReturnType<typeof createSessionStorePaths>
   private readonly projections = new Map<string, SessionProjection>()
   private readonly managers = new Map<string, SessionManager>()
@@ -390,7 +393,8 @@ export class SessionRuntimeService {
 
   constructor(config = getConfig()) {
     this.cfg = config
-    this.paths = createSessionStorePaths(join(process.cwd(), this.cfg.SESSION_STORE_DIR))
+    this.runtimePaths = resolveRuntimePaths(undefined, this.cfg.SESSION_STORE_DIR)
+    this.paths = createSessionStorePaths(this.runtimePaths.sessionStoreDir)
   }
 
   async init(): Promise<void> {
@@ -442,7 +446,7 @@ export class SessionRuntimeService {
     if (existing) return existing
 
     const manager = new SessionManager({
-      cwd: process.cwd(),
+      cwd: this.runtimePaths.workspaceDir,
       sessionDir: this.paths.sessionDir,
       sessionFile: this.sessionFilePath(projection.sessionId),
       persist: true,
@@ -516,7 +520,7 @@ export class SessionRuntimeService {
 
     if (created) {
       const manager = new SessionManager({
-        cwd: process.cwd(),
+        cwd: this.runtimePaths.workspaceDir,
         sessionDir: this.paths.sessionDir,
         sessionFile: this.sessionFilePath(projection.sessionId),
         persist: true,
@@ -813,7 +817,7 @@ export class SessionRuntimeService {
       )
       if (!artifact || !isGeneratedFileArtifact(artifact)) continue
 
-      const fullPath = resolveArtifactPath(artifact.filePath)
+      const fullPath = resolveArtifactPath(artifact.filePath, this.runtimePaths)
       if (!existsSync(fullPath)) {
         return null
       }
@@ -1374,6 +1378,7 @@ let runtimeService: SessionRuntimeService | null = null
 
 export async function createSessionRuntimeService(config = getConfig()): Promise<SessionRuntimeService> {
   if (runtimeService) return runtimeService
+  await migrateLegacyRuntimeStorage(undefined, config.SESSION_STORE_DIR)
   const service = new SessionRuntimeService(config)
   await service.init()
   runtimeService = service

@@ -1,9 +1,0 @@
-{"type":"session","version":1,"id":"sess_1773819891317_7slsdean","timestamp":"2026-03-18T07:44:51.317Z","cwd":"/Users/hqy/Documents/zxh/projects/ZxhClaw/backend"}
-{"type":"thinking_level_change","id":"a96efe04","parentId":null,"timestamp":"2026-03-18T07:44:51.318Z","thinkingLevel":"off"}
-{"type":"session_info","id":"0232a42b","parentId":"a96efe04","timestamp":"2026-03-18T07:44:51.318Z","name":"子任务会话"}
-{"type":"thinking_level_change","id":"741a211b","parentId":"0232a42b","timestamp":"2026-03-18T07:44:51.321Z","thinkingLevel":"off"}
-{"type":"model_change","id":"e8b92ed6","parentId":"741a211b","timestamp":"2026-03-18T07:44:51.322Z","provider":"openai","modelId":"glm-4-plus"}
-{"type":"message","id":"9aa49493","parentId":"e8b92ed6","timestamp":"2026-03-18T07:44:51.322Z","message":{"role":"user","content":"查询杭州京胜测试单位中性别为女的人员数量","timestamp":1773819891322}}
-{"type":"run_started","id":"ce39bf20","parentId":"9aa49493","timestamp":"2026-03-18T07:44:51.322Z","runId":"run_1773819891321_aos7f2ou","mode":"simple"}
-{"type":"step_started","id":"68e6978a","parentId":"ce39bf20","timestamp":"2026-03-18T07:44:51.326Z","runId":"run_1773819891321_aos7f2ou","stepId":"step_1773819891326_r693ylct","kind":"simple_reply","title":"生成回复"}
-{"type":"run_finished","id":"0e898ac1","parentId":"68e6978a","timestamp":"2026-03-18T07:44:54.292Z","runId":"run_1773819891321_aos7f2ou","status":"failed","error":"429 余额不足或无可用资源包,请充值。。请补充更具体的目标、表名、字段名或执行范围后再试。"}

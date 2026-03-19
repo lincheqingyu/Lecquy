@@ -10,9 +10,10 @@ import type { SessionId, SessionSnapshot } from '@webclaw/shared'
 import { createSessionState, restoreSessionState, serializeSessionState } from './session-state.js'
 import type { SessionState } from './session-state.js'
 import { logger } from '../utils/logger.js'
+import { resolveRuntimePaths } from '../core/runtime-paths.js'
 
 /** 会话文件存储目录 */
-const SESSIONS_DIR = join(process.cwd(), '.sessions')
+const SESSIONS_DIR = join(resolveRuntimePaths().runtimeRootDir, 'sessions', 'legacy-registry')
 
 /** GC 间隔：5 分钟扫描一次 */
 const GC_INTERVAL = 5 * 60 * 1000

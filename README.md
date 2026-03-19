@@ -27,6 +27,10 @@ WebClaw / Agent Web 项目根目录说明。
 ├── TOOLS.md
 ├── memory/
 │   └── config.json
+├── sessions/
+│   └── v3/
+│       ├── sessions.json
+│       └── sessions/
 ├── artifacts/
 │   └── docs/
 └── system-prompt/
@@ -56,8 +60,15 @@ WebClaw / Agent Web 项目根目录说明。
 - `.ZxhClaw/AGENTS.md`：系统托管运行规范
 - `.ZxhClaw/TOOLS.md`：系统托管工具环境说明
 - `.ZxhClaw/memory/`：记忆运行配置与日志
+- `.ZxhClaw/sessions/v3/`：唯一会话落盘目录
 - `.ZxhClaw/system-prompt/`：可覆写的 prompt 模板
 - `.ZxhClaw/artifacts/docs/`：AI 生成并面向用户交付的文档产物
+
+补充约束：
+
+- 所有 AI 运行时数据统一写入项目根 `.ZxhClaw/`
+- `backend/` 下不应再出现 `.sessions-*`、`.memory`、`.ZxhClaw`、`docs` 这类运行时产物目录
+- 历史遗留目录会在后端启动时自动迁移到新的 `.ZxhClaw/` 结构后删除
 
 ## write_file 默认输出策略
 
@@ -66,6 +77,7 @@ WebClaw / Agent Web 项目根目录说明。
 - 当 `write_file` 只收到裸文件名，且扩展名属于文档类产物（如 `.html`、`.md`、`.txt`、`.json`、`.csv`）时，后端会默认落到 `.ZxhClaw/artifacts/docs/`。
 - 只有写入 `.ZxhClaw/artifacts/docs/` 的文件，会被当成“可展示产物”回传给前端复用文件卡片。
 - 写到其它目录的文件视为内部工作结果，不自动在前端展示。
+- 会话存储默认落在 `.ZxhClaw/sessions/v3/`，不再使用独立根 `.sessions-v3/`。
 
 ## 前端展示策略
 

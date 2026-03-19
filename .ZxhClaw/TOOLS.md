@@ -5,7 +5,7 @@
 - Prompt 上下文目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/.ZxhClaw
 - AI 产物目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/.ZxhClaw/artifacts
 - 文档产物目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/.ZxhClaw/artifacts/docs
-- 技能目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/skills
+- 技能目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/backend/skills
 - 文档目录：/Users/hqy/Documents/zxh/projects/ZxhClaw/docs
 
 ## 使用约定

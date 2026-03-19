@@ -4,15 +4,20 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, resolve } from 'node:path'
+import { basename, dirname, extname } from 'node:path'
 import { Type } from '@sinclair/typebox'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import type { GeneratedFileArtifact } from '@webclaw/shared'
 import { TOOL_OUTPUT_LIMIT } from '../types.js'
+import {
+  GENERATED_ARTIFACT_DOCS_DIR,
+  normalizeWorkspaceRelativePath,
+  resolvePathWithinRoot,
+  resolveWorkspaceRoot,
+} from '../../core/runtime-paths.js'
 
 /** 工作空间根目录 */
-const PROJECT_ROOT = process.cwd()
-const GENERATED_DOCS_DIR = '.ZxhClaw/artifacts/docs'
+const PROJECT_ROOT = resolveWorkspaceRoot()
 const DEFAULT_ARTIFACT_EXTENSIONS = new Set([
   '.html',
   '.htm',
@@ -25,19 +30,11 @@ const DEFAULT_ARTIFACT_EXTENSIONS = new Set([
 
 /** 确保路径保持在工作空间内 */
 function safePath(p: string): string {
-  const resolved = resolve(PROJECT_ROOT, p)
-  if (!resolved.startsWith(PROJECT_ROOT)) {
-    throw new Error(`路径逃逸工作空间: ${p}`)
-  }
-  return resolved
-}
-
-function normalizeRelativePath(filePath: string): string {
-  return filePath.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+  return resolvePathWithinRoot(PROJECT_ROOT, p)
 }
 
 function resolveOutputPath(filePath: string): { outputPath: string; defaulted: boolean } {
-  const normalized = normalizeRelativePath(filePath)
+  const normalized = normalizeWorkspaceRelativePath(filePath)
   if (!normalized) {
     throw new Error('file_path 不能为空')
   }
@@ -46,7 +43,7 @@ function resolveOutputPath(filePath: string): { outputPath: string; defaulted: b
   const extension = extname(normalized).toLowerCase()
   if (!hasExplicitDirectory && DEFAULT_ARTIFACT_EXTENSIONS.has(extension)) {
     return {
-      outputPath: `${GENERATED_DOCS_DIR}/${basename(normalized)}`,
+      outputPath: `${GENERATED_ARTIFACT_DOCS_DIR}/${basename(normalized)}`,
       defaulted: true,
     }
   }
@@ -58,8 +55,8 @@ function resolveOutputPath(filePath: string): { outputPath: string; defaulted: b
 }
 
 function isDisplayableArtifact(filePath: string): boolean {
-  const normalized = normalizeRelativePath(filePath)
-  return normalized === GENERATED_DOCS_DIR || normalized.startsWith(`${GENERATED_DOCS_DIR}/`)
+  const normalized = normalizeWorkspaceRelativePath(filePath)
+  return normalized === GENERATED_ARTIFACT_DOCS_DIR || normalized.startsWith(`${GENERATED_ARTIFACT_DOCS_DIR}/`)
 }
 
 function inferMimeType(filePath: string): string {
@@ -121,7 +118,7 @@ export function createWriteFileTool(): AgentTool<typeof parameters> {
         return {
           content: [{ type: 'text', text: summary.slice(0, TOOL_OUTPUT_LIMIT) }],
           details: {
-            requestedPath: normalizeRelativePath(params.file_path),
+            requestedPath: normalizeWorkspaceRelativePath(params.file_path),
             outputPath: target.outputPath,
             outputStrategy: target.defaulted ? 'default_artifact_docs' : 'explicit_path',
             writeMode,
