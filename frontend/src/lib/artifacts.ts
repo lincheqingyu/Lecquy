@@ -14,6 +14,7 @@ const DEFAULT_ARTIFACT_EXTENSIONS = new Set([
 export interface ChatArtifact extends GeneratedFileArtifact {
   status?: 'draft' | 'ready'
   content?: string
+  stepId?: string
 }
 
 function normalizeWorkspacePath(filePath: string): string {
@@ -92,6 +93,13 @@ function toChatArtifact(artifact: GeneratedFileArtifact | ChatArtifact): ChatArt
 function findArtifactIndex(artifacts: ChatArtifact[], candidate: ChatArtifact): number {
   const exactIndex = artifacts.findIndex((artifact) => artifact.artifactId === candidate.artifactId)
   if (exactIndex >= 0) return exactIndex
+
+  if (candidate.stepId) {
+    const sameStepDraftIndex = artifacts.findIndex((artifact) =>
+      artifact.status === 'draft' && artifact.stepId === candidate.stepId,
+    )
+    if (sameStepDraftIndex >= 0) return sameStepDraftIndex
+  }
 
   if (candidate.status === 'draft') return -1
   return artifacts.findIndex((artifact) =>
@@ -190,21 +198,23 @@ export function createDraftArtifact(
   if (toolName !== 'write_file' || !args || typeof args !== 'object') return null
   const filePath = 'file_path' in args ? (args as { file_path?: unknown }).file_path : undefined
   const content = 'content' in args ? (args as { content?: unknown }).content : undefined
-  if (typeof filePath !== 'string' || typeof content !== 'string') return null
+  if (typeof filePath !== 'string') return null
 
   const outputPath = resolveDraftOutputPath(filePath)
   if (!outputPath || !isDisplayableArtifactPath(outputPath)) return null
+  const normalizedContent = typeof content === 'string' ? content : ''
 
   const timestamp = Date.now()
   return {
-    artifactId: `draft:${stepId}:${normalizeWorkspacePath(outputPath)}`,
+    artifactId: `draft:${stepId}`,
     filePath: normalizeWorkspacePath(outputPath),
     name: inferFileName(outputPath),
     mimeType: inferMimeType(outputPath),
-    size: toByteSize(content),
+    size: toByteSize(normalizedContent),
     createdAt: timestamp,
     updatedAt: timestamp,
     status: 'draft',
-    content,
+    content: normalizedContent,
+    stepId,
   }
 }

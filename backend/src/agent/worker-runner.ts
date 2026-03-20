@@ -7,6 +7,8 @@ import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-
 import type { SessionRouteContext, ThinkingLevel } from '@webclaw/shared'
 import { buildWorkerPrompt } from '../core/prompts/system-prompts.js'
 import { createWorkerTools } from './tools/index.js'
+import { mutateProviderPayload } from './provider-payload.js'
+import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
   createTracker,
   extractToolResultText,
@@ -71,6 +73,7 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
       apiKey,
       reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
+      onPayload: (payload) => mutateProviderPayload(model, payload),
       convertToLlm: (messages: AgentMessage[]) =>
         messages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
@@ -134,6 +137,7 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
       }
     }
 
+    logProviderStreamEvent(model, event)
     onEvent?.(event)
   }
 

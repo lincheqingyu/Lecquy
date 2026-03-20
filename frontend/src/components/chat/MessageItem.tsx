@@ -614,7 +614,12 @@ export function MessageItem({
   const artifacts = message.artifacts ?? []
   const artifactTraceItems = message.artifactTraceItems ?? []
   const thoughtTiming = message.thoughtTiming
-  const hasArtifactContent = artifacts.length > 0
+  const readyArtifacts = artifacts
+    .map((artifact, index) => ({ artifact, index }))
+    .filter(({ artifact }) => artifact.status !== 'draft')
+  const hasArtifactOperations = artifactTraceItems.length > 0 || artifacts.some((artifact) => artifact.status === 'draft' || Boolean(artifact.content))
+  const canRenderReadyArtifacts = readyArtifacts.length > 0 && message.stepStatus !== 'started'
+  const hasArtifactContent = hasArtifactOperations || canRenderReadyArtifacts
   const thinkingContent = message.thinkingContent ?? ''
   const isPlainThoughtContent = isPlainThoughtText(thinkingContent)
 
@@ -783,6 +788,19 @@ export function MessageItem({
     setIsActionBarFocused(false)
   }
 
+  const handleOpenTraceArtifact = (artifact: ChatArtifact) => {
+    const artifactIndex = artifacts.findIndex((candidate) =>
+      candidate.artifactId === artifact.artifactId
+      || (
+        candidate.status !== 'draft'
+        && artifact.status !== 'draft'
+        && candidate.filePath === artifact.filePath
+      ),
+    )
+    if (artifactIndex < 0) return
+    onOpenArtifact?.(message.id, artifactIndex, artifact)
+  }
+
   const renderAttachments = () => {
     if (attachments.length === 0) return null
 
@@ -824,13 +842,26 @@ export function MessageItem({
     )
   }
 
-  const renderArtifacts = () => {
-    if (artifacts.length === 0) return null
+  const renderArtifactOperations = () => {
+    if (!hasArtifactOperations) return null
+
+    return (
+      <div className="mt-3 mb-4">
+        <ArtifactTrace
+          items={artifactTraceItems}
+          artifacts={artifacts}
+          onOpenArtifact={handleOpenTraceArtifact}
+        />
+      </div>
+    )
+  }
+
+  const renderReadyArtifactCards = () => {
+    if (!canRenderReadyArtifacts) return null
 
     return (
       <div className="mt-3 flex flex-col gap-3">
-        {artifactTraceItems.length > 0 && <ArtifactTrace items={artifactTraceItems} />}
-        {artifacts.map((artifact, index) => (
+        {readyArtifacts.map(({ artifact, index }) => (
           <ArtifactCard
             key={artifact.artifactId}
             artifact={artifact}
@@ -937,6 +968,8 @@ export function MessageItem({
               </div>
             )}
 
+            {isAssistant && renderArtifactOperations()}
+
             {isAssistant ? (
               hasPrimaryContent ? (
                 renderMarkdown(message.content)
@@ -947,7 +980,7 @@ export function MessageItem({
               ) : null
             )}
 
-            {isAssistant && renderArtifacts()}
+            {isAssistant && renderReadyArtifactCards()}
           </div>
         )}
         {(isUser || isAssistant) && canCopyMessage && (

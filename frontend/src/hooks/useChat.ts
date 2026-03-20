@@ -40,6 +40,7 @@ export interface ChatMessage {
   timestamp: number
   eventType?: string
   stepId?: string
+  stepStatus?: ServerEventPayloadMap['step_state']['status']
   thoughtTiming?: ThoughtTiming
 }
 
@@ -252,10 +253,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       content: '',
       thinkingContent: '',
       hasThinking: false,
-      isThinkingExpanded: false,
+      isThinkingExpanded: true,
       timestamp: Date.now(),
       eventType: 'step',
       stepId,
+      stepStatus: 'started',
     })
     return id
   }, [])
@@ -401,6 +403,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             updateMessage(setMessages, messageId, (message) => ({
               ...message,
               content: step.summary && step.status === 'completed' ? step.summary : message.content,
+              stepStatus: step.status,
               thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
             }))
             flushPendingStepArtifacts(step.stepId, step.kind)
@@ -495,7 +498,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_state') {
             const tool = payload as ServerEventPayloadMap['tool_state']
-            if (tool.status === 'start' && tool.stepId) {
+            if ((tool.status === 'start' || tool.status === 'delta') && tool.stepId) {
               const stepMeta = stepMetaRef.current.get(tool.stepId)
               const stepKind = stepMeta?.kind ?? 'simple_reply'
               const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
@@ -521,16 +524,20 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             if (tool.status === 'end' && !tool.isError && tool.stepId) {
               const stepMeta = stepMetaRef.current.get(tool.stepId)
               const stepKind = stepMeta?.kind ?? 'simple_reply'
+              const readyArtifacts = (tool.generatedArtifacts ?? []).map((artifact) => ({
+                ...artifact,
+                stepId: tool.stepId,
+              }))
               pendingArtifactsRef.current.set(
                 tool.stepId,
-                mergeArtifacts(pendingArtifactsRef.current.get(tool.stepId), tool.generatedArtifacts) ?? [],
+                mergeArtifacts(pendingArtifactsRef.current.get(tool.stepId), readyArtifacts) ?? [],
               )
               pendingArtifactTraceRef.current.set(
                 tool.stepId,
                 mergeArtifactTraceItems(pendingArtifactTraceRef.current.get(tool.stepId), tool.artifactTraceItems) ?? [],
               )
 
-              const hasGeneratedArtifacts = (tool.generatedArtifacts?.length ?? 0) > 0
+              const hasGeneratedArtifacts = readyArtifacts.length > 0
               if (hasGeneratedArtifacts) {
                 flushPendingStepArtifacts(tool.stepId, stepKind, { force: true })
               } else if (stepMessageIdsRef.current.has(tool.stepId)) {

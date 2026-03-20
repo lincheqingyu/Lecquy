@@ -5,8 +5,9 @@
 ## 阅读顺序
 
 1. [`monorepo-guide.md`](./monorepo-guide.md)：了解 workspace 结构和常用命令
-2. [`backend/session-management-integration.md`](./backend/session-management-integration.md)：前后端会话联调约定
-3. 按角色继续阅读对应分组文档
+2. [`environment-configuration.md`](./environment-configuration.md)：环境变量、默认值、覆盖关系与配置风险说明
+3. [`backend/session-management-integration.md`](./backend/session-management-integration.md)：前后端会话联调约定
+4. 按角色继续阅读对应分组文档
 
 ## Frontend
 

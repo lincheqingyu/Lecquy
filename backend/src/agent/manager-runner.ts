@@ -7,6 +7,8 @@ import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-
 import type { SessionRouteContext, ThinkingLevel } from '@webclaw/shared'
 import { buildManagerPrompt } from '../core/prompts/system-prompts.js'
 import { createManagerTools } from './tools/index.js'
+import { mutateProviderPayload } from './provider-payload.js'
+import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
   createTracker,
   extractToolResultText,
@@ -80,6 +82,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
       apiKey,
       reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
+      onPayload: (payload) => mutateProviderPayload(model, payload),
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
@@ -143,6 +146,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
       }
     }
 
+    logProviderStreamEvent(model, event)
     onEvent?.(event)
   }
 

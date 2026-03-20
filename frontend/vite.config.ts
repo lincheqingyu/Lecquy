@@ -1,6 +1,6 @@
 /**
  * Vite 配置
- * 从 monorepo 根目录 .env 读取 PORT，自动派生前端 API 地址
+ * 从 monorepo 根目录 .env 读取共享网络配置
  */
 
 import { defineConfig, loadEnv } from 'vite'
@@ -10,7 +10,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
     // 从根目录加载 .env
     const env = loadEnv(mode, '..', '')
-    const port = env.PORT || '5000'
+    const port = env.PORT || '3000'
+    const host = env.HOST || env.VITE_DEV_HOST || '0.0.0.0'
+    const backendOrigin = env.BACKEND_ORIGIN || env.VITE_API_BASE || 'auto'
+    const legacyWsBase = env.VITE_WS_BASE || 'auto'
 
     return {
         plugins: [
@@ -18,15 +21,15 @@ export default defineConfig(({ mode }) => {
             tailwindcss(),
         ],
         server: {
-            host: env.VITE_DEV_HOST || '0.0.0.0',
+            host,
         },
         // 从 monorepo 根目录读取 .env 文件
         envDir: '..',
         define: {
-            // 将 PORT 派生的地址注入前端，无需手动维护 VITE_API_BASE / VITE_WS_BASE
+            // 统一使用 BACKEND_ORIGIN 覆盖前后端通信地址，默认按当前页面 + PORT 自动推导
             '__BACKEND_PORT__': JSON.stringify(port),
-            '__API_BASE__': JSON.stringify(env.VITE_API_BASE || 'auto'),
-            '__WS_BASE__': JSON.stringify(env.VITE_WS_BASE || 'auto'),
+            '__BACKEND_ORIGIN__': JSON.stringify(backendOrigin),
+            '__LEGACY_WS_BASE__': JSON.stringify(legacyWsBase),
         },
     }
 })

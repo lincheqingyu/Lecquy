@@ -10,6 +10,9 @@ const envSchema = z.object({
   /** 服务端口 */
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 
+  /** 服务监听地址 */
+  HOST: z.string().min(1).default('0.0.0.0'),
+
   /** Node 环境 */
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 

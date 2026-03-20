@@ -548,48 +548,50 @@ export function HomePageLayout() {
               void handleSelectConversation(conversationId)
             }}
           />
-        ) : showDocumentWorkspace && openDocument ? (
+        ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <header className="h-12 shrink-0 bg-surface-alt/95 backdrop-blur">
-              <div className="flex h-full w-full items-center justify-between px-4 md:px-6">
-                <div className="min-w-0 flex items-center gap-3">
-                  <h1 className="line-clamp-1 text-sm font-medium text-text-primary">{conversationTitle}</h1>
-                  {sessionMetaText && (
-                    <div className="shrink-0 text-xs text-text-muted">
-                      {sessionMetaText}
-                    </div>
-                  )}
+            {showDocumentWorkspace && openDocument && (
+              <header className="h-12 shrink-0 bg-surface-alt/95 backdrop-blur">
+                <div className="flex h-full w-full items-center justify-between px-4 md:px-6">
+                  <div className="min-w-0 flex items-center gap-3">
+                    <h1 className="line-clamp-1 text-sm font-medium text-text-primary">{conversationTitle}</h1>
+                    {sessionMetaText && (
+                      <div className="shrink-0 text-xs text-text-muted">
+                        {sessionMetaText}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsDark((prev) => !prev)}
+                      className={[
+                        'flex items-center justify-center',
+                        'size-9 rounded-lg',
+                        'text-text-secondary',
+                        'transition-colors hover:bg-hover hover:text-text-primary',
+                      ].join(' ')}
+                      aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+                    >
+                      {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSettingsToggle}
+                      className={[
+                        'flex items-center justify-center',
+                        'size-9 rounded-lg',
+                        'text-text-secondary',
+                        'transition-colors hover:bg-hover hover:text-text-primary',
+                      ].join(' ')}
+                      aria-label="打开设置"
+                    >
+                      <Settings className="size-5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsDark((prev) => !prev)}
-                    className={[
-                      'flex items-center justify-center',
-                      'size-9 rounded-lg',
-                      'text-text-secondary',
-                      'transition-colors hover:bg-hover hover:text-text-primary',
-                    ].join(' ')}
-                    aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
-                  >
-                    {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSettingsToggle}
-                    className={[
-                      'flex items-center justify-center',
-                      'size-9 rounded-lg',
-                      'text-text-secondary',
-                      'transition-colors hover:bg-hover hover:text-text-primary',
-                    ].join(' ')}
-                    aria-label="打开设置"
-                  >
-                    <Settings className="size-5" />
-                  </button>
-                </div>
-              </div>
-            </header>
+              </header>
+            )}
 
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -612,84 +614,64 @@ export function HomePageLayout() {
                   onOpenAttachment={handleOpenAttachment}
                   onOpenArtifact={handleOpenArtifact}
                   onDownloadArtifact={handleDownloadArtifact}
-                  activeAttachmentKey={openDocument.key}
-                  showHeader={false}
-                  workspaceMode="split"
+                  activeAttachmentKey={showDocumentWorkspace ? openDocument?.key ?? null : null}
+                  showHeader={!showDocumentWorkspace}
+                  workspaceMode={showDocumentWorkspace ? 'split' : 'default'}
                 />
               </div>
 
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="调整文档面板宽度"
-                className="relative hidden w-px shrink-0 self-stretch md:block"
-              >
-                <div
-                  onPointerDown={handleDocumentResizeStart}
-                  onPointerMove={handleDocumentResizeMove}
-                  onPointerUp={handleDocumentResizeEnd}
-                  onPointerCancel={handleDocumentResizeEnd}
-                  onLostPointerCapture={handleDocumentResizeLostCapture}
-                  className="group absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize touch-none"
-                >
+              {showDocumentWorkspace && openDocument && (
+                <>
                   <div
-                    className={[
-                      'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
-                      isDocumentDividerDragging
-                        ? 'bg-[color:var(--border-strong)]'
-                        : 'bg-border group-hover:bg-[color:var(--border-strong)]',
-                    ].join(' ')}
-                  />
-                  <div
-                    className={[
-                      'absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-1 ring-black/6 transition-all duration-150 dark:bg-surface',
-                      isDocumentDividerDragging
-                        ? 'shadow-[0_8px_18px_rgba(15,23,42,0.18)]'
-                        : 'shadow-[0_4px_10px_rgba(15,23,42,0.12)] group-hover:shadow-[0_6px_14px_rgba(15,23,42,0.16)]',
-                    ].join(' ')}
-                  />
-                </div>
-              </div>
-              {openDocument.kind === 'attachment' ? (
-                <DocumentPanel
-                  document={openDocument}
-                  width={documentPanelWidth}
-                  onClose={handleCloseDocument}
-                />
-              ) : (
-                <ArtifactPanel
-                  sessionKey={openDocument.sessionKey}
-                  artifact={openDocument.artifact}
-                  width={documentPanelWidth}
-                  onClose={handleCloseDocument}
-                />
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整文档面板宽度"
+                    className="relative hidden w-px shrink-0 self-stretch md:block"
+                  >
+                    <div
+                      onPointerDown={handleDocumentResizeStart}
+                      onPointerMove={handleDocumentResizeMove}
+                      onPointerUp={handleDocumentResizeEnd}
+                      onPointerCancel={handleDocumentResizeEnd}
+                      onLostPointerCapture={handleDocumentResizeLostCapture}
+                      className="group absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize touch-none"
+                    >
+                      <div
+                        className={[
+                          'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
+                          isDocumentDividerDragging
+                            ? 'bg-[color:var(--border-strong)]'
+                            : 'bg-border group-hover:bg-[color:var(--border-strong)]',
+                        ].join(' ')}
+                      />
+                      <div
+                        className={[
+                          'absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-1 ring-black/6 transition-all duration-150 dark:bg-surface',
+                          isDocumentDividerDragging
+                            ? 'shadow-[0_8px_18px_rgba(15,23,42,0.18)]'
+                            : 'shadow-[0_4px_10px_rgba(15,23,42,0.12)] group-hover:shadow-[0_6px_14px_rgba(15,23,42,0.16)]',
+                        ].join(' ')}
+                      />
+                    </div>
+                  </div>
+                  {openDocument.kind === 'attachment' ? (
+                    <DocumentPanel
+                      document={openDocument}
+                      width={documentPanelWidth}
+                      onClose={handleCloseDocument}
+                    />
+                  ) : (
+                    <ArtifactPanel
+                      sessionKey={openDocument.sessionKey}
+                      artifact={openDocument.artifact}
+                      width={documentPanelWidth}
+                      onClose={handleCloseDocument}
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>
-        ) : (
-          <ConversationArea
-            onSettingsToggle={handleSettingsToggle}
-            isDark={isDark}
-            onThemeToggle={() => setIsDark((prev) => !prev)}
-            modelConfig={modelConfig}
-            conversationTitle={conversationTitle}
-            sessionMetaText={sessionMetaText}
-            peerId={activePeerId}
-            currentSessionKey={selectedSessionKey ?? currentSessionKey}
-            externalMessages={messageSeed}
-            messageVersion={messageVersion}
-            canSend={canSend}
-            disabledReason={inputHint}
-            onSessionResolved={handleSessionResolved}
-            onSessionTitleUpdated={handleSessionTitleUpdated}
-            onChatLifecycleEvent={handleChatLifecycleEvent}
-            onOpenAttachment={handleOpenAttachment}
-            onOpenArtifact={handleOpenArtifact}
-            onDownloadArtifact={handleDownloadArtifact}
-            activeAttachmentKey={null}
-            showHeader
-            workspaceMode="default"
-          />
         )}
       </div>
       <SettingsDrawer

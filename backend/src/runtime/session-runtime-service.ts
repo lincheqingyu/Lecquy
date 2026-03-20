@@ -119,6 +119,37 @@ function summarizeToolResultDetail(result: unknown): string | undefined {
   return summary.length > 0 ? summary : undefined
 }
 
+function extractPartialToolCall(event: AgentEvent): { toolName: string; args: unknown } | null {
+  if (event.type !== 'message_update' || event.assistantMessageEvent.type !== 'toolcall_delta') {
+    return null
+  }
+
+  const partial = 'partial' in event.assistantMessageEvent
+    ? (event.assistantMessageEvent as { partial?: unknown }).partial
+    : undefined
+  const contentIndex = 'contentIndex' in event.assistantMessageEvent
+    ? (event.assistantMessageEvent as { contentIndex?: unknown }).contentIndex
+    : undefined
+  if (!partial || typeof partial !== 'object' || typeof contentIndex !== 'number') {
+    return null
+  }
+
+  const content = 'content' in partial ? (partial as { content?: unknown }).content : undefined
+  if (!Array.isArray(content)) return null
+  const toolCall = content[contentIndex]
+  if (!toolCall || typeof toolCall !== 'object') return null
+
+  const type = 'type' in toolCall ? (toolCall as { type?: unknown }).type : undefined
+  const toolName = 'name' in toolCall ? (toolCall as { name?: unknown }).name : undefined
+  const args = 'arguments' in toolCall ? (toolCall as { arguments?: unknown }).arguments : undefined
+  if (type !== 'toolCall' || typeof toolName !== 'string') return null
+
+  return {
+    toolName,
+    args,
+  }
+}
+
 const WHITESPACE_PATTERN = /\s+/g
 
 function resolveArtifactPath(filePath: string, paths: RuntimePaths): string {
@@ -939,7 +970,7 @@ export class SessionRuntimeService {
     sessionKey: string,
     runId: RunId,
     stepId: StepId | undefined,
-    status: 'start' | 'end',
+    status: 'start' | 'delta' | 'end',
     toolName: string,
     extra: { args?: unknown; summary?: string; detail?: string; isError?: boolean; generatedArtifacts?: GeneratedFileArtifact[]; artifactTraceItems?: ArtifactTraceItem[] } = {},
   ): void {
@@ -1306,6 +1337,14 @@ export class SessionRuntimeService {
 
       if (event.assistantMessageEvent.type === 'thinking_delta' && event.assistantMessageEvent.delta) {
         this.emitStepDelta(sessionKey, runId, step, 'thinking', event.assistantMessageEvent.delta)
+        return
+      }
+
+      const partialToolCall = extractPartialToolCall(event)
+      if (partialToolCall) {
+        this.emitToolState(sessionKey, runId, step.stepId, 'delta', partialToolCall.toolName, {
+          args: partialToolCall.args,
+        })
       }
       return
     }

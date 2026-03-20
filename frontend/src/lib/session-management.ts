@@ -65,7 +65,7 @@ export function toChatMessages(records: SessionMessageRecord[]): ChatMessage[] {
         attachments: record.role === 'user' ? extractSessionAttachments(record.content) : undefined,
         thinkingContent: thinkingContent || undefined,
         hasThinking: thinkingContent.trim().length > 0,
-        isThinkingExpanded: false,
+        isThinkingExpanded: thinkingContent.trim().length > 0,
         timestamp: record.timestamp ?? Date.now(),
       }
     })
@@ -170,9 +170,10 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
       content: '',
       thinkingContent: '',
       hasThinking: false,
-      isThinkingExpanded: false,
+      isThinkingExpanded: true,
       timestamp: Date.now(),
       stepId,
+      stepStatus: 'started',
       thoughtTiming: toHistoryThoughtTiming(stepById.get(stepId) ?? {}),
     }
     appendMessage(message)
@@ -217,6 +218,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
       const assistantMessageId = stepMessageById.get(entry.stepId)
       const assistantMessage = assistantMessageId ? messageById.get(assistantMessageId) : undefined
       if (assistantMessage) {
+        assistantMessage.stepStatus = 'started'
         assistantMessage.thoughtTiming = toHistoryThoughtTiming(stepById.get(entry.stepId) ?? {})
       }
 
@@ -310,7 +312,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
           content,
           thinkingContent: thinkingContent || undefined,
           hasThinking: thinkingContent.trim().length > 0,
-          isThinkingExpanded: false,
+          isThinkingExpanded: thinkingContent.trim().length > 0,
           timestamp: entry.message.timestamp ?? new Date(entry.timestamp).getTime(),
         })
       }
@@ -399,6 +401,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
           assistantMessage.content = entry.summary
         }
         if (assistantMessage) {
+          assistantMessage.stepStatus = entry.status
           assistantMessage.thoughtTiming = toHistoryThoughtTiming(stepById.get(entry.stepId) ?? {})
           attachPendingArtifacts(entry.stepId, assistantMessage)
         }
@@ -408,6 +411,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
         const assistantMessage = ensureAssistantStepMessage(entry.stepId, index)
         if (assistantMessage) {
           assistantMessage.timestamp = finishedAt
+          assistantMessage.stepStatus = entry.status
         }
       }
 

@@ -111,7 +111,7 @@ export interface ServerEventPayloadMap {
     runId: string
     stepId?: StepId
     toolName: string
-    status: 'start' | 'end'
+    status: 'start' | 'delta' | 'end'
     args?: unknown
     summary?: string
     detail?: string

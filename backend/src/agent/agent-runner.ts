@@ -9,6 +9,8 @@ import { agentLoop, type AgentMessage, type AgentEvent } from '@mariozechner/pi-
 import type { SessionMode, SessionRouteContext, ThinkingLevel } from '@webclaw/shared'
 import { buildSimpleSystemPrompt } from '../core/prompts/system-prompts.js'
 import { createSimpleTools } from './tools/index.js'
+import { mutateProviderPayload } from './provider-payload.js'
+import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
   createTracker,
   extractToolResultText,
@@ -95,6 +97,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
       apiKey,
       reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
+      onPayload: (payload) => mutateProviderPayload(model, payload),
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
@@ -154,6 +157,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     }
 
     // 转发事件给调用方（用于流式推送）
+    logProviderStreamEvent(model, event)
     onEvent?.(event)
   }
 

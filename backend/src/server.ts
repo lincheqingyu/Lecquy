@@ -36,8 +36,9 @@ async function main(): Promise<void> {
   const wss = initChatWebSocketServer(server, sessionRuntime)
 
   // 5. 启动服务器
-  server.listen(config.PORT, () => {
-    logger.info(`服务器已启动: http://localhost:${config.PORT}`)
+  const displayHost = config.HOST === '0.0.0.0' ? 'localhost' : config.HOST
+  server.listen(config.PORT, config.HOST, () => {
+    logger.info(`服务器已启动: http://${displayHost}:${config.PORT}`)
     logger.info(`环境: ${config.NODE_ENV}`)
     logger.info(`日志: ${config.LOG_LEVEL}`)
   })
