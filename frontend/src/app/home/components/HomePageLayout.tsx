@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createDefaultThinkingConfig, type ChatAttachment } from '@webclaw/shared'
-import { Moon, Settings, Sun } from 'lucide-react'
 import { ConversationArea } from './ConversationArea'
 import { ChatsOverview } from './ChatsOverview'
 import { DocumentPanel } from './DocumentPanel'
@@ -550,49 +549,6 @@ export function HomePageLayout() {
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {showDocumentWorkspace && openDocument && (
-              <header className="h-12 shrink-0 bg-surface-alt/95 backdrop-blur">
-                <div className="flex h-full w-full items-center justify-between px-4 md:px-6">
-                  <div className="min-w-0 flex items-center gap-3">
-                    <h1 className="line-clamp-1 text-sm font-medium text-text-primary">{conversationTitle}</h1>
-                    {sessionMetaText && (
-                      <div className="shrink-0 text-xs text-text-muted">
-                        {sessionMetaText}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsDark((prev) => !prev)}
-                      className={[
-                        'flex items-center justify-center',
-                        'size-9 rounded-lg',
-                        'text-text-secondary',
-                        'transition-colors hover:bg-hover hover:text-text-primary',
-                      ].join(' ')}
-                      aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
-                    >
-                      {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSettingsToggle}
-                      className={[
-                        'flex items-center justify-center',
-                        'size-9 rounded-lg',
-                        'text-text-secondary',
-                        'transition-colors hover:bg-hover hover:text-text-primary',
-                      ].join(' ')}
-                      aria-label="打开设置"
-                    >
-                      <Settings className="size-5" />
-                    </button>
-                  </div>
-                </div>
-              </header>
-            )}
-
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <ConversationArea
@@ -615,7 +571,7 @@ export function HomePageLayout() {
                   onOpenArtifact={handleOpenArtifact}
                   onDownloadArtifact={handleDownloadArtifact}
                   activeAttachmentKey={showDocumentWorkspace ? openDocument?.key ?? null : null}
-                  showHeader={!showDocumentWorkspace}
+                  showHeader={true}
                   workspaceMode={showDocumentWorkspace ? 'split' : 'default'}
                 />
               </div>

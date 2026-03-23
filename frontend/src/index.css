@@ -6,6 +6,7 @@
  * 3. 开启 @theme 自定义能力
  * ============================================ */
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -39,7 +39,7 @@ function renderTextPreview(text: string) {
   }
 
   return (
-    <div className="space-y-6 text-[15px] leading-8 text-[#0f172a]">
+    <div className="space-y-6 text-[15px] leading-8 text-text-primary">
       {paragraphs.map((paragraph, index) => (
         <p key={index} className="whitespace-pre-wrap break-words">
           {paragraph}
@@ -206,18 +206,18 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
 
   return (
     <aside
-      className="flex h-full min-h-0 min-w-[26rem] shrink-0 flex-col overflow-hidden bg-white"
+      className="flex h-full min-h-0 min-w-[26rem] shrink-0 flex-col overflow-hidden bg-surface"
       style={{ width }}
     >
       <div className="flex shrink-0 items-center justify-between gap-3 px-3.5 py-2.5">
         <div className="min-w-0 flex items-center gap-2">
-          <div className="inline-flex items-center rounded-[0.95rem] bg-[#f4f1e7] p-0.5">
+          <div className="inline-flex items-center rounded-[0.95rem] bg-surface-alt p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('preview')}
               className={clsx(
                 'inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'preview' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
+                viewMode === 'preview' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
               )}
               aria-label="预览模式"
             >
@@ -228,7 +228,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
               onClick={() => setViewMode('source')}
               className={clsx(
                 'inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'source' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
+                viewMode === 'source' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
               )}
               aria-label="源码模式"
             >
@@ -247,7 +247,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
 
         <div className="flex shrink-0 items-center gap-0.5">
           <div ref={actionMenuRef} className="relative">
-            <div className="inline-flex h-8 items-stretch overflow-hidden rounded-[0.9rem] border border-border bg-white">
+            <div className="inline-flex h-8 items-stretch overflow-hidden rounded-[0.9rem] border border-border bg-surface">
               <button
                 type="button"
                 onClick={copyRawContent}
@@ -269,7 +269,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
             </div>
 
             {isActionMenuOpen && (
-              <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 min-w-[14rem] overflow-hidden rounded-[1.5rem] border border-border bg-white py-2 shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
+              <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 min-w-[14rem] overflow-hidden rounded-[1.5rem] border border-border bg-surface-raised py-2 shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
                 <button
                   type="button"
                   onClick={handleDownload}
@@ -313,7 +313,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
         <div
           ref={previewRef}
           className={clsx(
-            'h-full overflow-y-auto bg-white',
+            'h-full overflow-y-auto bg-surface',
             isHtmlPreview ? 'px-0 py-0' : 'px-6 py-5',
           )}
         >
@@ -333,7 +333,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                 <FileCode2 className="size-4" />
                 原始内容
               </div>
-              <pre className="min-h-full overflow-x-auto whitespace-pre-wrap break-words bg-white font-mono text-[13px] leading-7 text-[#0f172a]">
+              <pre className="min-h-full overflow-x-auto whitespace-pre-wrap break-words bg-surface font-mono text-[13px] leading-7 text-text-primary">
                 <code>{content}</code>
               </pre>
             </div>
@@ -351,11 +351,11 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                 title={artifact.name}
                 sandbox=""
                 srcDoc={content}
-                className="min-h-0 flex-1 bg-white"
+                className="min-h-0 flex-1 bg-surface"
               />
             </div>
           ) : previewMode === 'markdown' ? (
-            <div className="prose prose-slate max-w-none text-text-primary">
+            <div className="prose prose-slate dark:prose-invert max-w-none text-text-primary">
               {isDraft && (
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary not-prose">
                   <LoaderCircle className="size-3.5 animate-spin" />
