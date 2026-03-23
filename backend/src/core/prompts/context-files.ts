@@ -12,6 +12,7 @@ export interface PromptContextPaths {
   readonly workspaceDir: string
   readonly backendDir: string
   readonly skillsDir: string
+  readonly bundledSkillsDirLabel: string
   readonly rootDir: string
   readonly memoryDir: string
   readonly artifactsDir: string
@@ -112,12 +113,6 @@ async function readTextIfExists(filePath: string): Promise<string> {
   }
 }
 
-async function writeIfChanged(filePath: string, content: string): Promise<void> {
-  const current = await readTextIfExists(filePath)
-  if (current === content) return
-  await fs.writeFile(filePath, content, 'utf8')
-}
-
 function buildManagedAgentsContent(): string {
   return [
     '# ZxhClaw Runtime AGENTS',
@@ -147,12 +142,14 @@ function buildManagedToolsContent(paths: PromptContextPaths): string {
     `- Prompt 上下文目录：${paths.rootDir}`,
     `- AI 产物目录：${paths.artifactsDir}`,
     `- 文档产物目录：${paths.artifactsDocsDir}`,
-    `- 技能目录：${paths.skillsDir}`,
+    `- 内置技能标识：${paths.bundledSkillsDirLabel}`,
+    `- 扩展技能目录：${paths.skillsDir}`,
     `- 文档目录：${path.join(paths.workspaceDir, 'docs')}`,
     '',
     '## 使用约定',
     '- 工具可用性以 system prompt 的 Tooling 章节为准，本文件只提供环境说明。',
     '- 会话协作优先使用 session tools；不要用 bash 伪造内部调用。',
+    '- 默认技能已随程序内置；部署后新增或覆盖技能时，把目录放到 `.ZxhClaw/skills/`。',
     '- 需要技能知识时，先根据技能描述选择，再用 skill 工具读取具体 SKILL.md。',
     '- 生成交付给用户的文档、页面、报告、导出文件时，默认写入 `.ZxhClaw/artifacts/docs/`；只有用户明确指定位置时才写到其它目录。',
     '- 只有 `.ZxhClaw/artifacts/docs/` 下的产物会被前端当成文件卡片展示；项目源码、配置和内部文档不要作为附件暴露给用户。',
@@ -172,7 +169,8 @@ export function resolvePromptContextPaths(workspaceDir?: string): PromptContextP
   return {
     workspaceDir: baseDir,
     backendDir: runtimePaths.backendDir,
-    skillsDir: runtimePaths.backendSkillsDir,
+    skillsDir: runtimePaths.runtimeSkillsDir,
+    bundledSkillsDirLabel: 'builtin://skills',
     rootDir,
     memoryDir,
     artifactsDir,
@@ -197,12 +195,11 @@ export async function ensurePromptContextFiles(workspaceDir?: string): Promise<P
   await fs.mkdir(paths.memoryDir, { recursive: true })
   await fs.mkdir(paths.artifactsDocsDir, { recursive: true })
 
-  await writeIfChanged(paths.agentsFile, buildManagedAgentsContent())
-  await writeIfChanged(paths.toolsFile, buildManagedToolsContent(paths))
-
   if (!existsSync(paths.memoryFile)) {
     const legacyMemory = await readTextIfExists(paths.legacyMemoryFile)
-    await fs.writeFile(paths.memoryFile, legacyMemory.trim() ? legacyMemory : '', 'utf8')
+    if (legacyMemory.trim()) {
+      await fs.writeFile(paths.memoryFile, legacyMemory, 'utf8')
+    }
   }
 
   return paths
@@ -226,7 +223,7 @@ export async function readPromptContextFiles(role: PromptContextRole, workspaceD
 
   const files = await Promise.all(
     resolvedFiles.map(async ({ name, label, description, editable, filePath }) => {
-      const content = (await readTextIfExists(filePath)).trim()
+      const content = (await readContextFileContent(name, filePath, paths)).trim()
       if (!content) return null
       return { name, path: label, description, editable, content } satisfies PromptContextFile
     }),
@@ -240,7 +237,7 @@ export async function listPromptContextFiles(workspaceDir?: string): Promise<Pro
   const files = await Promise.all(
     ALL_CONTEXT_FILE_NAMES.map(async (name) => {
       const entry = resolveContextFileEntry(name, paths)
-      const content = await readTextIfExists(entry.filePath)
+      const content = await readContextFileContent(name, entry.filePath, paths)
       return {
         name,
         path: entry.label,
@@ -262,7 +259,7 @@ export async function readPromptContextFile(name: ContextFileName, workspaceDir?
     path: entry.label,
     description: entry.description,
     editable: entry.editable,
-    content: await readTextIfExists(entry.filePath),
+    content: await readContextFileContent(name, entry.filePath, paths),
   }
 }
 
@@ -309,6 +306,20 @@ function resolveContextFileEntry(name: ContextFileName, paths: PromptContextPath
     case 'MEMORY.md':
       return toContextFileEntry(name, paths.memoryFile)
   }
+}
+
+async function readContextFileContent(
+  name: ContextFileName,
+  filePath: string,
+  paths: PromptContextPaths,
+): Promise<string> {
+  if (name === 'AGENTS.md') {
+    return buildManagedAgentsContent()
+  }
+  if (name === 'TOOLS.md') {
+    return buildManagedToolsContent(paths)
+  }
+  return await readTextIfExists(filePath)
 }
 
 function toContextFileEntry(name: ContextFileName, filePath: string) {

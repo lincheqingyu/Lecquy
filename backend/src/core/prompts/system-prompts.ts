@@ -70,13 +70,13 @@ async function buildSafetySection(workspaceDir?: string): Promise<string[]> {
 }
 
 async function buildSkillsSection(workspaceDir: string): Promise<string[]> {
-  const skills = SKILLS.listSkillSummaries()
+  const skills = SKILLS.listSkillSummaries(workspaceDir)
   if (skills.length === 0) {
     return []
   }
 
   const skillList = skills
-    .map((skill) => `- ${skill.name}: ${skill.description} (${path.relative(workspaceDir, skill.path) || skill.path})`)
+    .map((skill) => `- ${skill.name}: ${skill.description} (${skill.displayPath})`)
     .join('\n')
 
   return toSectionLines(await renderPromptModuleTemplate('skills', { SKILL_LIST: skillList }, workspaceDir))

@@ -3,9 +3,10 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import { buildSimpleSystemPrompt, buildWorkerPrompt } from './system-prompts.js'
-import { ensurePromptContextFiles, resolvePromptContextPaths } from './context-files.js'
+import { ensurePromptContextFiles, readPromptContextFile, resolvePromptContextPaths } from './context-files.js'
 import { ensurePromptModuleTemplates } from './prompt-module-files.js'
 
 function createMockTool(name: string, description: string): AgentTool<any> {
@@ -40,12 +41,14 @@ test('ensurePromptContextFiles migrates legacy MEMORY.md into .ZxhClaw', async (
 
     const paths = await ensurePromptContextFiles(workspaceDir)
     const migrated = await readFile(paths.memoryFile, 'utf8')
-    const managedAgents = await readFile(paths.agentsFile, 'utf8')
-    const managedTools = await readFile(paths.toolsFile, 'utf8')
+    const managedAgents = await readPromptContextFile('AGENTS.md', workspaceDir)
+    const managedTools = await readPromptContextFile('TOOLS.md', workspaceDir)
 
     assert.equal(migrated, '# Legacy Memory\n\n已迁移内容\n')
-    assert.match(managedAgents, /ZxhClaw Runtime AGENTS/)
-    assert.match(managedTools, /ZxhClaw Runtime TOOLS/)
+    assert.equal(existsSync(paths.agentsFile), false)
+    assert.equal(existsSync(paths.toolsFile), false)
+    assert.match(managedAgents.content, /ZxhClaw Runtime AGENTS/)
+    assert.match(managedTools.content, /ZxhClaw Runtime TOOLS/)
   } finally {
     await rm(workspaceDir, { recursive: true, force: true })
   }

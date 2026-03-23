@@ -2,6 +2,10 @@
   "name": "@webclaw/backend",
   "version": "1.0.0",
   "type": "module",
+  "files": [
+    "dist",
+    "runtime-bundle.json"
+  ],
   "scripts": {
     "dev": "pnpm -F @webclaw/shared build && cross-env NODE_OPTIONS=--openssl-legacy-provider tsx --watch src/server.ts",
     "build": "pnpm -F @webclaw/shared build && tsc",

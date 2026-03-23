@@ -4,7 +4,6 @@
  */
 
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
 import express from 'express'
 import cors from 'cors'
@@ -15,8 +14,8 @@ import { modelsRouter } from './controllers/models.js'
 import { memoryRouter } from './controllers/memory.js'
 import { contextRouter } from './controllers/context.js'
 import { sessionsRouter } from './controllers/sessions.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+import { getBundledFrontendAsset, hasBundledFrontendAssets } from './core/runtime-bundle.js'
+import { resolveWorkspaceRoot } from './core/runtime-paths.js'
 
 export function createApp(): express.Express {
   const app = express()
@@ -37,12 +36,37 @@ export function createApp(): express.Express {
   app.use(errorHandler)
 
   // 生产环境：托管前端静态文件（与 API 同端口，无需 nginx）
-  const frontendDist = path.resolve(__dirname, '../../frontend/dist')
+  const frontendDist = path.join(resolveWorkspaceRoot(), 'frontend', 'dist')
   if (process.env.NODE_ENV === 'production' && fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist))
     // SPA 回退：非 API 路由都返回 index.html
     app.get('*', (_req, res) => {
       res.sendFile(path.join(frontendDist, 'index.html'))
+    })
+  } else if (process.env.NODE_ENV === 'production' && hasBundledFrontendAssets()) {
+    app.get('*', (req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        next()
+        return
+      }
+
+      const asset = getBundledFrontendAsset(req.path)
+      if (!asset) {
+        next()
+        return
+      }
+
+      const body = Buffer.from(asset.contentBase64, 'base64')
+      res.type(asset.contentType)
+      if (asset.etag) {
+        res.setHeader('ETag', asset.etag)
+      }
+      if (req.path === '/' || req.path === '/index.html') {
+        res.setHeader('Cache-Control', 'no-cache')
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+      res.send(body)
     })
   }
 

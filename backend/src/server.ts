@@ -4,11 +4,22 @@
  */
 
 import dotenv from 'dotenv'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
+import { resolve } from 'node:path'
+import { resolveWorkspaceRoot } from './core/runtime-paths.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: resolve(__dirname, '../../.env') })
+const workspaceRoot = resolveWorkspaceRoot()
+const workspaceEnvPath = resolve(workspaceRoot, '.env')
+const legacyBackendEnvPath = resolve(workspaceRoot, 'backend', '.env')
+
+if (fs.existsSync(workspaceEnvPath)) {
+  dotenv.config({ path: workspaceEnvPath })
+}
+
+if (legacyBackendEnvPath !== workspaceEnvPath && fs.existsSync(legacyBackendEnvPath)) {
+  dotenv.config({ path: legacyBackendEnvPath, override: false })
+}
+
 import { loadConfig } from './config/index.js'
 import { createServer } from 'node:http'
 import { createApp } from './app.js'

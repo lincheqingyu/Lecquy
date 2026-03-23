@@ -1,25 +1,27 @@
 /**
  * 达梦数据库连接池（懒初始化单例）
- * dmdb 包由用户手动安装，此模块做可选加载
+ * dmdb 模块按需加载，避免启动时强绑定数据库能力
  */
 
-import { createRequire } from 'node:module'
 import { getConfig } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 
-const require = createRequire(import.meta.url)
+type DmdbModule = {
+  createPool: (opts: Record<string, unknown>) => Promise<unknown>
+}
 
 let pool: unknown = null
-let dmdb: { createPool: (opts: Record<string, unknown>) => Promise<unknown> } | null = null
+let dmdb: DmdbModule | null = null
 let dmdbLoaded = false
 
 /** 获取 dmdb 模块（可选依赖，未安装时返回 null） */
-function loadDmdb(): typeof dmdb {
+async function loadDmdb(): Promise<typeof dmdb> {
   if (dmdbLoaded) return dmdb
   dmdbLoaded = true
 
   try {
-    dmdb = require('dmdb') as typeof dmdb
+    const imported = await import('dmdb')
+    dmdb = (imported.default ?? imported) as unknown as DmdbModule
     return dmdb
   } catch {
     dmdb = null
@@ -32,7 +34,7 @@ function loadDmdb(): typeof dmdb {
 export async function getDmPool(): Promise<unknown> {
   if (pool) return pool
 
-  const db = loadDmdb()
+  const db = await loadDmdb()
   if (!db) {
     throw new Error('dmdb 包未安装，请运行: pnpm -F @webclaw/backend add dmdb')
   }

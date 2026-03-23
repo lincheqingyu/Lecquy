@@ -1,8 +1,6 @@
+import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_WORKSPACE_DIR = path.resolve(MODULE_DIR, '../../../')
+import { isSea } from 'node:sea'
 
 export const GENERATED_ARTIFACT_DOCS_DIR = '.ZxhClaw/artifacts/docs'
 export const DEFAULT_SESSION_STORE_DIR = '.ZxhClaw/sessions/v3'
@@ -11,6 +9,7 @@ export interface RuntimePaths {
   readonly workspaceDir: string
   readonly backendDir: string
   readonly backendSkillsDir: string
+  readonly runtimeSkillsDir: string
   readonly runtimeRootDir: string
   readonly memoryDir: string
   readonly memoryFile: string
@@ -35,8 +34,62 @@ export interface RuntimePaths {
   readonly legacyBackendRuntimeRootDir: string
 }
 
+function looksLikeWorkspaceRoot(candidateDir: string): boolean {
+  return (
+    fs.existsSync(path.join(candidateDir, 'backend')) ||
+    fs.existsSync(path.join(candidateDir, 'frontend')) ||
+    fs.existsSync(path.join(candidateDir, 'pnpm-workspace.yaml')) ||
+    fs.existsSync(path.join(candidateDir, '.ZxhClaw')) ||
+    fs.existsSync(path.join(candidateDir, '.env'))
+  )
+}
+
+function detectWorkspaceRootFromBackendDir(backendDir: string): string | null {
+  if (path.basename(backendDir) !== 'backend') {
+    return null
+  }
+
+  const parentDir = path.dirname(backendDir)
+  const looksLikeParentWorkspace = (
+    fs.existsSync(path.join(parentDir, 'frontend')) ||
+    fs.existsSync(path.join(parentDir, 'pnpm-workspace.yaml')) ||
+    fs.existsSync(path.join(parentDir, '.env')) ||
+    fs.existsSync(path.join(parentDir, '.env.example')) ||
+    fs.existsSync(path.join(parentDir, '.ZxhClaw'))
+  )
+
+  return looksLikeParentWorkspace ? parentDir : null
+}
+
+function detectWorkspaceRootFromCwd(): string {
+  const cwd = path.resolve(process.cwd())
+  const backendParentRoot = detectWorkspaceRootFromBackendDir(cwd)
+  if (backendParentRoot) {
+    return backendParentRoot
+  }
+
+  if (looksLikeWorkspaceRoot(cwd)) {
+    return cwd
+  }
+
+  return cwd
+}
+
 export function resolveWorkspaceRoot(workspaceDir?: string): string {
-  return path.resolve(workspaceDir ?? DEFAULT_WORKSPACE_DIR)
+  if (workspaceDir) {
+    return path.resolve(workspaceDir)
+  }
+
+  const envWorkspaceRoot = process.env.WEBCLAW_WORKSPACE_ROOT?.trim()
+  if (envWorkspaceRoot) {
+    return path.resolve(envWorkspaceRoot)
+  }
+
+  if (isSea()) {
+    return path.dirname(process.execPath)
+  }
+
+  return detectWorkspaceRootFromCwd()
 }
 
 export function normalizeWorkspaceRelativePath(filePath: string): string {
@@ -69,6 +122,7 @@ export function resolveRuntimePaths(workspaceDir?: string, sessionStoreDir = DEF
     workspaceDir: workspaceDirAbs,
     backendDir,
     backendSkillsDir: path.join(backendDir, 'skills'),
+    runtimeSkillsDir: path.join(runtimeRootDir, 'skills'),
     runtimeRootDir,
     memoryDir,
     memoryFile: path.join(runtimeRootDir, 'MEMORY.md'),

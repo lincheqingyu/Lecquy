@@ -214,7 +214,14 @@ export function ConversationArea({
         {!hasSent ? (
           <div className="flex h-full flex-col items-center justify-center">
             <div className="mb-8 text-center">
-              <div className="text-2xl font-semibold text-text-primary">有什么我可以帮你的？</div>
+              <div className="flex items-center justify-center gap-3">
+                <img
+                  src="/logo2-no-bg-svg.svg"
+                  alt="Lecquy"
+                  className="h-10 w-10 object-contain"
+                />
+                <div className="text-2xl font-semibold text-text-primary">有什么我可以帮你的？</div>
+              </div>
               <div className="mt-2 text-sm text-text-muted">支持 simple 与 plan 两种模式</div>
             </div>
             <ChatInputComp

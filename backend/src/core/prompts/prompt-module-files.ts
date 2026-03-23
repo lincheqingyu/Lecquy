@@ -134,12 +134,6 @@ async function readTextIfExists(filePath: string): Promise<string> {
   }
 }
 
-async function writeIfMissing(filePath: string, content: string): Promise<void> {
-  const current = await readTextIfExists(filePath)
-  if (current) return
-  await fs.writeFile(filePath, content, 'utf8')
-}
-
 function resolveTemplateDir(workspaceDir?: string): string {
   const { rootDir } = resolvePromptContextPaths(workspaceDir)
   return path.join(rootDir, 'system-prompt')
@@ -152,16 +146,9 @@ function resolveTemplatePath(name: PromptTemplateName, workspaceDir?: string): s
 export async function ensurePromptModuleTemplates(workspaceDir?: string): Promise<void> {
   const templateDir = resolveTemplateDir(workspaceDir)
   await fs.mkdir(templateDir, { recursive: true })
-
-  await Promise.all(
-    (Object.keys(DEFAULT_TEMPLATES) as PromptTemplateName[]).map(async (name) => {
-      await writeIfMissing(resolveTemplatePath(name, workspaceDir), DEFAULT_TEMPLATES[name])
-    }),
-  )
 }
 
 export async function readPromptModuleTemplate(name: PromptTemplateName, workspaceDir?: string): Promise<string> {
-  await ensurePromptModuleTemplates(workspaceDir)
   const filePath = resolveTemplatePath(name, workspaceDir)
   const content = await readTextIfExists(filePath)
   return content || DEFAULT_TEMPLATES[name]
