@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { formatCompactionContextMessage } from '../context/templates/compact-summary.template.js'
 import { SessionManager } from './session-manager.js'
 
 function createManager(): SessionManager {
@@ -41,10 +42,16 @@ test('buildSessionContext respects compaction boundary and kept entries', () => 
   })
 
   assert.deepEqual(texts, [
-    '此前的对话已被压缩为以下摘要：\n\nsummary before kept user',
+    formatCompactionContextMessage('summary before kept user'),
     'kept user',
     'after compaction',
   ])
+  assert.deepEqual(context.compaction, {
+    entryId: manager.getEntries().find((entry) => entry.type === 'compaction')?.id,
+    summary: 'summary before kept user',
+    firstKeptEntryId: keptId,
+    summaryMessageIndex: 0,
+  })
 })
 
 test('branchWithSummary creates alternate branch context', () => {
@@ -100,6 +107,7 @@ test('buildSessionContext strips thinking blocks and keeps assistant text', () =
   const assistant = context.messages.find((message) => message.role === 'assistant')
 
   assert.equal(context.thinkingLevel, 'medium')
+  assert.equal(context.compaction, null)
   assert.ok(assistant)
   assert.ok(Array.isArray(assistant.content))
   assert.equal(assistant.content.length, 1)

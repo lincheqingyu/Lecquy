@@ -10,7 +10,11 @@
     "dev": "pnpm -F @webclaw/shared build && cross-env NODE_OPTIONS=--openssl-legacy-provider tsx --watch src/server.ts",
     "build": "pnpm -F @webclaw/shared build && tsc",
     "test": "pnpm -F @webclaw/shared build && tsc && find dist -name '*.test.js' -print0 | xargs -0 node --test",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "pg:smoke": "tsx src/dev/pg-acceptance-smoke.ts",
+    "pg:ws-acceptance": "tsx src/dev/ws-pg-acceptance.ts",
+    "pg:live-extraction": "tsx src/dev/live-event-extraction-smoke.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.55.0",
@@ -21,6 +25,7 @@
     "dmdb": "^1.0.46190",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
+    "pg": "^8.13.0",
     "ws": "^8.19.0",
     "zod": "^3.24.0"
   },
@@ -28,6 +33,7 @@
     "@types/cors": "^2.8.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "@types/ws": "^8.18.1",
     "cross-env": "^10.1.0",
     "tsx": "^4.19.0",

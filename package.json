@@ -4,8 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
+    "dev:full": "bash scripts/dev-full.sh",
     "dev:frontend": "pnpm -F @webclaw/frontend dev",
     "dev:backend": "pnpm -F @webclaw/backend dev",
+    "pg:dev:start": "bash scripts/dev-pg-start.sh",
+    "pg:dev:stop": "bash scripts/dev-pg-stop.sh",
+    "pg:dev:status": "bash scripts/dev-pg-status.sh",
     "bundle:runtime": "node scripts/generate-runtime-bundle.mjs",
     "build": "pnpm -F @webclaw/shared build && pnpm -F @webclaw/frontend build && pnpm run bundle:runtime && pnpm -F @webclaw/backend build",
     "build:portable": "pnpm build && node scripts/prepare-portable-release.mjs",

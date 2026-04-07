@@ -64,6 +64,23 @@ const envSchema = z.object({
   /** 可裁剪工具结果最小字符数 */
   SESSION_PRUNING_MIN_TOOL_CHARS: z.coerce.number().int().min(1).default(50000),
 
+  /** 是否启用 PostgreSQL 底座 */
+  PG_ENABLED: z.enum(['true', 'false']).default('false'),
+  /** PostgreSQL 主机 */
+  PG_HOST: z.string().default('localhost'),
+  /** PostgreSQL 端口 */
+  PG_PORT: portSchema.default(5432),
+  /** PostgreSQL 数据库名 */
+  PG_DATABASE: z.string().default('webclaw'),
+  /** PostgreSQL 用户名 */
+  PG_USER: z.string().default('postgres'),
+  /** PostgreSQL 密码（可选） */
+  PG_PASSWORD: z.string().optional(),
+  /** 连接池最大连接数 */
+  PG_POOL_MAX: z.coerce.number().int().min(1).default(10),
+  /** SSL 模式：false（默认本地开发）、true（启用）、require（强制，跳过证书验证） */
+  PG_SSL: z.enum(['false', 'true', 'require']).default('false'),
+
   /** 达梦数据库连接字符串（可选，扩展工具 execute_sql） */
   DM_CONNECT_STRING: z.string().optional(),
 
@@ -72,9 +89,10 @@ const envSchema = z.object({
 
   /** 档案 API 认证 Token（可选） */
   ARCHIVE_API_TOKEN: z.string().optional(),
-}).transform(({ BACKEND_PORT, PORT, ...rest }) => ({
+}).transform(({ BACKEND_PORT, PORT, PG_ENABLED, ...rest }) => ({
   ...rest,
   BACKEND_PORT: BACKEND_PORT ?? PORT ?? 3000,
+  PG_ENABLED: PG_ENABLED === 'true',
 }))
 
 /** 校验后的环境变量类型 */

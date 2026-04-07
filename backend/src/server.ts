@@ -27,6 +27,9 @@ import { logger } from './utils/logger.js'
 import { initChatWebSocketServer } from './ws/chat-ws.js'
 import { createSessionRuntimeService } from './runtime/index.js'
 import { initializeSessionTools } from './agent/tools/index.js'
+import { closePool, getPool } from './db/client.js'
+import { runMigrations } from './db/migrate.js'
+import { createMemoryCoordinator } from './memory/coordinator.js'
 
 /** 优雅关闭超时（毫秒） */
 const SHUTDOWN_TIMEOUT = 30_000
@@ -35,18 +38,31 @@ async function main(): Promise<void> {
   // 1. 加载并校验配置
   const config = loadConfig()
 
-  // 2. 创建 Express 应用
+  // 2. 可选初始化 PostgreSQL 底座
+  if (config.PG_ENABLED) {
+    logger.info('PostgreSQL 已启用，正在执行 migration...')
+    await runMigrations(getPool())
+    logger.info('PostgreSQL 初始化完成')
+  } else {
+    logger.info('PostgreSQL 未启用，继续使用文件持久化链路')
+  }
+
+  const memoryCoordinator = config.PG_ENABLED
+    ? await createMemoryCoordinator(config)
+    : null
+
+  // 3. 创建 Express 应用
   const app = createApp()
   const server = createServer(app)
 
-  // 3. 创建会话服务并绑定 session tools
+  // 4. 创建会话服务并绑定 session tools
   const sessionRuntime = await createSessionRuntimeService()
   initializeSessionTools(sessionRuntime)
 
-  // 4. 初始化 WebSocket（传入 registry）
+  // 5. 初始化 WebSocket（传入 registry）
   const wss = initChatWebSocketServer(server, sessionRuntime)
 
-  // 5. 启动服务器
+  // 6. 启动服务器
   const displayHost = config.HOST === '0.0.0.0' ? 'localhost' : config.HOST
   server.listen(config.BACKEND_PORT, config.HOST, () => {
     logger.info(`服务器已启动: http://${displayHost}:${config.BACKEND_PORT}`)
@@ -54,7 +70,7 @@ async function main(): Promise<void> {
     logger.info(`日志: ${config.LOG_LEVEL}`)
   })
 
-  // 6. 优雅关闭
+  // 7. 优雅关闭
   let isShuttingDown = false
 
   const shutdown = async (signal: string) => {
@@ -75,7 +91,20 @@ async function main(): Promise<void> {
       client.close(1001, '服务器关闭')
     }
 
-    await sessionRuntime.shutdown()
+    try {
+      await sessionRuntime.shutdown()
+      await memoryCoordinator?.shutdown()
+
+      if (config.PG_ENABLED) {
+        await closePool()
+      }
+    } catch (error) {
+      clearTimeout(forceTimer)
+      logger.error('优雅关闭失败', error)
+      process.exit(1)
+      return
+    }
+
     server.close(() => {
       clearTimeout(forceTimer)
       logger.info('服务器已关闭')
@@ -87,4 +116,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'))
 }
 
-void main()
+void main().catch((error) => {
+  logger.error('服务器启动失败', error)
+  process.exit(1)
+})

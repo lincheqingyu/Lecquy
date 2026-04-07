@@ -134,7 +134,86 @@ BACKEND_ORIGIN=http://your-backend-host:3011
 - `SESSION_PRUNING_SOFT_RATIO` 和 `SESSION_PRUNING_HARD_RATIO` 是相对于内部上下文窗口估算值计算的，不是绝对 token 数
 - `SESSION_RESET_MODE=daily` 并不代表“只看日期”，它仍然会叠加 `SESSION_IDLE_MINUTES` 的空闲重置逻辑
 
-### 5.4 扩展功能参数
+### 5.4 PostgreSQL 参数
+
+这些参数用于记忆系统的 PostgreSQL 底座。**默认关闭**，只有显式开启后才会在服务启动时连接数据库并执行 migration。
+
+| 参数 | 默认值 / 是否必填 | 可选项 / 格式 | 修改后果 | 建议 |
+|------|-------------------|---------------|----------|------|
+| `PG_ENABLED` | 默认 `false` | `true` / `false` | 关闭时服务完全不接触 PostgreSQL；开启后启动阶段会连接数据库并执行 migration，连不上会直接启动失败。 | 本地未装 PostgreSQL 时保持 `false`；开始 dual-write 或 memory 开发时再打开。 |
+| `PG_HOST` | 默认 `localhost` | 主机名或 IP | 改错会导致连接超时。 | 本地开发保持默认即可。 |
+| `PG_PORT` | 默认 `5432` | `1-65535` 整数 | 改错会导致连接失败。 | PostgreSQL 默认端口 5432，通常无需修改。 |
+| `PG_DATABASE` | 默认 `webclaw` | 任意字符串 | 改变后会连接到不同的数据库，历史数据不可见。 | 建议保持 `webclaw`，数据库需提前创建。 |
+| `PG_USER` | 默认 `postgres` | 任意字符串 | 影响连接权限，用户需有建表权限。 | 本地开发可用默认 postgres 用户。 |
+| `PG_PASSWORD` | 可选，无默认值 | 任意字符串 | 未填且数据库要求密码时会鉴权失败。 | 本地若用 trust 认证可不填；生产环境必填。 |
+| `PG_POOL_MAX` | 默认 `10` | 大于等于 `1` 的整数 | 过小会在并发高时排队等待；过大会超出 PG 连接上限。 | 本地开发保持默认即可；生产环境视并发量调整。 |
+| `PG_SSL` | 默认 `false` | `false` / `true` / `require` | `false` 不启用 SSL；`true` 启用并验证证书；`require` 启用但跳过证书验证（适合云托管服务）。 | 本地开发用 `false`；云数据库（如 Supabase、RDS）通常用 `require`。 |
+
+### PostgreSQL 参数特别说明
+
+- 一期 PG 已覆盖连接池、migration、runtime dual-write、memory 写入与 RAG 实验表
+- 只有 `PG_ENABLED=true` 时，`server.ts` 才会在启动时执行 migration，并在优雅关闭时释放连接池
+- `pnpm db:migrate` 会自动创建当前已落地的 runtime / memory / knowledge 表
+- migration 幂等：已执行的版本会被跳过，可安全重复运行
+- 数据库须提前手动创建（`CREATE DATABASE webclaw`）；migration 不会自动创建数据库
+
+### 本地 PG 验收环境（已在当前机器真实验证）
+
+当前仓库已经补了一个可重复启动的本地 PostgreSQL 验收入口：
+
+```bash
+pnpm pg:dev:start
+pnpm pg:dev:stop
+pnpm pg:dev:status
+```
+
+当前已验证方案依赖：
+
+- Homebrew `postgresql@16`
+- 仓库内数据目录 `/.ZxhClaw/dev-postgres/`
+
+当前默认连接参数：
+
+```bash
+PG_ENABLED=true
+PG_HOST=127.0.0.1
+PG_PORT=5432
+PG_DATABASE=webclaw
+PG_USER=postgres
+PG_PASSWORD=
+PG_SSL=false
+```
+
+推荐验收顺序：
+
+```bash
+pnpm pg:dev:start
+PG_ENABLED=true PG_HOST=127.0.0.1 PG_PORT=5432 PG_DATABASE=webclaw PG_USER=postgres PG_PASSWORD='' PG_SSL=false LLM_API_KEY=pg-smoke-key LLM_MODEL=pg-smoke-model pnpm --filter @webclaw/backend run db:migrate
+PG_ENABLED=true PG_HOST=127.0.0.1 PG_PORT=5432 PG_DATABASE=webclaw PG_USER=postgres PG_PASSWORD='' PG_SSL=false LLM_API_KEY=pg-smoke-key LLM_MODEL=pg-smoke-model pnpm --filter @webclaw/backend run pg:smoke
+pnpm pg:dev:stop
+```
+
+`pg:smoke` 当前会真实验证：
+
+- migration
+- `sessions / session_events`
+- `memory_items(kind='event')`
+- `memory_items(kind='foresight')`
+- compaction event
+- `knowledge_documents / knowledge_chunks` ingest 与 search
+
+当前不会覆盖：
+
+- 前端 / WS 端到端
+- 真实上游 LLM 提取质量
+
+说明：
+
+- event extraction smoke 为了避免依赖外部 LLM，会强制走“快速失败 -> heuristic fallback”
+- 但最终 `memory_items(kind='event')` 仍然是真实 PostgreSQL 落库
+- 当前机器没有可用 `docker`，所以本轮没有补一份经过实机验证的 Compose 启动结果
+
+### 5.5 扩展功能参数
 
 | 参数 | 默认值 / 是否必填 | 可选项 / 格式 | 修改后果 | 建议 |
 |------|-------------------|---------------|----------|------|

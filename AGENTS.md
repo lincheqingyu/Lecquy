@@ -70,6 +70,45 @@ WebClaw/
 - 前端文档目录：`docs/frontend/`
 - 后端文档目录：`docs/backend/`
 
+## 协作分工
+
+本项目默认采用 `Claude Code + Codex` 双开协作模式，但这是一套工作流经验，不是绝对规则。
+
+### 角色定位
+
+- `Claude Code`：更适合先想清楚再动手，承担 `planner / reviewer / architect`
+- `Codex`：更适合定义清楚后高速执行，承担 `implementer / finisher / repo operator`
+
+### 优先交给 Claude Code 的任务
+
+- 新系统设计、迁移方案、接口边界设计
+- Agent 编排、状态流、上下文处理策略设计
+- 大型重构方案与阶段拆解
+- 复杂 bug 根因分析，尤其是跨文件、跨层链路问题
+- PR review、风险审计、长 diff 审查
+- 读长文档、长日志、长上下文后输出结论
+
+### 优先交给 Codex 的任务
+
+- 根据明确 spec 直接实现功能
+- 批量改文件、补样板代码、补测试
+- 修类型错误、lint、测试失败
+- 按 checklist 执行中小型实现任务
+- 做仓库内高频、重复、吞吐优先的开发工作
+- 做 repo 自动化、GitHub / workflow 相关落地操作
+
+### 推荐协作流水线
+
+1. `Claude Code` 先理解需求、出方案、拆任务
+2. `Codex` 按方案实现第一版
+3. `Claude Code` 做 review、补边界条件、检查架构偏移
+4. `Codex` 按 review 继续收尾、补测试、整理仓库
+
+### 快速判断标准
+
+- 如果任务还不清楚、需要先想方案、要读很多上下文、或者主要是评审，优先给 `Claude Code`
+- 如果需求已经写清楚、成功标准明确、主要是执行和修改，优先给 `Codex`
+
 ## 关键开发路径
 
 ### 前后端联调常见任务

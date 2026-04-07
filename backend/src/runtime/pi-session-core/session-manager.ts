@@ -28,6 +28,7 @@ import {
   normalizeSessionAssistantContent,
   normalizeSessionUserContent,
 } from '@webclaw/shared'
+import { formatCompactionContextMessage } from '../context/templates/compact-summary.template.js'
 import type {
   BranchSummaryEntry,
   CompactionEntry,
@@ -68,6 +69,12 @@ export interface SessionContext {
   messages: AgentMessage[]
   thinkingLevel: ThinkingLevel
   model: { provider: string; modelId: string } | null
+  compaction: {
+    entryId: string
+    summary: string
+    firstKeptEntryId: string
+    summaryMessageIndex: number
+  } | null
 }
 
 export interface NewSessionOptions {
@@ -160,7 +167,7 @@ function createContextAssistantMessage(record: SessionMessageRecord, timestamp: 
 
 function createCompactionSummaryMessage(entry: CompactionEntry): UserMessage {
   return createContextUserMessage(
-    `此前的对话已被压缩为以下摘要：\n\n${entry.summary}`,
+    formatCompactionContextMessage(entry.summary),
     entry.timestamp,
   )
 }
@@ -204,7 +211,7 @@ export function buildSessionContext(
   }
 
   if (leafId === null) {
-    return { messages: [], thinkingLevel: 'off', model: null }
+    return { messages: [], thinkingLevel: 'off', model: null, compaction: null }
   }
 
   let leaf: SessionEventEntry | undefined = undefined
@@ -215,7 +222,7 @@ export function buildSessionContext(
     leaf = entries[entries.length - 1]
   }
   if (!leaf) {
-    return { messages: [], thinkingLevel: 'off', model: null }
+    return { messages: [], thinkingLevel: 'off', model: null, compaction: null }
   }
 
   const path: SessionEventEntry[] = []
@@ -245,6 +252,7 @@ export function buildSessionContext(
   }
 
   const messages: AgentMessage[] = []
+  let contextCompaction: SessionContext['compaction'] = null
 
   const appendContextMessage = (entry: SessionEventEntry) => {
     if (entry.type === 'message') {
@@ -262,6 +270,12 @@ export function buildSessionContext(
   }
 
   if (compaction) {
+    contextCompaction = {
+      entryId: compaction.id,
+      summary: compaction.summary,
+      firstKeptEntryId: compaction.firstKeptEntryId,
+      summaryMessageIndex: messages.length,
+    }
     messages.push(createCompactionSummaryMessage(compaction))
 
     const compactionIndex = path.findIndex((entry) => entry.type === 'compaction' && entry.id === compaction.id)
@@ -286,7 +300,12 @@ export function buildSessionContext(
     }
   }
 
-  return { messages, thinkingLevel, model }
+  return {
+    messages,
+    thinkingLevel,
+    model,
+    compaction: contextCompaction,
+  }
 }
 
 function loadEntriesFromFile(filePath: string): FileEntry[] {

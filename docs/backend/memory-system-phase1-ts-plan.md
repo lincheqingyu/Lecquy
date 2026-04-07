@@ -1,0 +1,189 @@
+# WebClaw 记忆系统一期 TS 方案
+
+更新日期：2026-04-06
+
+## 1. 当前基线
+
+记忆系统一期的技术基线已经固定为：
+
+- TypeScript 后端内实现
+- 主运行时对标 [`backend/src/runtime/session-runtime-service.ts`](../../backend/src/runtime/session-runtime-service.ts)
+- 原始会话真相源对标 runtime append-only 事件流
+- canonical store 采用 PostgreSQL
+- 写入链路采用 `event-first`
+- 文件系统保留为兼容层、回退层、导出层
+
+一句话版本：
+
+> 先把 runtime 事件流和数据库打通，再让 `event memory` 跑起来，然后补 retrieval、foresight 与 compact。
+
+## 2. 一期目标
+
+一期必须完成：
+
+- runtime 事件流进入 PostgreSQL
+- 原始对话异步提取成 `event memory`
+- memory 能被检索并注入 prompt
+- plan 模式里的 todo 变化沉淀到 `foresight`
+- 为 compact 和 RAG 留接口
+
+一期不追求：
+
+- Python memory service
+- 多租户
+- 图谱记忆
+- 重型中文分词扩展
+- 完整 RAG 产品化
+
+## 3. 四层 canonical schema
+
+长期 canonical schema 仍固定为：
+
+| kind | 职责 | 当前状态 |
+| --- | --- | --- |
+| `profile` | 长期画像、偏好、约束 | 仅保留 schema，未实现写入 |
+| `episodic` | 阶段性经历与过程总结 | 未实现写入 |
+| `event` | 原子事实、决定、承诺、工具动作 | 已实现写入 |
+| `foresight` | 未来待办、跟进、提醒、计划 | 尚未实现写入 |
+
+## 4. 当前实现 vs 后续目标
+
+### 4.1 `sessions`
+
+当前实现字段：
+
+- `id`
+- `route`
+- `mode`
+- `title`
+- `created_at`
+- `updated_at`
+- `last_event_seq`
+- `projection_json`
+
+后续目标：
+
+- 保持单表
+- 不新增 `session_messages`
+- 如需列表优化，继续围绕 `projection_json` 衍生缓存字段
+
+### 4.2 `session_events`
+
+当前实现字段：
+
+- `id`
+- `session_id`
+- `seq`
+- `event_type`
+- `role`
+- `content_text`
+- `content_json`
+- `payload_json`
+- `created_at`
+
+后续目标：
+
+- 继续保持 append-only
+- 作为 extraction、compact、context rebuild 的唯一原始数据源
+- 不引入单独 `session_messages`
+
+### 4.3 `memory_items`
+
+当前实现字段：
+
+- `id`
+- `kind`
+- `session_id`
+- `session_key`
+- `summary`
+- `content`
+- `payload_json`
+- `tags`
+- `importance`
+- `confidence`
+- `status`
+- `source_event_ids`
+- `source_session_id`
+- `created_at`
+- `updated_at`
+
+后续目标：
+
+- 继续单表承载 `event / foresight / profile / episodic`
+- 一期不加 `embedding` 列
+- 一期 recall 先只查 `kind = 'event'`
+
+### 4.4 `memory_jobs`
+
+当前实现字段：
+
+- `id`
+- `job_type`
+- `status`
+- `session_id`
+- `trigger_event_seq`
+- `payload_json`
+- `attempt_count`
+- `last_error`
+- `created_at`
+- `updated_at`
+
+后续目标：
+
+- 继续使用单实例进程内 poller
+- 一期只承载 `extract_event`
+- compact 一期不单独建 job
+
+## 5. 写入链路
+
+### 5.1 已实现
+
+当前已实现链路：
+
+1. runtime 持续写文件索引和 session JSONL
+2. runtime dual-write 到 `sessions / session_events`
+3. run 完成后调用 `MemoryCoordinator.onTurnCompleted()`
+4. 达到阈值后入队 `extract_event`
+5. poller 消费 job
+6. event extraction 写入 `memory_items`
+
+### 5.2 尚未实现
+
+当前还没有实现：
+
+- cache-friendly 收口
+- RAG spike 的表和接口
+
+## 6. 当前默认值
+
+当前已冻结的默认值：
+
+- `event extraction threshold = 4`
+- `event extraction maxMessages = 8`
+- `memory job poll interval = 5000ms`
+- `memory job retry = 3`
+- recall source：`event-only`
+- `prompt injection topK = 5`
+- `prompt injection budget = 1200-1800 tokens`
+- `compact trigger = 50 message events`
+- `compact recent tail = 10`
+
+## 7. 后续专题规范
+
+剩余主线的实现细节不再继续堆在这份总方案里，而是拆到下面这些专题文档：
+
+- [`memory-retrieval-and-prompt-injection-spec.md`](./memory-retrieval-and-prompt-injection-spec.md)
+- [`foresight-sync-spec.md`](./foresight-sync-spec.md)
+- [`compact-and-context-stabilization-spec.md`](./compact-and-context-stabilization-spec.md)
+- [`rag-spike-boundary-spec.md`](./rag-spike-boundary-spec.md)
+
+## 8. 当前未实现提醒
+
+为了避免误读，这里明确写出当前未实现项：
+
+- cache-friendly 收口尚未完成
+- RAG 仅为后续 spike
+
+如果只保留一句话作为阶段锚点，请保留这一句：
+
+> 一期的正确顺序是：`runtime event -> PostgreSQL -> event memory -> retrieval/injection -> foresight -> compact -> RAG spike`。

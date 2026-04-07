@@ -50,6 +50,13 @@ import {
   resolveRuntimePaths,
 } from '../core/runtime-paths.js'
 import { clearCurrentToolSessionKey, setCurrentToolSessionKey } from '../agent/tools/session-tools/index.js'
+import { getPool } from '../db/client.js'
+import { deleteRuntimeSession, syncRuntimeSession } from '../db/runtime-session-repository.js'
+import { applyCompactionIfNeeded } from '../memory/compact.js'
+import { getMemoryCoordinator } from '../memory/coordinator.js'
+import { syncTodosToForesight } from '../memory/foresight-sync.js'
+import { buildMemoryRecallBlock } from '../memory/prompt-injector.js'
+import { buildAugmentedContext } from './context/augmented-context-builder.js'
 import { resolveSessionKey } from './session-key.js'
 import { SessionManager } from './pi-session-core/session-manager.js'
 import { createSessionProjectionBase, rebuildSessionProjection } from './projections.js'
@@ -416,6 +423,7 @@ export class SessionRuntimeService {
   private readonly runtimePaths: RuntimePaths
   private readonly paths: ReturnType<typeof createSessionStorePaths>
   private readonly projections = new Map<string, SessionProjection>()
+  private readonly pgSyncState = new Map<string, { eventCount: number; updatedAt: number; title: string | null; mode: string | null }>()
   private readonly managers = new Map<string, SessionManager>()
   private readonly notifiers = new Map<string, (event: keyof ServerEventPayloadMap, payload: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => void>()
   private readonly activeRuns = new Map<string, ActiveRunHandle>()
@@ -497,6 +505,7 @@ export class SessionRuntimeService {
     const nextProjection = snapshot.projection
     this.projections.set(sessionKey, nextProjection)
     await this.persistIndex()
+    await this.syncProjectionToPg(nextProjection, manager)
 
     if (nextProjection.title && nextProjection.title !== beforeTitle) {
       this.notify(sessionKey, 'session_title_updated', {
@@ -507,6 +516,39 @@ export class SessionRuntimeService {
       })
     }
     return nextProjection
+  }
+
+  private async syncProjectionToPg(projection: SessionProjection, manager: SessionManager): Promise<void> {
+    if (!this.cfg.PG_ENABLED) return
+    const eventCount = manager.getEntries().length
+    const nextState = {
+      eventCount,
+      updatedAt: projection.updatedAt,
+      title: projection.title ?? null,
+      mode: projection.workflow?.mode ?? null,
+    }
+    const previousState = this.pgSyncState.get(projection.key)
+
+    if (
+      previousState
+      && previousState.eventCount === nextState.eventCount
+      && previousState.updatedAt === nextState.updatedAt
+      && previousState.title === nextState.title
+      && previousState.mode === nextState.mode
+    ) {
+      return
+    }
+
+    try {
+      await syncRuntimeSession(getPool(), projection, manager.getEntries())
+      this.pgSyncState.set(projection.key, nextState)
+    } catch (error) {
+      logger.error('runtime dual-write 失败，已保留文件链路', {
+        sessionKey: projection.key,
+        sessionId: projection.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   private async withLock<T>(sessionKey: string, task: () => Promise<T>): Promise<T> {
@@ -692,7 +734,21 @@ export class SessionRuntimeService {
       await rm(this.sessionFilePath(projection.sessionId), { force: true })
     }
     this.managers.delete(projection.key)
+    this.pgSyncState.delete(projection.key)
     await this.persistIndex()
+
+    if (this.cfg.PG_ENABLED) {
+      try {
+        await deleteRuntimeSession(getPool(), projection.sessionId)
+      } catch (error) {
+        logger.error('runtime dual-write 删除失败，已保留本地删除结果', {
+          sessionKey: projection.key,
+          sessionId: projection.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
     return true
   }
 
@@ -989,6 +1045,26 @@ export class SessionRuntimeService {
     })
   }
 
+  private async buildContextMessages(
+    bound: BoundSession,
+    mode: SessionMode,
+    userQuery: string,
+  ): Promise<AgentMessage[]> {
+    const memoryRecallBlock = await buildMemoryRecallBlock({
+      pgEnabled: this.cfg.PG_ENABLED,
+      sessionId: bound.projection.sessionId,
+      sessionKey: bound.projection.key,
+      userQuery,
+      mode,
+      route: bound.projection.route,
+    })
+
+    return buildAugmentedContext({
+      sessionManager: bound.manager,
+      memoryRecallBlock,
+    }).contextMessages
+  }
+
   private async executeRun(
     bound: BoundSession,
     runId: RunId,
@@ -1019,7 +1095,7 @@ export class SessionRuntimeService {
 
     const attachments = modelOptions.attachments ?? []
     const userMessage = this.createUserMessage(input, attachments)
-    const contextBeforeInput = manager.buildSessionContext().messages
+    const contextBeforeInput = await this.buildContextMessages(bound, mode, input)
     manager.appendMessage(userMessage)
     manager.appendRunStarted(runId, mode)
 
@@ -1069,9 +1145,18 @@ export class SessionRuntimeService {
         manager.appendSessionInfo(autoTitle)
         await this.refreshProjection(sessionKey)
       }
+
+      if (applyCompactionIfNeeded(manager)) {
+        await this.refreshProjection(sessionKey)
+      }
+
       this.activeRuns.delete(sessionKey)
       clearCurrentToolSessionKey()
-      await this.refreshProjection(sessionKey)
+      const finalProjection = await this.refreshProjection(sessionKey)
+      const memoryCoordinator = getMemoryCoordinator()
+      if (memoryCoordinator) {
+        await memoryCoordinator.onTurnCompleted(finalProjection, manager)
+      }
     }
   }
 
@@ -1107,6 +1192,7 @@ export class SessionRuntimeService {
       temperature: modelOptions.options?.temperature,
       extraSystemPrompt: modelOptions.systemPrompt,
       signal,
+      disableLegacyMemoryFlush: true,
       enableTools: modelOptions.enableTools ?? false,
       route: bound.projection.route,
       mode,
@@ -1144,6 +1230,28 @@ export class SessionRuntimeService {
     const currentItems = bound.projection.workflow?.todo?.items
     if (currentItems && currentItems.length > 0) {
       todoManager.loadItems(currentItems.map((item) => ({ ...item })))
+    }
+
+    const persistTodoState = async (emitEvent = true): Promise<SerializedTodoItem[]> => {
+      const items = todoManager.getItems().map((item) => ({ ...item }))
+      bound.manager.appendTodoUpdated(runId, items)
+      const latestProjection = await this.refreshProjection(sessionKey)
+      await syncTodosToForesight({
+        pgEnabled: this.cfg.PG_ENABLED,
+        projection: latestProjection,
+        runId,
+        items,
+      })
+
+      if (emitEvent) {
+        this.notify(sessionKey, 'todo_state', {
+          sessionKey,
+          runId,
+          items,
+        })
+      }
+
+      return items
     }
 
     if (!resumePause) {
@@ -1199,14 +1307,7 @@ export class SessionRuntimeService {
         }
       }
 
-      const items = todoManager.getItems().map((item) => ({ ...item }))
-      bound.manager.appendTodoUpdated(runId, items)
-      await this.refreshProjection(sessionKey)
-      this.notify(sessionKey, 'todo_state', {
-        sessionKey,
-        runId,
-        items,
-      })
+      const items = await persistTodoState()
 
       await this.finishStep(bound, runId, plannerStep, 'completed', `生成 ${items.length} 个任务`)
     }
@@ -1220,13 +1321,7 @@ export class SessionRuntimeService {
       const [index, item] = pending
       if (item.status !== 'in_progress') {
         todoManager.markInProgress(index)
-        bound.manager.appendTodoUpdated(runId, todoManager.getItems().map((todo) => ({ ...todo })))
-        await this.refreshProjection(sessionKey)
-        this.notify(sessionKey, 'todo_state', {
-          sessionKey,
-          runId,
-          items: todoManager.getItems().map((todo) => ({ ...todo })),
-        })
+        await persistTodoState()
       }
 
       let step: StepLifecycle = {
@@ -1266,7 +1361,7 @@ export class SessionRuntimeService {
         }
         await this.finishStep(bound, runId, step, 'completed', '等待用户补充信息')
         bound.manager.appendPauseRequested(pause)
-        bound.manager.appendTodoUpdated(runId, todoManager.getItems().map((todo) => ({ ...todo })))
+        await persistTodoState(false)
         bound.manager.appendRunFinished(runId, 'paused')
         await this.refreshProjection(sessionKey)
         this.notify(sessionKey, 'pause_requested', {
@@ -1283,16 +1378,20 @@ export class SessionRuntimeService {
         [{ type: 'text', text: `任务 ${index + 1} 执行结果：\n${workerResult.result}` }],
         false,
       )
-      bound.manager.appendTodoUpdated(runId, todoManager.getItems().map((todo) => ({ ...todo })))
       await this.finishStep(bound, runId, step, 'completed', workerResult.result)
-      this.notify(sessionKey, 'todo_state', {
-        sessionKey,
-        runId,
-        items: todoManager.getItems().map((todo) => ({ ...todo })),
-      })
+      await persistTodoState()
     }
 
-    const finalContextMessages = bound.manager.buildSessionContext().messages
+    const originalUserQueryForFinalRecall = extractSessionText((_userMessage as SessionMessageRecord).content)
+    // Final answer recall intentionally stays anchored to the original user query.
+    // The synthetic "please provide the final answer" prompt is structurally stable
+    // but semantically generic, so using it would collapse recall into near-identical
+    // queries across runs and lose the user's actual retrieval intent.
+    const finalContextMessages = await this.buildContextMessages(
+      bound,
+      'plan',
+      originalUserQueryForFinalRecall,
+    )
     const finalPrompt: SessionMessageRecord = {
       role: 'user',
       content: '请基于刚刚完成的计划执行结果，直接给用户最终答复。不要再展示 todo、内部步骤或执行日志，只输出面向用户的结论、结果与必要说明。',

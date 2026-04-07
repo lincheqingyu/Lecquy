@@ -1,0 +1,192 @@
+# WebClaw 记忆系统一期后端实施清单
+
+更新日期：2026-04-07
+
+## 1. 当前统一口径
+
+当前后端实施固定使用下面这条基线：
+
+- 主运行时：[`backend/src/runtime/session-runtime-service.ts`](../../backend/src/runtime/session-runtime-service.ts)
+- 原始会话模型：runtime append-only `session_events`
+- 记忆一期：`event-first`
+- 存储地基：`PostgreSQL + pgvector + pg_trgm`
+- 文件仍保留为 fallback
+
+不要再摇摆的三件事：
+
+1. 一期对标 `runtime`，不是 `session-v2`
+2. 一期优先存 `session_events`，不是 `session_messages`
+3. 一期先把 `event memory` 跑通，再补 retrieval / foresight / compact
+
+## 2. 已完成里程碑
+
+### Milestone 1：数据库底座
+
+- 已接入 `pg`
+- 已落 `db/client.ts`
+- 已落 migration runner
+- 已接 `PG_ENABLED`
+- 已把 startup / shutdown 接入 `server.ts`
+- 已补本地 PostgreSQL 验收脚本，并完成一轮真实启动 / migration 验证
+
+### Milestone 2：runtime dual-write
+
+- `sessions` dual-write 已完成
+- `session_events` dual-write 已完成
+- PG 失败不阻断文件写入
+
+### Milestone 3：memory 最小闭环
+
+- `memory_items` 已建表
+- `memory_jobs` 已建表
+- `extract_event` job 已可入队
+- `MemoryCoordinator.onTurnCompleted()` 已接到 runtime 主链路
+- event extraction 已能写入 `memory_items`
+
+## 3. 剩余里程碑
+
+### Milestone 4：检索与注入
+
+目标：
+
+- `event-only` recall
+- `tags + trigram + FTS(simple)`
+- prompt injection
+
+专题规范：
+
+- [`memory-retrieval-and-prompt-injection-spec.md`](./memory-retrieval-and-prompt-injection-spec.md)
+
+完成标准：
+
+- 能从 `memory_items` 检索出相关 `event`
+- recall 结果能注入 runtime 上下文
+- recall 失败时主流程不受影响
+
+当前状态：
+
+- 已完成
+
+### Milestone 5：foresight 单向同步
+
+目标：
+
+- `TodoManager -> foresight`
+- `kind = 'foresight'`
+- deterministic upsert
+
+专题规范：
+
+- [`foresight-sync-spec.md`](./foresight-sync-spec.md)
+
+完成标准：
+
+- planner 生成的 todo 能写入 `memory_items`
+- `in_progress / done / cancelled` 能正确映射
+- simple 模式不产生 foresight
+
+当前状态：
+
+- 已完成
+
+### Milestone 6：compact 与 context stabilization
+
+目标：
+
+- 达阈值后生成 compact summary
+- 保留 recent tail
+- 固定上下文顺序
+
+专题规范：
+
+- [`compact-and-context-stabilization-spec.md`](./compact-and-context-stabilization-spec.md)
+
+完成标准：
+
+- compaction event 可生成
+- `buildSessionContext()` 可消费 compaction
+- memory / compact / history 的顺序固定
+
+当前状态：
+
+- compact prototype 已完成
+- cache-friendly 收口已完成并验收
+
+### Milestone 7：RAG spike
+
+目标：
+
+- 只冻结知识库边界
+- 不进入主线交付
+
+专题规范：
+
+- [`rag-spike-boundary-spec.md`](./rag-spike-boundary-spec.md)
+
+完成标准：
+
+- 已明确独立 `knowledge_chunks`
+- 已冻结最小表结构和接口边界
+
+当前状态：
+
+- 已完成最小骨架
+- 已完成最小 text-first 检索与 chunk 策略，可供后端内部实验
+- 尚未接入 runtime / memory recall 主链路
+- 已在真实 PostgreSQL 上完成最小 ingest / search smoke
+
+## 4. 当前关键挂接点
+
+### 4.1 已完成挂接点
+
+- [`backend/src/server.ts`](../../backend/src/server.ts)
+- [`backend/src/runtime/session-runtime-service.ts`](../../backend/src/runtime/session-runtime-service.ts)
+- [`backend/src/db/runtime-session-repository.ts`](../../backend/src/db/runtime-session-repository.ts)
+- [`backend/src/memory/coordinator.ts`](../../backend/src/memory/coordinator.ts)
+
+### 4.2 当前冻结边界
+
+- retrieval / injection：已走 runtime 统一 builder 链路
+- foresight：已固定在 `appendTodoUpdated()` 之后、`refreshProjection()` 之后
+- compact：已固定在 run 完成后的检查点，调用 `appendCompaction()`
+- RAG：仅保留 `knowledge_documents / knowledge_chunks + repository + rag/index.ts` 骨架
+- 集成验收：已完成本地 PostgreSQL 第一轮真实 smoke；仍未做前端 / WS 端到端
+
+### 4.3 Legacy 兼容路径
+
+- 旧 `session-v2` 仍存在，但不再作为主实施锚点
+- legacy `MEMORY.md` flush 仍保留在非 runtime 路径，不再扩展
+
+## 5. 当前验收门槛
+
+接下来的每个剩余里程碑都必须满足这些门槛：
+
+- 不破坏 runtime 当前主链路
+- PG 失败时仍可降级
+- 不回写或重写历史 `session_events`
+- 不在 WS handler 内塞业务核心逻辑
+- 不把 RAG 和 memory 混成一套表语义
+
+## 6. 一期默认值
+
+当前已经冻结的默认值：
+
+- `event extraction threshold = 4`
+- `event extraction maxMessages = 8`
+- `memory job poll interval = 5000ms`
+- `memory job retry = 3`
+- `prompt injection topK = 5`
+- `prompt injection budget = 1200-1800 tokens`
+- `compact trigger = 50 message events`
+- `compact recent tail = 10`
+- `FTS config = simple`
+
+## 7. 这份清单和其他文档的关系
+
+- 技术基线见 [`memory-system-phase1-ts-plan.md`](./memory-system-phase1-ts-plan.md)
+- 剩余主线索引见 [`runtime-memory-compact-decisions.md`](./runtime-memory-compact-decisions.md)
+- 后端主链路见 [`backend-architecture-analysis.md`](./backend-architecture-analysis.md)
+
+如果只保留一句话作为当前开发顺序，请保留这一句：
+
+> Task A 已验收，RAG 已可在后端内部做真实 PostgreSQL 实验；下一步如需继续，优先补更完整的 PG 端到端验收，而不是继续扩主记忆链路。 

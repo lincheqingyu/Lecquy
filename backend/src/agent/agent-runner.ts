@@ -41,6 +41,7 @@ export interface SimpleAgentOptions {
   enableTools?: boolean
   route?: SessionRouteContext
   mode?: SessionMode
+  disableLegacyMemoryFlush?: boolean
 }
 
 /** Simple Agent 运行结果 */
@@ -65,9 +66,12 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     contextMessages = [],
     turnState,
     enableTools = false,
+    disableLegacyMemoryFlush = false,
   } = options
-	
-  await ensureMemoryFiles()
+
+  if (!disableLegacyMemoryFlush) {
+    await ensureMemoryFiles()
+  }
   const tools = enableTools ? createSimpleTools() : []
   const systemPrompt = await buildSimpleSystemPrompt({
     mode: options.mode ?? 'simple',
@@ -169,6 +173,8 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
   }
 
   const mergedMessages = [...contextMessages, ...allMessages]
-  await recordMemoryTurnAndMaybeFlush(mergedMessages, turnState)
+  if (!disableLegacyMemoryFlush) {
+    await recordMemoryTurnAndMaybeFlush(mergedMessages, turnState)
+  }
   return { messages: mergedMessages }
 }

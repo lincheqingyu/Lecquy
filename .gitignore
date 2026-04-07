@@ -14,6 +14,7 @@ release/
 
 # 会话数据
 .ZxhClaw/sessions/
+.ZxhClaw/dev-postgres/
 .sessions-v2/
 .sessions-v3/
 backend/.memory/
