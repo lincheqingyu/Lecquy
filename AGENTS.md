@@ -172,6 +172,7 @@ YYYYMMDD-N-文档标题 文档类型.md
 ### 开发命令
 
 ```bash
+pnpm dev:full         # 前端 + 后端 + 本机 PG 一键联调
 pnpm dev              # 前后端并行启动
 pnpm dev:backend      # 仅后端
 pnpm dev:frontend     # 仅前端
@@ -180,6 +181,8 @@ pnpm build            # 全量构建
 
 ## 开发规范
 
+- **开发期运行原则**：当前处于开发阶段，默认采用本机进程 + 本机 PostgreSQL 联调；不要把 Docker / Docker Compose 作为默认开发、验收或部署路径
+- **启动入口原则**：一键启动优先使用跨平台 Node 脚本；不要把 `bash` 作为顶层唯一入口
 - **语言**：中文注释/对话，英文代码/配置
 - **样式**：Tailwind CSS 4
 - **不可变性**：ALWAYS 创建新对象，NEVER 直接修改

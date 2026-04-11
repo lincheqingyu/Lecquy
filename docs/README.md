@@ -20,7 +20,9 @@
 - 已完成模型可达性验收：`http://192.168.3.49:8003/v1` 可达，但 event extraction 当前仍回退 heuristic
 - 当前边界：RAG 仍未接入 runtime 主链路，不参与 memory recall / ws，只在后端内部提供表结构、chunk 策略与 repository 检索
 - 当前阻塞：`plan -> foresight` 在真实 WS 验收里仍未通过，本地 `qwen3-coder-30b-instruct` 连续两次生成空 `todo_updated`
+- 当前开发期原则：默认使用本机进程 + 本机 PostgreSQL 联调，不使用 Docker / Docker Compose 作为默认开发或部署路径
 - 本地 PG 环境入口：`pnpm pg:dev:start` / `pnpm pg:dev:stop` / `pnpm --filter @lecquy/backend run pg:smoke`
+- 一键联调入口：`pnpm dev:full`
 - WS / LLM 验收入口：
   - `pnpm --filter @lecquy/backend run pg:ws-acceptance`
   - `pnpm --filter @lecquy/backend run pg:live-extraction`

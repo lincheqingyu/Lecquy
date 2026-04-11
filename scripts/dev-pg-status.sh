@@ -3,10 +3,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT_DIR/scripts/lib/postgres-bin.sh"
+
 PG_HOME="${LECQUY_PG_HOME:-$ROOT_DIR/.lecquy/dev-postgres}"
 DATA_DIR="${LECQUY_PG_DATA_DIR:-$PG_HOME/data}"
-BIN_DIR="${LECQUY_PG_BIN_DIR:-/opt/homebrew/opt/postgresql@16/bin}"
-PG_CTL_BIN="$BIN_DIR/pg_ctl"
+PG_CTL_BIN="$(resolve_postgres_bin pg_ctl)"
 
 if [[ ! -x "$PG_CTL_BIN" ]]; then
   echo "missing PostgreSQL binary: $PG_CTL_BIN" >&2
