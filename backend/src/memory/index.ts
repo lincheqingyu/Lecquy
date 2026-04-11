@@ -1,6 +1,7 @@
 export {
   ensureMemoryFiles,
   loadMemoryInjectionText,
+  loadMemorySummary,
   appendDailyMemoryEntry,
   getDailyMemoryFilePath,
   getMemoryDir,

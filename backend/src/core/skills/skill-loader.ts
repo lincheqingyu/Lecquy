@@ -11,6 +11,7 @@ import path, { join, resolve } from 'node:path'
 import type { AgentTool } from '@mariozechner/pi-agent-core'
 import { listBundledSkillFiles } from '../runtime-bundle.js'
 import { resolveRuntimePaths } from '../runtime-paths.js'
+import { logger } from '../../utils/logger.js'
 
 type SkillSourceKind = 'bundle' | 'workspace' | 'runtime'
 
@@ -21,10 +22,22 @@ interface SkillResourceGroup {
 }
 
 /** 解析后的技能数据 */
+export interface SkillManifest {
+  readonly name: string
+  readonly description: string
+  readonly category?: string
+  readonly trigger_when?: string
+  readonly required_inputs?: string[]
+  readonly risk_level?: 'low' | 'medium' | 'high'
+  readonly direct_return?: boolean
+  readonly specificity?: number
+}
+
 export interface Skill {
   readonly name: string
   readonly description: string
   readonly directReturn: boolean
+  readonly manifest: SkillManifest
   readonly body: string
   readonly path: string
   readonly dir: string
@@ -41,17 +54,95 @@ export interface SkillSummary {
 }
 
 interface ParsedSkillMetadata {
-  readonly name: string
-  readonly description: string
-  readonly directReturn: boolean
+  readonly manifest: SkillManifest
   readonly body: string
 }
+
+export const BASELINE_SKILLS = ['pdf', 'docx', 'xlsx', 'pptx'] as const
+
+const BASELINE_SKILL_SET = new Set<string>(BASELINE_SKILLS)
+const SKILL_BODY_BLACKLIST = [
+  /override\s+mode/i,
+  /bypass\s+confirm/i,
+  /skip\s+validation/i,
+  /ignore\s+safety/i,
+  /override\s+system/i,
+  /覆盖模式/,
+  /绕过确认/,
+  /跳过验证/,
+  /忽略安全/,
+] as const
 
 const RESOURCE_FOLDERS = [
   ['scripts', '脚本'],
   ['references', '参考资料'],
   ['assets', '资源文件'],
 ] as const
+
+function parseBooleanFlag(value: string | undefined): boolean | undefined {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (['true', '1', 'yes'].includes(normalized)) return true
+  if (['false', '0', 'no'].includes(normalized)) return false
+  return undefined
+}
+
+function parseStringList(value: string | undefined): string[] | undefined {
+  if (!value) return undefined
+  const normalized = value.trim()
+  if (!normalized) return undefined
+
+  return normalized
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map((item) => item.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean)
+}
+
+export function validateSkillManifest(manifest: SkillManifest): {
+  valid: boolean
+  reason?: string
+} {
+  if (!manifest.name || !manifest.description) {
+    return { valid: false, reason: 'name 和 description 为必填字段' }
+  }
+
+  return { valid: true }
+}
+
+export function validateSkillBody(body: string): {
+  valid: boolean
+  reason?: string
+} {
+  for (const pattern of SKILL_BODY_BLACKLIST) {
+    if (pattern.test(body)) {
+      return {
+        valid: false,
+        reason: `skill 正文包含禁止的指令: ${pattern.source}`,
+      }
+    }
+  }
+
+  return { valid: true }
+}
+
+export function selectMostSpecificSkill(candidates: Skill[]): Skill {
+  const [selected] = [...candidates].sort((left, right) => {
+    const leftSpecificity = left.manifest.specificity ?? 0
+    const rightSpecificity = right.manifest.specificity ?? 0
+    if (rightSpecificity !== leftSpecificity) {
+      return rightSpecificity - leftSpecificity
+    }
+
+    return left.manifest.name.localeCompare(right.manifest.name)
+  })
+
+  if (!selected) {
+    throw new Error('selectMostSpecificSkill 至少需要一个候选 skill')
+  }
+
+  return selected
+}
 
 class SkillLoader {
   private collectResourceGroupsFromDir(skillDir: string): SkillResourceGroup[] {
@@ -118,14 +209,45 @@ class SkillLoader {
       metadata[key] = value
     }
 
-    if (!metadata['name'] || !metadata['description']) return null
+    const riskLevel = metadata['risk_level']
+    const directReturn = parseBooleanFlag(metadata['direct_return'])
+    const specificity = metadata['specificity'] ? Number(metadata['specificity']) : undefined
 
-    const directReturnRaw = metadata['direct_return'] ?? 'false'
     return {
-      name: metadata['name'],
-      description: metadata['description'],
-      directReturn: ['true', '1', 'yes'].includes(directReturnRaw.toLowerCase()),
+      manifest: {
+        name: metadata['name'] ?? '',
+        description: metadata['description'] ?? '',
+        category: metadata['category'],
+        trigger_when: metadata['trigger_when'],
+        required_inputs: parseStringList(metadata['required_inputs']),
+        risk_level: riskLevel === 'low' || riskLevel === 'medium' || riskLevel === 'high'
+          ? riskLevel
+          : undefined,
+        direct_return: directReturn,
+        specificity: Number.isFinite(specificity) ? specificity : undefined,
+      },
       body: body.trim(),
+    }
+  }
+
+  private validateScannedSkills(skills: Map<string, Skill>): void {
+    for (const [name, skill] of skills) {
+      if (BASELINE_SKILL_SET.has(name)) {
+        continue
+      }
+
+      const manifestCheck = validateSkillManifest(skill.manifest)
+      if (!manifestCheck.valid) {
+        logger.warn(`skill "${name}" manifest 不合规: ${manifestCheck.reason}，已跳过`)
+        skills.delete(name)
+        continue
+      }
+
+      const bodyCheck = validateSkillBody(skill.body)
+      if (!bodyCheck.valid) {
+        logger.warn(`skill "${name}" 正文被拒绝: ${bodyCheck.reason}，已跳过`)
+        skills.delete(name)
+      }
     }
   }
 
@@ -147,8 +269,13 @@ class SkillLoader {
       if (!parsed) continue
 
       const virtualPath = `builtin://skills/${skillDirName}/SKILL.md`
-      skills.set(parsed.name, {
-        ...parsed,
+      const skillKey = parsed.manifest.name || skillDirName
+      skills.set(skillKey, {
+        name: parsed.manifest.name,
+        description: parsed.manifest.description,
+        directReturn: parsed.manifest.direct_return ?? false,
+        manifest: parsed.manifest,
+        body: parsed.body,
         path: virtualPath,
         dir: `builtin://skills/${skillDirName}`,
         source: 'bundle',
@@ -170,8 +297,13 @@ class SkillLoader {
       const parsed = this.parseSkillMd(readFileSync(skillMd, 'utf8'))
       if (!parsed) continue
 
-      skills.set(parsed.name, {
-        ...parsed,
+      const skillKey = parsed.manifest.name || entry
+      skills.set(skillKey, {
+        name: parsed.manifest.name,
+        description: parsed.manifest.description,
+        directReturn: parsed.manifest.direct_return ?? false,
+        manifest: parsed.manifest,
+        body: parsed.body,
         path: skillMd,
         dir: resolve(skillMd, '..'),
         source,
@@ -187,6 +319,7 @@ class SkillLoader {
     this.scanBundledSkills(skills)
     this.scanSkillsDir(runtimePaths.backendSkillsDir, 'workspace', skills)
     this.scanSkillsDir(runtimePaths.runtimeSkillsDir, 'runtime', skills)
+    this.validateScannedSkills(skills)
 
     return skills
   }

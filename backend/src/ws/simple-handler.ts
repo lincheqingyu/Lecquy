@@ -5,6 +5,7 @@
 import type { WebSocket } from 'ws'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runSimpleAgent } from '../agent/index.js'
+import { isCoreAgentEvent } from '../agent/tool-permission.js'
 import type { SessionRuntimeState } from '../session-v2/index.js'
 import type { SessionService } from '../session-v2/index.js'
 import { getConfig } from '../config/index.js'
@@ -149,7 +150,9 @@ export async function handleSimpleChat(
             contentShape: describeContentShape(event.message.content),
           })
         }
-        forwardAgentEvent(ws, event, { deltaEvent: 'message_delta', sendMessageEnd: true })
+        if (isCoreAgentEvent(event)) {
+          forwardAgentEvent(ws, event, { deltaEvent: 'message_delta', sendMessageEnd: true })
+        }
       },
     })
 

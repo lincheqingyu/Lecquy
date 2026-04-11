@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { AgentEvent, AgentMessage } from '@mariozechner/pi-agent-core'
+import type { AgentEvent, AgentMessage, AgentTool } from '@mariozechner/pi-agent-core'
 import type { ImageContent, Message, Model, TextContent, UserMessage } from '@mariozechner/pi-ai'
 import type {
   ArtifactDetail,
@@ -39,7 +39,21 @@ import {
 import { getConfig, type Env } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import { createVllmModel } from '../agent/vllm-model.js'
-import { runManagerAgent, runSimpleAgent, runWorkerAgent } from '../agent/index.js'
+import {
+  createManagerTools,
+  createSimpleTools,
+  createWorkerTools,
+  handleWorkerReceipt,
+  runManagerAgent,
+  runSimpleAgent,
+  runWorkerAgent,
+} from '../agent/index.js'
+import type { AgentRuntimeEvent } from '../agent/tool-permission.js'
+import { loadStartupSlices } from '../core/prompts/context-files.js'
+import { buildLayeredSystemPrompt } from '../core/prompts/prompt-serializer.js'
+import type { AgentRole, BuildLayeredPromptOptions, CapabilityBlock } from '../core/prompts/prompt-layer-types.js'
+import { SkillSession } from '../core/skills/skill-session.js'
+import { buildSystemPromptLegacy } from '../core/prompts/system-prompts.js'
 import { createTodoManager } from '../core/todo/todo-manager.js'
 import { migrateLegacyRuntimeStorage } from '../core/runtime-storage-migration.js'
 import {
@@ -55,7 +69,7 @@ import { deleteRuntimeSession, syncRuntimeSession } from '../db/runtime-session-
 import { applyCompactionIfNeeded } from '../memory/compact.js'
 import { getMemoryCoordinator } from '../memory/coordinator.js'
 import { syncTodosToForesight } from '../memory/foresight-sync.js'
-import { buildMemoryRecallBlock } from '../memory/prompt-injector.js'
+import { buildMemoryRecallBlockLegacy, buildMemoryRecallMessages } from '../memory/prompt-injector.js'
 import { buildAugmentedContext } from './context/augmented-context-builder.js'
 import { resolveSessionKey } from './session-key.js'
 import { SessionManager } from './pi-session-core/session-manager.js'
@@ -98,6 +112,19 @@ interface StepLifecycle {
   readonly startedAt?: number
   readonly finishedAt?: number
   readonly durationMs?: number
+}
+
+interface PromptBuildRequest {
+  readonly sessionId: string
+  readonly role: AgentRole
+  readonly mode: SessionMode
+  readonly route?: SessionRouteContext
+  readonly modelId: string
+  readonly thinkingLevel: ReturnType<typeof resolveThinkingLevel>
+  readonly tools: ReadonlyArray<AgentTool<any>>
+  readonly toolsEnabled: boolean
+  readonly extraInstructions?: string
+  readonly activeSkillName?: string
 }
 
 export interface SendRunResult {
@@ -429,6 +456,8 @@ export class SessionRuntimeService {
   private readonly activeRuns = new Map<string, ActiveRunHandle>()
   private readonly locks = new Map<string, Promise<void>>()
   private readonly toolArgsByCallId = new Map<string, unknown>()
+  private readonly skillSessions = new Map<string, SkillSession>()
+  private readonly sessionModes = new Map<string, SessionMode>()
 
   constructor(config = getConfig()) {
     this.cfg = config
@@ -449,6 +478,8 @@ export class SessionRuntimeService {
   }
 
   async shutdown(): Promise<void> {
+    this.skillSessions.clear()
+    this.sessionModes.clear()
     await this.persistIndex()
   }
 
@@ -492,6 +523,26 @@ export class SessionRuntimeService {
     })
     this.managers.set(sessionKey, manager)
     return manager
+  }
+
+  private getOrCreateSkillSession(sessionId: string): SkillSession {
+    const existing = this.skillSessions.get(sessionId)
+    if (existing) {
+      return existing
+    }
+
+    const created = new SkillSession()
+    this.skillSessions.set(sessionId, created)
+    return created
+  }
+
+  private handleSkillModeSwitch(sessionId: string, mode: SessionMode): void {
+    const previousMode = this.sessionModes.get(sessionId)
+    if (previousMode && previousMode !== mode) {
+      this.skillSessions.get(sessionId)?.unload()
+    }
+
+    this.sessionModes.set(sessionId, mode)
   }
 
   private async refreshProjection(sessionKey: string): Promise<SessionProjection> {
@@ -735,6 +786,8 @@ export class SessionRuntimeService {
     }
     this.managers.delete(projection.key)
     this.pgSyncState.delete(projection.key)
+    this.skillSessions.delete(projection.sessionId)
+    this.sessionModes.delete(projection.sessionId)
     await this.persistIndex()
 
     if (this.cfg.PG_ENABLED) {
@@ -1050,7 +1103,24 @@ export class SessionRuntimeService {
     mode: SessionMode,
     userQuery: string,
   ): Promise<AgentMessage[]> {
-    const memoryRecallBlock = await buildMemoryRecallBlock({
+    const useLayeredPrompt = process.env.LAYERED_PROMPT === 'true'
+    if (useLayeredPrompt) {
+      const recallMessages = await buildMemoryRecallMessages({
+        pgEnabled: this.cfg.PG_ENABLED,
+        sessionId: bound.projection.sessionId,
+        sessionKey: bound.projection.key,
+        userQuery,
+        workspaceDir: this.runtimePaths.workspaceDir,
+        mode,
+        route: bound.projection.route,
+      })
+      const augmentedContext = buildAugmentedContext({
+        sessionManager: bound.manager,
+      }).contextMessages
+      return [...recallMessages, ...augmentedContext]
+    }
+
+    const memoryRecallBlock = await buildMemoryRecallBlockLegacy({
       pgEnabled: this.cfg.PG_ENABLED,
       sessionId: bound.projection.sessionId,
       sessionKey: bound.projection.key,
@@ -1063,6 +1133,85 @@ export class SessionRuntimeService {
       sessionManager: bound.manager,
       memoryRecallBlock,
     }).contextMessages
+  }
+
+  private buildPromptCapability(
+    tools: ReadonlyArray<AgentTool<any>>,
+    toolsEnabled: boolean,
+  ): CapabilityBlock {
+    const available = toolsEnabled
+      ? tools.map((tool) => tool.name).sort()
+      : []
+
+    return {
+      executor: toolsEnabled && available.includes('bash')
+        ? (process.platform === 'win32' ? 'powershell' : 'shell')
+        : 'none',
+      available,
+      unavailable: ['no_browser', 'no_deploy', 'no_external_api'].sort(),
+    }
+  }
+
+  private async buildRunSystemPrompt(request: PromptBuildRequest): Promise<string> {
+    const useLayeredPrompt = process.env.LAYERED_PROMPT === 'true'
+    const legacyOptions = {
+      role: request.role,
+      mode: request.mode,
+      route: request.route,
+      modelId: request.modelId,
+      thinkingLevel: request.thinkingLevel,
+      tools: request.tools,
+      toolsEnabled: request.toolsEnabled,
+      extraInstructions: request.extraInstructions,
+      workspaceDir: this.runtimePaths.workspaceDir,
+    } as const
+
+    if (!useLayeredPrompt) {
+      return await buildSystemPromptLegacy(legacyOptions)
+    }
+
+    const capability = this.buildPromptCapability(request.tools, request.toolsEnabled)
+    const { startupSlice, preferenceSlice, managedSystemContent } = await loadStartupSlices({
+      workspaceDir: this.runtimePaths.workspaceDir,
+      role: request.role,
+      capability,
+    })
+
+    const layeredOptions: BuildLayeredPromptOptions = {
+      role: request.role,
+      mode: request.mode,
+      workspaceDir: this.runtimePaths.workspaceDir,
+      tools: request.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description?.trim() || tool.label?.trim() || '可用工具',
+      })),
+      toolsEnabled: request.toolsEnabled,
+      modelId: request.modelId,
+      thinkingLevel: request.thinkingLevel,
+      channel: request.route?.channel,
+      chatType: request.route?.chatType,
+      timeZone: request.route?.userTimezone,
+      extraInstructions: request.extraInstructions,
+      activeSkillName: request.activeSkillName,
+      managedSystemContent,
+      startupSlice,
+      preferenceSlice,
+      capability,
+      userSlices: {
+        profileSlice: '',
+        preferenceSlice: '',
+        rejected: false,
+      },
+      soulContent: '',
+      identityContent: '',
+      memorySummary: '',
+    }
+
+    const result = await buildLayeredSystemPrompt(
+      layeredOptions,
+      this.getOrCreateSkillSession(request.sessionId),
+    )
+    return result.systemPrompt
   }
 
   private async executeRun(
@@ -1082,6 +1231,10 @@ export class SessionRuntimeService {
     const abortController = new AbortController()
     this.activeRuns.set(sessionKey, { runId, mode, abortController })
     setCurrentToolSessionKey(sessionKey)
+
+    if (process.env.LAYERED_PROMPT === 'true') {
+      this.handleSkillModeSwitch(bound.projection.sessionId, mode)
+    }
 
     manager.appendThinkingLevelChange(thinkingLevel)
 
@@ -1146,7 +1299,7 @@ export class SessionRuntimeService {
         await this.refreshProjection(sessionKey)
       }
 
-      if (applyCompactionIfNeeded(manager)) {
+      if (await applyCompactionIfNeeded(manager)) {
         await this.refreshProjection(sessionKey)
       }
 
@@ -1179,6 +1332,20 @@ export class SessionRuntimeService {
     }
 
     const sessionKey = bound.projection.key
+    const toolsEnabled = modelOptions.enableTools ?? false
+    const tools = toolsEnabled ? createSimpleTools() : []
+    const systemPrompt = await this.buildRunSystemPrompt({
+      sessionId: bound.projection.sessionId,
+      role: 'simple',
+      mode,
+      route: bound.projection.route,
+      modelId: model.id,
+      thinkingLevel,
+      tools,
+      toolsEnabled,
+      extraInstructions: modelOptions.systemPrompt,
+    })
+
     step = await this.beginStep(bound, runId, step)
 
     const result = await runSimpleAgent({
@@ -1188,12 +1355,13 @@ export class SessionRuntimeService {
       contextMessages,
       model,
       apiKey,
+      systemPromptOverride: systemPrompt,
       thinkingLevel,
       temperature: modelOptions.options?.temperature,
       extraSystemPrompt: modelOptions.systemPrompt,
       signal,
       disableLegacyMemoryFlush: true,
-      enableTools: modelOptions.enableTools ?? false,
+      enableTools: toolsEnabled,
       route: bound.projection.route,
       mode,
       onEvent: (event) => {
@@ -1260,6 +1428,18 @@ export class SessionRuntimeService {
         kind: 'planner',
         title: '生成计划',
       }
+      const managerTools = createManagerTools(todoManager)
+      const managerSystemPrompt = await this.buildRunSystemPrompt({
+        sessionId: bound.projection.sessionId,
+        role: 'manager',
+        mode: 'plan',
+        route: bound.projection.route,
+        modelId: model.id,
+        thinkingLevel,
+        tools: managerTools,
+        toolsEnabled: true,
+        extraInstructions: modelOptions.systemPrompt,
+      })
       plannerStep = await this.beginStep(bound, runId, plannerStep)
 
       const managerResult = await runManagerAgent({
@@ -1269,6 +1449,7 @@ export class SessionRuntimeService {
         contextMessages,
         model,
         apiKey,
+        systemPromptOverride: managerSystemPrompt,
         thinkingLevel,
         temperature: modelOptions.options?.temperature,
         extraSystemPrompt: modelOptions.systemPrompt,
@@ -1337,15 +1518,27 @@ export class SessionRuntimeService {
         : item.content
       injectedInput = undefined
 
+      const workerTools = createWorkerTools()
+      const workerSystemPrompt = await this.buildRunSystemPrompt({
+        sessionId: bound.projection.sessionId,
+        role: 'worker',
+        mode: 'plan',
+        route: bound.projection.route,
+        modelId: model.id,
+        thinkingLevel,
+        tools: workerTools,
+        toolsEnabled: true,
+        extraInstructions: modelOptions.systemPrompt,
+      })
+
       const workerResult = await runWorkerAgent({
-        prompt,
+        todoId: `todo-${index + 1}`,
+        todoSnapshot: prompt,
+        systemPrompt: workerSystemPrompt,
         model,
         apiKey,
-        thinkingLevel,
-        temperature: modelOptions.options?.temperature,
-        extraSystemPrompt: modelOptions.systemPrompt,
+        workspaceDir: this.runtimePaths.workspaceDir,
         signal,
-        route: bound.projection.route,
         onEvent: (event) => {
           this.handleAgentEvent(bound.manager, sessionKey, runId, step, event)
         },
@@ -1372,13 +1565,33 @@ export class SessionRuntimeService {
         return ''
       }
 
-      todoManager.markCompleted(index, workerResult.result)
+      const workerDecision = handleWorkerReceipt(workerResult.receipt, `todo-${index + 1}`)
+
+      if (workerDecision.action === 'complete') {
+        todoManager.markCompleted(index, workerResult.receipt.result)
+        bound.manager.appendCustomMessageEntry(
+          'task_result',
+          [{ type: 'text', text: `任务 ${index + 1} 执行结果：\n${workerResult.receipt.result}` }],
+          false,
+        )
+        await this.finishStep(bound, runId, step, 'completed', workerResult.receipt.result)
+        await persistTodoState()
+        continue
+      }
+
+      const blockedReason = workerDecision.action === 'retry_with_change'
+        ? workerDecision.newPrompt
+        : workerDecision.action === 'block'
+          ? workerDecision.reason
+          : workerResult.receipt.validation
+
+      todoManager.markCompleted(index, undefined, blockedReason)
       bound.manager.appendCustomMessageEntry(
         'task_result',
-        [{ type: 'text', text: `任务 ${index + 1} 执行结果：\n${workerResult.result}` }],
+        [{ type: 'text', text: `任务 ${index + 1} 被阻塞：\n${blockedReason}` }],
         false,
       )
-      await this.finishStep(bound, runId, step, 'completed', workerResult.result)
+      await this.finishStep(bound, runId, step, 'failed', blockedReason)
       await persistTodoState()
     }
 
@@ -1426,8 +1639,26 @@ export class SessionRuntimeService {
     sessionKey: string,
     runId: RunId,
     step: StepLifecycle,
-    event: AgentEvent,
+    event: AgentRuntimeEvent,
   ): void {
+    if (event.type === 'preamble') {
+      this.emitToolState(sessionKey, runId, step.stepId, 'delta', event.toolName, {
+        args: event.args,
+        detail: event.description,
+      })
+      return
+    }
+
+    if (event.type === 'confirm_required') {
+      this.emitToolState(sessionKey, runId, step.stepId, 'delta', event.toolName, {
+        args: event.args,
+        summary: 'confirm required',
+        detail: event.description,
+        isError: true,
+      })
+      return
+    }
+
     if (event.type === 'message_update') {
       if (event.assistantMessageEvent.type === 'text_delta' && event.assistantMessageEvent.delta) {
         this.emitStepDelta(sessionKey, runId, step, 'text', event.assistantMessageEvent.delta)

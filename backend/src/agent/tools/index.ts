@@ -12,6 +12,7 @@ import { createSkillTool } from './skill.js'
 import { createTodoWriteTool } from './todo-write.js'
 import { createRequestUserInputTool } from './request-user-input.js'
 import { createExtensionTools } from '../../extensions/index.js'
+import { isManagerAllowed, isWorkerAllowed } from '../tool-permission.js'
 import {
   bindSessionService,
   createSessionsHistoryTool,
@@ -33,6 +34,7 @@ export function createSimpleTools(): AgentTool<any>[] {
     createEditFileTool(),
     createWriteFileTool(),
     createSkillTool(),
+    createRequestUserInputTool(),
     createSessionsListTool(),
     createSessionsHistoryTool(),
     createSessionsSendTool(),
@@ -51,23 +53,12 @@ export function createManagerTools(todoManager: TodoManager): AgentTool<any>[] {
     createSessionsHistoryTool(),
     createSessionsSendTool(),
     createSessionsSpawnTool(),
-  ]
+  ].filter((tool) => isManagerAllowed(tool.name))
 }
 
 /** Worker 工具集（完整工具 + 扩展） */
 export function createWorkerTools(): AgentTool<any>[] {
-  return [
-    createReadFileTool(),
-    createBashTool(),
-    createEditFileTool(),
-    createWriteFileTool(),
-    createSkillTool(),
-    createRequestUserInputTool(),
-    createSessionsListTool(),
-    createSessionsHistoryTool(),
-    createSessionsSendTool(),
-    ...createExtensionTools(),
-  ]
+  return createSimpleTools().filter((tool) => isWorkerAllowed(tool.name))
 }
 
 export { createBashTool } from './bash.js'

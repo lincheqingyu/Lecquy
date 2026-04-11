@@ -1,5 +1,7 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { STARTUP_BUDGETS } from '../core/prompts/prompt-layer-types.js'
+import { estimateTokens } from '../core/prompts/prompt-serializer.js'
 import { logger } from '../utils/logger.js'
 import {
   ensurePromptContextFiles,
@@ -38,8 +40,22 @@ async function readTextIfExists(filePath: string): Promise<string> {
   }
 }
 
-export async function ensureMemoryFiles(): Promise<void> {
-  const paths = await ensurePromptContextFiles()
+function truncateToBudget(content: string, tokenBudget: number): string {
+  const normalized = content
+  if (!normalized || estimateTokens(normalized) <= tokenBudget) {
+    return normalized
+  }
+
+  const maxChars = Math.floor(tokenBudget * 3.5)
+  let truncated = normalized.slice(0, maxChars)
+  while (truncated && estimateTokens(truncated) > tokenBudget) {
+    truncated = truncated.slice(0, -1)
+  }
+  return truncated
+}
+
+export async function ensureMemoryFiles(workspaceDir?: string): Promise<void> {
+  const paths = await ensurePromptContextFiles(workspaceDir)
   await fs.mkdir(paths.memoryDir, { recursive: true })
   try {
     await fs.access(paths.memoryFile)
@@ -57,14 +73,25 @@ export async function appendDailyMemoryEntry(entry: string): Promise<void> {
   await fs.appendFile(dailyPath, block, 'utf8')
 }
 
-export async function loadMemoryInjectionText(): Promise<string> {
-  await ensureMemoryFiles()
+export async function loadMemorySummary(workspaceDir: string): Promise<string> {
+  const summaryPath = resolvePromptContextPaths(workspaceDir).memorySummaryFile
+  const content = await readTextIfExists(summaryPath)
+  if (!content) {
+    return ''
+  }
 
-  const mainText = await readTextIfExists(getMainMemoryFilePath())
-  const todayPath = getDailyMemoryFilePath(new Date())
+  return truncateToBudget(content, STARTUP_BUDGETS.memorySummary)
+}
+
+export async function loadMemoryInjectionText(workspaceDir?: string): Promise<string> {
+  await ensureMemoryFiles(workspaceDir)
+
+  const mainText = await readTextIfExists(getMainMemoryFilePath(workspaceDir))
+  const memoryDir = getMemoryDir(workspaceDir)
+  const todayPath = path.join(memoryDir, `memory-${formatDate(new Date())}.md`)
   const yesterday = new Date()
   yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayPath = getDailyMemoryFilePath(yesterday)
+  const yesterdayPath = path.join(memoryDir, `memory-${formatDate(yesterday)}.md`)
 
   const todayText = await readTextIfExists(todayPath)
   const yesterdayText = await readTextIfExists(yesterdayPath)

@@ -544,7 +544,7 @@ export class SessionService {
         })
         const assistant: AssistantMessage = {
           role: 'assistant',
-          content: [{ type: 'text', text: result.result }],
+          content: [{ type: 'text', text: result.receipt.result }],
           api: 'openai-completions',
           provider: 'openai',
           model: 'worker',
@@ -568,7 +568,7 @@ export class SessionService {
           status: 'ok',
           runId,
           sessionKey: childSessionKey,
-          detail: result.result.slice(0, 400),
+          detail: result.receipt.result.slice(0, 400),
         })
       } catch (error) {
         this.notify(requesterSessionKey, 'session_tool_result', {

@@ -3,10 +3,32 @@
  */
 
 export { runSimpleAgent, type SimpleAgentOptions, type SimpleAgentResult, type TurnState } from './agent-runner.js'
-export { runManagerAgent, type ManagerAgentOptions, type ManagerAgentResult } from './manager-runner.js'
-export { runWorkerAgent, type WorkerAgentOptions, type WorkerAgentResult } from './worker-runner.js'
+export {
+  runManagerAgent,
+  handleWorkerReceipt,
+  type ManagerAgentOptions,
+  type ManagerAgentResult,
+  type ManagerDecision,
+} from './manager-runner.js'
+export {
+  runWorkerAgent,
+  type WorkerAgentOptions,
+  type WorkerAgentResult,
+  type WorkerRunOptions,
+  type WorkerResult,
+} from './worker-runner.js'
 export { createVllmModel, type VllmModelOptions } from './vllm-model.js'
 export { createSimpleTools, createManagerTools, createWorkerTools } from './tools/index.js'
+export {
+  classifyToolPermission,
+  createPermissionAwareTools,
+  isCoreAgentEvent,
+  isManagerAllowed,
+  isWorkerAllowed,
+  type AgentRuntimeEvent,
+  type ConfirmRequiredEvent,
+  type PreambleEvent,
+} from './tool-permission.js'
 export {
   MAX_ITERATIONS,
   MAX_TOOL_FAILURES,

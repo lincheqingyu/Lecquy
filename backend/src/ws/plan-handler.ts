@@ -6,6 +6,7 @@ import type { WebSocket } from 'ws'
 import { z } from 'zod'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runManagerAgent, runWorkerAgent } from '../agent/index.js'
+import { isCoreAgentEvent } from '../agent/tool-permission.js'
 import type { SessionRuntimeState } from '../session-v2/index.js'
 import type { SessionService } from '../session-v2/index.js'
 import { getConfig } from '../config/index.js'
@@ -130,24 +131,45 @@ async function executePendingTodos(
               summary: summarizeAssistantContent(event.message.content),
             })
           }
-          forwardAgentEvent(ws, event, { deltaEvent: 'worker_delta', sendMessageEnd: false })
+          if (isCoreAgentEvent(event)) {
+            forwardAgentEvent(ws, event, { deltaEvent: 'worker_delta', sendMessageEnd: false })
+          }
         },
       })
 
-      if (shouldWaitForUserInput(result.result)) {
+      const workerText = result.receipt.result === 'blocked'
+        ? result.receipt.validation
+        : result.receipt.result
+
+      if (result.pause) {
         state.isWaiting = true
         state.waitingTodoIndex = idx
-        sendEvent(ws, 'need_user_input', { prompt: result.result })
+        sendEvent(ws, 'need_user_input', { prompt: result.pause.prompt })
         return
       }
 
-      state.todoManager.markCompleted(idx, result.result)
-      sendEvent(ws, 'worker_end', { todoIndex: idx, result: result.result, isError: false })
+      if (shouldWaitForUserInput(workerText)) {
+        state.isWaiting = true
+        state.waitingTodoIndex = idx
+        sendEvent(ws, 'need_user_input', { prompt: workerText })
+        return
+      }
+
+      state.todoManager.markCompleted(
+        idx,
+        result.receipt.result === 'blocked' ? undefined : workerText,
+        result.receipt.result === 'blocked' ? workerText : undefined,
+      )
+      sendEvent(ws, 'worker_end', {
+        todoIndex: idx,
+        result: workerText,
+        isError: result.receipt.result === 'blocked',
+      })
       sendEvent(ws, 'todo_update', { todos: state.todoManager.getItems() })
       logger.info('Worker 执行完成', {
         sessionId: state.sessionId,
         todoIndex: idx,
-        result: result.result.slice(0, 1000),
+        result: workerText.slice(0, 1000),
       })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -252,8 +274,10 @@ export async function handlePlanChat(
             summary: summarizeAssistantContent(event.message.content),
           })
         }
-        forwardAgentEvent(ws, event, { deltaEvent: 'message_delta', sendMessageEnd: true })
-        if (event.type === 'tool_execution_end' && event.toolName === 'todo_write' && !event.isError) {
+        if (isCoreAgentEvent(event)) {
+          forwardAgentEvent(ws, event, { deltaEvent: 'message_delta', sendMessageEnd: true })
+        }
+        if (isCoreAgentEvent(event) && event.type === 'tool_execution_end' && event.toolName === 'todo_write' && !event.isError) {
           sendEvent(ws, 'plan_created', { todos: state.todoManager.getItems() })
         }
       },

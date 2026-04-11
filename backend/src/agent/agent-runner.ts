@@ -7,8 +7,10 @@
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentMessage, type AgentEvent } from '@mariozechner/pi-agent-core'
 import type { SessionMode, SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
+import { resolveWorkspaceRoot } from '../core/runtime-paths.js'
 import { buildSimpleSystemPrompt } from '../core/prompts/system-prompts.js'
 import { createSimpleTools } from './tools/index.js'
+import { createPermissionAwareTools, type AgentRuntimeEvent, type ConfirmRequiredEvent } from './tool-permission.js'
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
@@ -31,11 +33,12 @@ export interface SimpleAgentOptions {
   messages: AgentMessage[]
   model: Model<'openai-completions'>
   apiKey: string
+  systemPromptOverride?: string
   thinkingLevel?: ThinkingLevel
   temperature?: number
   extraSystemPrompt?: string
   signal?: AbortSignal
-  onEvent?: (event: AgentEvent) => void
+  onEvent?: (event: AgentRuntimeEvent) => void
   contextMessages?: AgentMessage[]
   turnState?: TurnState
   enableTools?: boolean
@@ -58,6 +61,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     messages,
     model,
     apiKey,
+    systemPromptOverride,
     thinkingLevel,
     temperature,
     extraSystemPrompt,
@@ -68,17 +72,31 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     enableTools = false,
     disableLegacyMemoryFlush = false,
   } = options
+  const workspaceDir = resolveWorkspaceRoot()
 
   if (!disableLegacyMemoryFlush) {
     await ensureMemoryFiles()
   }
-  const tools = enableTools ? createSimpleTools() : []
-  const systemPrompt = await buildSimpleSystemPrompt({
+  const rawTools = enableTools ? createSimpleTools() : []
+  const layeredPermissionEnabled = process.env.LAYERED_PROMPT === 'true'
+  let pendingConfirmEvent: ConfirmRequiredEvent | undefined
+  const tools = createPermissionAwareTools(rawTools, {
+    role: 'simple',
+    workspaceDir,
+    enabled: layeredPermissionEnabled && enableTools,
+    onEvent: (event) => {
+      if (event.type === 'confirm_required') {
+        pendingConfirmEvent = event
+      }
+      onEvent?.(event)
+    },
+  })
+  const systemPrompt = systemPromptOverride ?? await buildSimpleSystemPrompt({
     mode: options.mode ?? 'simple',
     route: options.route,
     modelId: model.id,
     thinkingLevel,
-    tools,
+    tools: rawTools,
     toolsEnabled: enableTools,
     extraInstructions: extraSystemPrompt,
   })
@@ -107,6 +125,29 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
         ),
       getSteeringMessages: async () => {
+        if (pendingConfirmEvent) {
+          logger.warn('主 Agent 命中 confirm 档工具，已停止继续执行', {
+            toolName: pendingConfirmEvent.toolName,
+          })
+          if (stopInstructionIssued) {
+            abortController.abort()
+            return []
+          }
+          stopInstructionIssued = true
+          forcedStopReason = pendingConfirmEvent.description
+
+          return [
+            {
+              role: 'user' as const,
+              content: [{
+                type: 'text' as const,
+                text: `刚才的工具操作需要用户确认：${pendingConfirmEvent.toolName}。请停止继续调用工具，仅简要说明待确认的操作。`,
+              }],
+              timestamp: Date.now(),
+            },
+          ]
+        }
+
         if (
           tracker.iteration >= MAX_ITERATIONS ||
           tracker.toolFailCount >= MAX_TOOL_FAILURES
@@ -162,7 +203,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
 
     // 转发事件给调用方（用于流式推送）
     logProviderStreamEvent(model, event)
-    onEvent?.(event)
+    onEvent?.(event as AgentEvent)
   }
 
   if (lastAssistantMessage?.stopReason === 'error' || lastAssistantMessage?.stopReason === 'aborted') {

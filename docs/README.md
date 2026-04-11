@@ -35,6 +35,18 @@
 - [`backend/20260408-11-后端接口示例 技术规范.md`](./backend/20260408-11-后端接口示例 技术规范.md)：当前后端 HTTP / WebSocket 接口说明与调用示例
 - [`backend/20260408-12-会话管理联调 技术规范.md`](./backend/20260408-12-会话管理联调 技术规范.md)：会话管理模块联调文档
 - [`backend/20260408-13-Simple Plan 模式分析 技术规范.md`](./backend/20260408-13-Simple Plan 模式分析 技术规范.md)：`simple / plan` 模式专题，已统一到 runtime 口径
+- [`backend/20260409-1-Lecquy 隐藏 Prompt 与模式边界 技术规范.md`](./backend/20260409-1-Lecquy 隐藏 Prompt 与模式边界 技术规范.md)：冻结隐藏 prompt、mode、executor、skill、memory 与权限边界的正式基线
+- [`backend/20260409-2-Lecquy 隐藏 Prompt 文档评审指令 技术规范.md`](./backend/20260409-2-Lecquy 隐藏 Prompt 文档评审指令 技术规范.md)：交给 Claude 做正式架构评审前的参考方向、评估原则、评分标准与可复制指令
+
+## 隐藏 Prompt v2 重构
+
+- [`backend/20260410-1-隐藏 Prompt v2 重构 开发规划.md`](./backend/20260410-1-隐藏%20Prompt%20v2%20重构%20开发规划.md)：总领纲要，5 个开发包的顺序、分层真源表、物理请求格式、集成策略
+- [`backend/20260410-2-Prompt 分层类型基座 技术规范.md`](./backend/20260410-2-Prompt%20分层类型基座%20技术规范.md)：包 0 — 7 层类型定义、capability、USER.md schema、权限三档
+- [`backend/20260410-3-Prompt 序列化器 技术规范.md`](./backend/20260410-3-Prompt%20序列化器%20技术规范.md)：包 1 — `<LAYER:xxx>` 序列化入口、模板归层映射、字节稳定性契约
+- [`backend/20260410-4-Startup Context 加载器 技术规范.md`](./backend/20260410-4-Startup%20Context%20加载器%20技术规范.md)：包 2 — USER.md 双切片、capability block、预算截断
+- [`backend/20260410-5-Memory 路径收敛 技术规范.md`](./backend/20260410-5-Memory%20路径收敛%20技术规范.md)：包 3 — startup summary + query recall 双通道、MEMORY.summary.md
+- [`backend/20260410-6-模式与权限契约层 技术规范.md`](./backend/20260410-6-模式与权限契约层%20技术规范.md)：包 4 — 权限三档、manager/worker 授权协议、worker 上下文隔离
+- [`backend/20260410-7-Skill Runtime 层 技术规范.md`](./backend/20260410-7-Skill%20Runtime%20层%20技术规范.md)：包 5 — manifest-first、specificity、常驻管理、版本冻结
 
 ## 剩余主线专题
 
@@ -50,12 +62,15 @@
 - [`backend/Claude 上下文压缩复刻/20260408-1-Claude 上下文压缩复刻 开发规划.md`](./backend/Claude 上下文压缩复刻/20260408-1-Claude 上下文压缩复刻 开发规划.md)
 - [`backend/Claude 上下文压缩复刻/20260408-2-Claude 上下文压缩复刻 开发与文档编写原则 技术规范.md`](./backend/Claude 上下文压缩复刻/20260408-2-Claude 上下文压缩复刻 开发与文档编写原则 技术规范.md)
 - [`backend/Claude 上下文压缩复刻/20260408-3-Claude 上下文压缩参考项目探索 技术规范.md`](./backend/Claude 上下文压缩复刻/20260408-3-Claude 上下文压缩参考项目探索 技术规范.md)
+- [`backend/Claude 上下文压缩复刻/20260408-4-Claude 上下文压缩复刻 Lecquy 对标分析 技术规范.md`](./backend/Claude 上下文压缩复刻/20260408-4-Claude 上下文压缩复刻 Lecquy 对标分析 技术规范.md)
+- [`backend/Claude 上下文压缩复刻/20260408-5-Claude Code 共享前缀与 Lecquy 结构对比 技术规范.md`](./backend/Claude 上下文压缩复刻/20260408-5-Claude Code 共享前缀与 Lecquy 结构对比 技术规范.md)
 
 ### PaperQA 风格 RAG
 
 - [`backend/PaperQA 风格 RAG/20260408-1-PaperQA 风格 RAG 开发规划.md`](./backend/PaperQA 风格 RAG/20260408-1-PaperQA 风格 RAG 开发规划.md)
 - [`backend/PaperQA 风格 RAG/20260408-2-PaperQA 风格 RAG 开发与文档编写原则 技术规范.md`](./backend/PaperQA 风格 RAG/20260408-2-PaperQA 风格 RAG 开发与文档编写原则 技术规范.md)
 - [`backend/PaperQA 风格 RAG/20260408-3-PaperQA 风格 RAG 参考项目探索 技术规范.md`](./backend/PaperQA 风格 RAG/20260408-3-PaperQA 风格 RAG 参考项目探索 技术规范.md)
+- [`backend/PaperQA 风格 RAG/20260408-4-PaperQA 风格 RAG 基线差距与实验建议 技术规范.md`](./backend/PaperQA 风格 RAG/20260408-4-PaperQA 风格 RAG 基线差距与实验建议 技术规范.md)
 
 ### 心跳任务系统
 

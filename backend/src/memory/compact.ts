@@ -1,4 +1,7 @@
+import { promises as fs } from 'node:fs'
+import { dirname } from 'node:path'
 import { extractSessionText, type SessionEventEntry } from '@lecquy/shared'
+import { resolvePromptContextPaths } from '../core/prompts/context-files.js'
 import { formatCompactSummary } from '../runtime/context/templates/compact-summary.template.js'
 import type { SessionManager } from '../runtime/pi-session-core/session-manager.js'
 
@@ -90,14 +93,21 @@ function estimateTokensBefore(source: CompactSource): number {
   return Math.max(1, Math.ceil((previous.length + messageText.length) / 4))
 }
 
-export function applyCompactionIfNeeded(manager: SessionManager): boolean {
+async function writeMemorySummary(workspaceDir: string, summary: string): Promise<void> {
+  const summaryPath = resolvePromptContextPaths(workspaceDir).memorySummaryFile
+  await fs.mkdir(dirname(summaryPath), { recursive: true })
+  await fs.writeFile(summaryPath, summary, 'utf8')
+}
+
+export async function applyCompactionIfNeeded(manager: SessionManager): Promise<boolean> {
   const source = resolveCompactSource(manager.getEntries())
   if (!source) {
     return false
   }
 
+  const summary = buildCompactSummary(source)
   manager.appendCompaction(
-    buildCompactSummary(source),
+    summary,
     source.firstKeptEntryId,
     estimateTokensBefore(source),
     {
@@ -107,6 +117,8 @@ export function applyCompactionIfNeeded(manager: SessionManager): boolean {
       compacted_through_entry_id: source.compactedMessages[source.compactedMessages.length - 1]?.id,
     },
   )
+
+  await writeMemorySummary(manager.getCwd(), summary)
 
   return true
 }

@@ -269,7 +269,7 @@ async function main(): Promise<void> {
         `compact smoke message ${index + 1}: PostgreSQL acceptance context ${index + 1}`,
       )
     }
-    assert.equal(applyCompactionIfNeeded(compactManager), true)
+    assert.equal(await applyCompactionIfNeeded(compactManager), true)
     const compactProjection = buildProjection(`pg-smoke-compact-${smokeId}`, compactManager, 'PG Smoke Compact')
     await syncRuntimeSession(pool, compactProjection, compactManager.getEntries())
 
