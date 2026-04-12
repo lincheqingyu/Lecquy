@@ -62,6 +62,16 @@ async function main(): Promise<void> {
   // 5. 初始化 WebSocket（传入 registry）
   const wss = initChatWebSocketServer(server, sessionRuntime)
 
+  server.on('error', (error) => {
+    logger.error('HTTP 服务器监听失败', error)
+    process.exit(1)
+  })
+
+  wss.on('error', (error) => {
+    logger.error('WebSocket 服务器启动失败', error)
+    process.exit(1)
+  })
+
   // 6. 启动服务器
   const displayHost = config.HOST === '0.0.0.0' ? 'localhost' : config.HOST
   server.listen(config.BACKEND_PORT, config.HOST, () => {

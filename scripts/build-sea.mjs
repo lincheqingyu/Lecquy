@@ -16,6 +16,7 @@ const CACHE_ROOT = path.join(RELEASE_ROOT, '.cache')
 const RUNTIME_BUNDLE_PATH = path.join(ROOT_DIR, 'backend', 'runtime-bundle.json')
 const README_PATH = path.join(ROOT_DIR, 'deploy', 'PORTABLE-RELEASE.md')
 const ENV_EXAMPLE_PATH = path.join(ROOT_DIR, '.env.example')
+const POSTJECT_CLI_PATH = path.join(ROOT_DIR, 'node_modules', 'postject', 'dist', 'cli.js')
 const NODE_VERSION = process.env.LECQUY_SEA_NODE_VERSION?.trim() || process.version.replace(/^v/, '')
 const NODE_MAJOR = NODE_VERSION.split('.')[0] ?? '22'
 const NODE_DIST_BASE_URL = process.env.LECQUY_SEA_NODE_DIST_BASE_URL?.trim() || 'https://nodejs.org/dist'
@@ -91,6 +92,21 @@ async function writeExecutableFile(filePath, content) {
   await fs.chmod(filePath, 0o755)
 }
 
+function buildReleaseEnvContent(template) {
+  const productionLine = 'NODE_ENV=production'
+  const normalized = template.replace(/\r\n/g, '\n')
+
+  if (/^NODE_ENV=/m.test(normalized)) {
+    return normalized.replace(/^NODE_ENV=.*$/m, productionLine)
+  }
+
+  if (/^#\s*NODE_ENV=.*$/m.test(normalized)) {
+    return normalized.replace(/^#\s*NODE_ENV=.*$/m, productionLine)
+  }
+
+  return `${normalized.trimEnd()}\n${productionLine}\n`
+}
+
 async function bundleServer(outFile) {
   await build({
     entryPoints: [path.join(ROOT_DIR, 'backend', 'src', 'server.ts')],
@@ -125,6 +141,10 @@ function buildNodeDistUrl(archiveName) {
   return `${NODE_DIST_BASE_URL}/v${NODE_VERSION}/${archiveName}`
 }
 
+function escapePowerShellString(value) {
+  return value.replaceAll("'", "''")
+}
+
 async function downloadIfNeeded(targetKey, archiveName) {
   const archivePath = path.join(CACHE_ROOT, archiveName)
   if (existsSync(archivePath)) {
@@ -145,12 +165,30 @@ async function downloadIfNeeded(targetKey, archiveName) {
   return archivePath
 }
 
-function extractArchive(archivePath, targetDir) {
+async function extractArchive(archivePath, targetDir) {
   if (archivePath.endsWith('.zip')) {
-    execFileSync('unzip', ['-oq', archivePath, '-d', targetDir], {
-      cwd: ROOT_DIR,
-      stdio: 'inherit',
-    })
+    // Windows 使用 PowerShell 解压，其他平台使用 unzip。
+    if (process.platform === 'win32') {
+      const command = `Expand-Archive -LiteralPath '${escapePowerShellString(archivePath)}' -DestinationPath '${escapePowerShellString(targetDir)}' -Force`
+      execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          command,
+        ],
+        {
+          cwd: ROOT_DIR,
+          stdio: 'inherit',
+        },
+      )
+    } else {
+      execFileSync('unzip', ['-oq', archivePath, '-d', targetDir], {
+        cwd: ROOT_DIR,
+        stdio: 'inherit',
+      })
+    }
     return
   }
 
@@ -165,7 +203,7 @@ async function prepareBaseExecutable(targetKey, target, buildDir, releaseDir) {
   const extractDir = path.join(buildDir, 'node-dist')
   await removeIfExists(extractDir)
   await fs.mkdir(extractDir, { recursive: true })
-  extractArchive(archivePath, extractDir)
+  await extractArchive(archivePath, extractDir)
 
   const sourceExecutable = path.join(extractDir, target.extractedExecutablePath)
   const outputExecutable = path.join(releaseDir, target.outputFileName)
@@ -205,8 +243,7 @@ function signMacosExecutable(executablePath) {
 
 function injectSeaBlob(target, executablePath, blobPath) {
   const args = [
-    'exec',
-    'postject',
+    POSTJECT_CLI_PATH,
     executablePath,
     'NODE_SEA_BLOB',
     blobPath,
@@ -220,7 +257,11 @@ function injectSeaBlob(target, executablePath, blobPath) {
     tryRemoveMacosSignature(executablePath)
   }
 
-  execFileSync('pnpm', args, {
+  if (!existsSync(POSTJECT_CLI_PATH)) {
+    throw new Error(`postject CLI 不存在: ${POSTJECT_CLI_PATH}`)
+  }
+
+  execFileSync(process.execPath, args, {
     cwd: ROOT_DIR,
     stdio: 'inherit',
   })
@@ -233,6 +274,9 @@ function injectSeaBlob(target, executablePath, blobPath) {
 async function prepareReleaseDir(releaseDir) {
   await removeIfExists(releaseDir)
   await fs.mkdir(path.join(releaseDir, '.lecquy', 'skills'), { recursive: true })
+  const envExampleText = await fs.readFile(ENV_EXAMPLE_PATH, 'utf8')
+  const releaseEnvText = buildReleaseEnvContent(envExampleText)
+  await fs.writeFile(path.join(releaseDir, '.env'), releaseEnvText, 'utf8')
   await fs.copyFile(ENV_EXAMPLE_PATH, path.join(releaseDir, '.env.example'))
   await fs.copyFile(README_PATH, path.join(releaseDir, 'README.md'))
 
@@ -262,6 +306,7 @@ async function prepareReleaseDir(releaseDir) {
       'setlocal',
       'cd /d "%~dp0"',
       'lecquy-server.exe %*',
+      'if errorlevel 1 pause',
       '',
     ].join('\r\n'),
     'utf8',

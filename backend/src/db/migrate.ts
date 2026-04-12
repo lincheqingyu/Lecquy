@@ -11,15 +11,22 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { Pool } from 'pg'
 import { logger } from '../utils/logger.js'
+import { resolveWorkspaceRoot } from '../core/runtime-paths.js'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const workspaceRoot = resolveWorkspaceRoot()
+const isMainModule = (() => {
+  const entryFile = process.argv[1]
+  if (!entryFile) return false
+  return ['migrate.ts', 'migrate.js', 'migrate.cjs', 'migrate.mjs'].includes(path.basename(entryFile))
+})()
 
-/** migrations/ 目录与本文件同级 */
-const MIGRATIONS_DIR = path.join(__dirname, 'migrations')
+/** 优先读取工作区里的 SQL migration 目录，兼容源码运行与构建产物运行 */
+const MIGRATIONS_DIR = [
+  path.join(workspaceRoot, 'backend', 'src', 'db', 'migrations'),
+  path.join(workspaceRoot, 'backend', 'dist', 'db', 'migrations'),
+].find((candidate) => fs.existsSync(candidate)) ?? path.join(workspaceRoot, 'backend', 'src', 'db', 'migrations')
 
 const CREATE_MIGRATIONS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -86,12 +93,9 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
 // ─── 独立运行入口 ──────────────────────────────────────────────────────────────
 // tsx src/db/migrate.ts 时执行
-if (process.argv[1] === __filename) {
+async function runCli(): Promise<void> {
   const { default: dotenv } = await import('dotenv')
   const { resolve } = await import('node:path')
-  const { resolveWorkspaceRoot } = await import('../core/runtime-paths.js')
-
-  const workspaceRoot = resolveWorkspaceRoot()
   const envPath = resolve(workspaceRoot, '.env')
   if (fs.existsSync(envPath)) {
     dotenv.config({ path: envPath })
@@ -120,4 +124,8 @@ if (process.argv[1] === __filename) {
   } finally {
     await pool.end()
   }
+}
+
+if (isMainModule) {
+  void runCli()
 }
