@@ -68,8 +68,8 @@ export function ConversationSidebar({
               type="button"
               onClick={onToggleCollapse}
               className={[
-                'flex h-11 w-full items-center justify-center rounded-2xl text-text-secondary',
-                'transition-colors hover:bg-sidebar-hover hover:text-text-primary',
+                'flex h-11 w-full items-center justify-center rounded-2xl text-text-primary',
+                'transition-colors hover:bg-sidebar-hover',
               ].join(' ')}
               aria-label="展开会话栏"
               title="展开会话栏"
@@ -129,8 +129,8 @@ export function ConversationSidebar({
               <span
                 className={[
                   collapsedIconShellClass,
-                  'bg-sidebar-active text-text-secondary',
-                  collapsed ? 'shrink-0' : '',
+                  'text-text-primary',
+                  collapsed ? 'shrink-0' : 'bg-sidebar-active',
                 ].join(' ')}
               >
                 <Plus className={[collapsedGlyphClass, 'translate-y-px'].join(' ')} />
@@ -213,55 +213,53 @@ export function ConversationSidebar({
                           <span className="line-clamp-1 block truncate">{conversation.title}</span>
                         </button>
 
-                        {conversations.length > 1 && (
-                          <div ref={menuOpenId === conversation.id ? menuRef : null} className="relative shrink-0">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setMenuOpenId((prev) => (prev === conversation.id ? null : conversation.id))
-                              }}
-                              className={[
-                                'inline-flex h-8 w-8 items-center justify-center rounded-xl text-text-muted',
-                                'transition-all hover:bg-surface hover:text-text-primary',
-                                menuOpenId === conversation.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                              ].join(' ')}
-                              aria-label="更多操作"
-                              title="更多操作"
-                            >
-                              <Ellipsis className="size-4" />
-                            </button>
+                        <div ref={menuOpenId === conversation.id ? menuRef : null} className="relative shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setMenuOpenId((prev) => (prev === conversation.id ? null : conversation.id))
+                            }}
+                            className={[
+                              'inline-flex h-8 w-8 items-center justify-center rounded-xl text-text-muted',
+                              'transition-all hover:bg-surface hover:text-text-primary',
+                              menuOpenId === conversation.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                            ].join(' ')}
+                            aria-label="更多操作"
+                            title="更多操作"
+                          >
+                            <Ellipsis className="size-4" />
+                          </button>
 
-                            {menuOpenId === conversation.id && (
-                              <div className="absolute right-0 top-10 z-20 min-w-40 rounded-2xl border border-border/80 bg-surface p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.12)]">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setMenuOpenId(null)
-                                    onRenameConversation(conversation.id)
-                                  }}
-                                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-primary transition-colors hover:bg-sidebar-hover"
-                                >
-                                  <Pencil className="size-4" />
-                                  <span>重命名</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setMenuOpenId(null)
-                                    onDeleteConversation(conversation.id)
-                                  }}
-                                  className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-500 transition-colors hover:bg-sidebar-hover"
-                                >
-                                  <Trash2 className="size-4" />
-                                  <span>删除</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          {menuOpenId === conversation.id && (
+                            <div className="absolute right-0 top-10 z-20 min-w-40 rounded-2xl border border-border/80 bg-surface p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.12)]">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMenuOpenId(null)
+                                  onRenameConversation(conversation.id)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-text-primary transition-colors hover:bg-sidebar-hover"
+                              >
+                                <Pencil className="size-4" />
+                                <span>重命名</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMenuOpenId(null)
+                                  onDeleteConversation(conversation.id)
+                                }}
+                                className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-500 transition-colors hover:bg-sidebar-hover"
+                              >
+                                <Trash2 className="size-4" />
+                                <span>删除</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </li>
                   )

@@ -242,7 +242,12 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
     >
       <FilePreviewPanelHeader
         title={attachment.kind === 'file'
-          ? `${stripFileExtension(attachment.name)} · ${formatBytes(attachment.size)} · ${documentTypeLabel(attachment, documentType)}`
+          ? (
+              <>
+                <span className="font-normal text-text-primary">{stripFileExtension(attachment.name)}</span>
+                <span className="font-normal text-[rgb(139,137,133)]"> · {documentTypeLabel(attachment, documentType)} · {formatBytes(attachment.size)}</span>
+              </>
+            )
           : attachment.name}
         viewMode={supportsSourceView ? viewMode : undefined}
         onViewModeChange={supportsSourceView ? setViewMode : undefined}

@@ -1,4 +1,4 @@
-import { type KeyboardEvent } from 'react'
+import { type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useAutoResize } from '../../hooks/useAutoResize'
 
 interface AutoResizeTextareaProps {
@@ -20,6 +20,8 @@ interface AutoResizeTextareaProps {
   onLayoutChange?: (state: { multiline: boolean; overflowing: boolean }) => void
   /** 是否禁用输入 */
   disabled?: boolean
+  /** 粘贴事件 */
+  onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void
 }
 
 /**
@@ -39,6 +41,7 @@ export function AutoResizeTextarea({
   className,
   onLayoutChange,
   disabled = false,
+  onPaste,
 }: AutoResizeTextareaProps) {
   const textareaRef = useAutoResize(value, maxRows, onLayoutChange)
 
@@ -63,6 +66,7 @@ export function AutoResizeTextarea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={handleKeyDown}
+      onPaste={onPaste}
       placeholder={placeholder}
       rows={1}
       disabled={disabled}

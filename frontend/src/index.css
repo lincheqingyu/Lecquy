@@ -39,11 +39,11 @@
     --color-text-muted: #94a3b8;       /* 最淡文字：占位符、禁用状态 */
 
     /* ---------- 边框色 ---------- */
-    --color-border: #e2e8f0;           /* 通用分割线、边框 */
+    --color-border: #e7e4db;           /* 通用分割线、边框（暖色基调，与 surface-alt 色系一致） */
     --color-artifact-gutter-border: rgb(235, 235, 235);
 
     /* ---------- 交互色 ---------- */
-    --color-hover: #f1f5f9;            /* 鼠标悬停时的背景色 */
+    --color-hover: #f3f0e8;            /* 鼠标悬停时的背景色（暖米色，与 sidebar-hover 同色阶） */
     --color-accent: #3b82f6;           /* 品牌强调色：按钮、链接 */
     --color-accent-soft: #eff6ff;      /* 强调色柔和背景（标签 hover） */
     --color-accent-text: #2563eb;      /* 强调色文字 */
@@ -103,6 +103,29 @@ body,
 #root {
     min-height: 100%;
     background: var(--color-surface-alt);
+}
+
+/* ============================================
+ * Focus 样式统一
+ * 浏览器默认 :focus 会给按钮加蓝色 outline/ring，视觉上与设计语言冲突
+ * 这里：
+ *   - 鼠标点击（:focus 但非 focus-visible）完全不显示 outline
+ *   - 键盘 Tab（:focus-visible）用中性灰 outline，保留可访问性
+ *   - 表单输入元素（input/textarea）沿用正常样式，不受影响
+ * ============================================ */
+*:focus {
+    outline: none;
+}
+
+*:focus-visible {
+    outline: 2px solid var(--color-text-secondary);
+    outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: none;
 }
 
 .artifact-code-with-lines {

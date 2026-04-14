@@ -354,9 +354,10 @@ export function HomePageLayout() {
 
     try {
       await deleteSessionByKey(sessionKey)
-      setSessionItems((prev) => prev.filter((item) => item.id !== sessionKey))
+      const remainingItems = sessionItems.filter((item) => item.id !== sessionKey)
+      setSessionItems(remainingItems)
 
-      if (selectedSessionKey === sessionKey || currentSessionKey === sessionKey) {
+      if (remainingItems.length === 0 || selectedSessionKey === sessionKey || currentSessionKey === sessionKey) {
         handleStartNewConversation()
       }
     } catch {

@@ -168,8 +168,13 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
       style={{ width }}
     >
       <FilePreviewPanelHeader
-        title={`${stripFileExtension(artifact.name)} · ${inferArtifactTypeLabel(artifact)}`}
-        meta={`${formatBytes(resolvedArtifact.size)} · ${isDraft ? '生成中' : `更新于 ${formatUpdatedAt(resolvedArtifact.updatedAt)}`}`}
+        title={
+          <>
+            <span className="font-normal text-text-primary">{stripFileExtension(artifact.name)}</span>
+            <span className="font-normal text-[rgb(139,137,133)]"> · {inferArtifactTypeLabel(artifact)} · {formatBytes(resolvedArtifact.size)}</span>
+          </>
+        }
+        meta={isDraft ? '生成中' : `更新于 ${formatUpdatedAt(resolvedArtifact.updatedAt)}`}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onCopy={content ? copyRawContent : undefined}

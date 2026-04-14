@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { FileText, Plus, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react'
 import type { ChatAttachment } from '@lecquy/shared'
 import { AutoResizeTextarea } from './AutoResizeTextarea'
 import { CategoryTags } from './CategoryTags'
@@ -22,6 +22,30 @@ interface ChatInputProps {
   disabled?: boolean
   disabledReason?: string | null
   rightSlot?: ReactNode
+}
+
+function inferFallbackExtension(file: File): string {
+  if (file.type.startsWith('image/')) {
+    const subtype = file.type.split('/')[1]
+    return subtype === 'jpeg' ? 'jpg' : (subtype || 'png')
+  }
+
+  if (file.type.includes('pdf')) return 'pdf'
+  if (file.type.includes('json')) return 'json'
+  if (file.type.includes('markdown')) return 'md'
+  if (file.type.startsWith('text/')) return 'txt'
+  return 'bin'
+}
+
+function normalizeIncomingFile(file: File, index: number): File {
+  if (file.name) return file
+
+  const extension = inferFallbackExtension(file)
+  const prefix = file.type.startsWith('image/') ? 'pasted-image' : 'pasted-file'
+  return new File([file], `${prefix}-${Date.now()}-${index}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified,
+  })
 }
 
 /**
@@ -69,16 +93,15 @@ export function ChatInput({
     fileInputRef.current?.click()
   }
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const nextFiles = Array.from(event.target.files ?? [])
-    event.target.value = ''
-    if (nextFiles.length === 0) return
+  const appendFiles = async (files: File[]) => {
+    if (files.length === 0) return
 
     setIsReadingAttachments(true)
     setAttachmentError(null)
 
     try {
-      const parsed = await Promise.all(nextFiles.map((file) => readChatAttachment(file)))
+      const normalizedFiles = files.map((file, index) => normalizeIncomingFile(file, index))
+      const parsed = await Promise.all(normalizedFiles.map((file) => readChatAttachment(file)))
       setAttachments((prev) => [...prev, ...parsed])
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : '读取附件失败')
@@ -87,8 +110,31 @@ export function ChatInput({
     }
   }
 
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFiles = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (nextFiles.length === 0) return
+    await appendFiles(nextFiles)
+  }
+
   const handleRemoveAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled || isReadingAttachments) return
+
+    const clipboardFiles = Array.from(event.clipboardData.files ?? [])
+    const itemFiles = Array.from(event.clipboardData.items ?? [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+
+    const files = clipboardFiles.length > 0 ? clipboardFiles : itemFiles
+    if (files.length === 0) return
+
+    event.preventDefault()
+    void appendFiles(files)
   }
 
   /** 点击分类标签（暂时填入输入框，后续接入） */
@@ -202,6 +248,7 @@ export function ChatInput({
               onChange={setMessage}
               onSend={handleSend}
               onToggleThinking={toggleThinking}
+              onPaste={handlePaste}
               maxRows={10}
               onLayoutChange={({ multiline }) => setIsMultiline(multiline)}
               className={clsx('px-1 py-0', 'max-h-[15rem] min-h-8')}
@@ -249,6 +296,7 @@ export function ChatInput({
               onChange={setMessage}
               onSend={handleSend}
               onToggleThinking={toggleThinking}
+              onPaste={handlePaste}
               maxRows={10}
               onLayoutChange={({ multiline }) => setIsMultiline(multiline)}
               className={clsx('px-1 py-1', 'max-h-[15rem] min-h-8')}
