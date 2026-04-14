@@ -106,6 +106,7 @@ export interface SessionFileContentBlock {
   readonly name: string
   readonly mimeType: string
   readonly text: string
+  readonly displayText?: string
   readonly size?: number
   readonly truncated?: boolean
 }
@@ -162,6 +163,7 @@ export interface ChatFileAttachment {
   readonly name: string
   readonly mimeType: string
   readonly text: string
+  readonly displayText?: string
   readonly size?: number
   readonly truncated?: boolean
 }
@@ -267,6 +269,7 @@ export function normalizeSessionUserContent(content: unknown): SessionUserConten
         name: part.name,
         mimeType: part.mimeType,
         text: part.text,
+        displayText: typeof part.displayText === 'string' ? part.displayText : undefined,
         size: typeof part.size === 'number' ? part.size : undefined,
         truncated: typeof part.truncated === 'boolean' ? part.truncated : undefined,
       })
@@ -395,6 +398,7 @@ export function extractSessionAttachments(content: unknown): ChatAttachment[] {
         name: part.name,
         mimeType: part.mimeType,
         text: part.text,
+        displayText: part.displayText,
         size: part.size,
         truncated: part.truncated,
       })

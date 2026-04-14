@@ -40,6 +40,7 @@ import { getConfig, type Env } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import { createVllmModel } from '../agent/vllm-model.js'
 import {
+  AgentExecutionError,
   createManagerTools,
   createSimpleTools,
   createWorkerTools,
@@ -295,6 +296,14 @@ function lastAssistantText(messages: AgentMessage[]): string {
     | (SessionMessageRecord & { content: unknown })
     | undefined
   return last ? extractSessionText(last.content) : ''
+}
+
+function appendAssistantMessages(manager: SessionManager, messages: AgentMessage[]): void {
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      manager.appendMessage(toSessionMessageRecord(message))
+    }
+  }
 }
 
 function toSessionMessageRecord(message: AgentMessage): SessionMessageRecord {
@@ -1348,33 +1357,40 @@ export class SessionRuntimeService {
 
     step = await this.beginStep(bound, runId, step)
 
-    const result = await runSimpleAgent({
-      messages: [
-        createAgentUserMessage(_userMessage as SessionMessageRecord),
-      ],
-      contextMessages,
-      model,
-      apiKey,
-      systemPromptOverride: systemPrompt,
-      thinkingLevel,
-      temperature: modelOptions.options?.temperature,
-      extraSystemPrompt: modelOptions.systemPrompt,
-      signal,
-      disableLegacyMemoryFlush: true,
-      enableTools: toolsEnabled,
-      route: bound.projection.route,
-      mode,
-      onEvent: (event) => {
-        this.handleAgentEvent(bound.manager, sessionKey, runId, step, event)
-      },
-    })
+    let result: Awaited<ReturnType<typeof runSimpleAgent>>
+    try {
+      result = await runSimpleAgent({
+        messages: [
+          createAgentUserMessage(_userMessage as SessionMessageRecord),
+        ],
+        contextMessages,
+        model,
+        apiKey,
+        systemPromptOverride: systemPrompt,
+        thinkingLevel,
+        temperature: modelOptions.options?.temperature,
+        extraSystemPrompt: modelOptions.systemPrompt,
+        signal,
+        disableLegacyMemoryFlush: true,
+        enableTools: toolsEnabled,
+        route: bound.projection.route,
+        mode,
+        onEvent: (event) => {
+          this.handleAgentEvent(bound.manager, sessionKey, runId, step, event)
+        },
+      })
+    } catch (error) {
+      if (error instanceof AgentExecutionError) {
+        const partialMessages = error.messages.slice(contextMessages.length)
+        appendAssistantMessages(bound.manager, partialMessages)
+        const partialReply = lastAssistantText(partialMessages).trim()
+        await this.finishStep(bound, runId, step, 'failed', partialReply || '回答已中断')
+      }
+      throw error
+    }
 
     const newMessages = result.messages.slice(contextMessages.length)
-    for (const message of newMessages) {
-      if (message.role === 'assistant') {
-        bound.manager.appendMessage(toSessionMessageRecord(message))
-      }
-    }
+    appendAssistantMessages(bound.manager, newMessages)
 
     const reply = lastAssistantText(newMessages)
     await this.finishStep(bound, runId, step, 'completed', reply)
@@ -1482,11 +1498,7 @@ export class SessionRuntimeService {
       }
 
       const managerMessages = managerResult.messages.slice(contextMessages.length)
-      for (const message of managerMessages) {
-        if (message.role === 'assistant') {
-          bound.manager.appendMessage(toSessionMessageRecord(message))
-        }
-      }
+      appendAssistantMessages(bound.manager, managerMessages)
 
       const items = await persistTodoState()
 

@@ -112,7 +112,7 @@ export function ConversationArea({
   }, [externalMessages, messageVersion, replaceMessages])
 
   const hasSent = messages.length > 0
-  const showStopButton = isStreaming || isWaiting
+  const showStopButton = isStreaming
   const canContinuePlan = isWaiting && mode === 'plan'
   const effectiveCanSend = canSend && !isStreaming && (!isWaiting || canContinuePlan)
   const effectiveDisabledReason =
@@ -127,17 +127,18 @@ export function ConversationArea({
       type="button"
       onClick={stop}
       className={[
-        'inline-flex size-10 items-center justify-center rounded-full border border-border',
-        'bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.24),transparent_55%),var(--color-surface)]',
-        'text-text-secondary shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition-all duration-200',
-        'hover:-translate-y-0.5 hover:bg-hover hover:text-text-primary',
+        'inline-flex h-9 items-center gap-2 rounded-[1rem] border border-border/80 px-3.5',
+        'bg-[linear-gradient(180deg,var(--color-surface-thought),var(--color-surface))]',
+        'text-text-primary shadow-[0_10px_20px_rgba(15,23,42,0.05)] transition-all duration-200',
+        'hover:border-[color:var(--border-strong)] hover:bg-[linear-gradient(180deg,var(--color-surface),var(--color-surface-thought))]',
       ].join(' ')}
-      aria-label="暂停回答"
-      title="暂停回答"
+      aria-label="中断回答"
+      title="中断回答"
     >
-      <span className="flex size-4 items-center justify-center rounded-[0.35rem] bg-current" aria-hidden="true">
-        <Square className="size-2.5 fill-surface text-surface" />
+      <span className="inline-flex size-5 items-center justify-center rounded-[0.7rem] bg-surface-alt text-text-secondary" aria-hidden="true">
+        <Square className="size-3 fill-current" />
       </span>
+      <span className="text-[13px] font-medium tracking-[0.02em]">停止</span>
     </button>
   ) : null
 

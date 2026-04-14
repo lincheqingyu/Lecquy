@@ -6,6 +6,24 @@ interface ShikiCodeViewProps {
   language: string
 }
 
+function FallbackCodeView({ code }: { code: string }) {
+  const lines = code.split('\n')
+
+  return (
+    <div className="artifact-code-with-lines min-h-full overflow-x-auto bg-surface text-[13px] leading-7 text-text-primary">
+      <pre className="min-h-full bg-transparent px-0 py-0">
+        <code>
+          {lines.map((line, index) => (
+            <span key={`${index}:${line.length}`} className="line">
+              {line.length > 0 ? line : ' '}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
+  )
+}
+
 export function ShikiCodeView({ code, language }: ShikiCodeViewProps) {
   const [html, setHtml] = useState<string>('')
   const [hasError, setHasError] = useState(false)
@@ -49,16 +67,12 @@ export function ShikiCodeView({ code, language }: ShikiCodeViewProps) {
   }, [code, isDark, language])
 
   if (hasError || !html) {
-    return (
-      <pre className="min-h-full overflow-x-auto bg-surface px-0 py-0 text-[13px] leading-7 text-text-primary">
-        <code>{code}</code>
-      </pre>
-    )
+    return <FallbackCodeView code={code} />
   }
 
   return (
     <div
-      className="min-h-full overflow-x-auto bg-surface [&_.shiki]:!bg-transparent [&_.shiki]:px-0 [&_.shiki]:py-0 [&_.shiki]:text-[13px] [&_.shiki]:leading-7"
+      className="artifact-code-with-lines min-h-full overflow-x-auto bg-surface text-[13px] leading-7 [&_.shiki]:!bg-transparent [&_.shiki]:m-0 [&_.shiki]:min-w-full [&_.shiki]:px-0 [&_.shiki]:py-0 [&_.shiki]:text-[13px] [&_.shiki]:leading-7 [&_.shiki_code]:block [&_.shiki_code]:min-w-full"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

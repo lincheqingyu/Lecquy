@@ -14,6 +14,7 @@ import { createPermissionAwareTools, type AgentRuntimeEvent, type ConfirmRequire
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
+  AgentExecutionError,
   createTracker,
   extractToolResultText,
   formatAgentFailureMessage,
@@ -206,14 +207,18 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     onEvent?.(event as AgentEvent)
   }
 
+  const mergedMessages = [...contextMessages, ...allMessages]
+
   if (lastAssistantMessage?.stopReason === 'error' || lastAssistantMessage?.stopReason === 'aborted') {
-    throw new Error(formatAgentFailureMessage(
+    throw new AgentExecutionError(formatAgentFailureMessage(
       lastAssistantMessage.errorMessage ?? forcedStopReason ?? '主 Agent 执行失败',
       lastToolError,
-    ))
+    ), {
+      messages: mergedMessages,
+      stopReason: lastAssistantMessage.stopReason,
+    })
   }
 
-  const mergedMessages = [...contextMessages, ...allMessages]
   if (!disableLegacyMemoryFlush) {
     await recordMemoryTurnAndMaybeFlush(mergedMessages, turnState)
   }

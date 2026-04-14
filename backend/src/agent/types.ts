@@ -2,6 +2,8 @@
  * Agent 共享类型和常量
  */
 
+import type { AgentMessage } from '@mariozechner/pi-agent-core'
+
 /** 主 Agent 最大迭代次数 */
 export const MAX_ITERATIONS = 10
 
@@ -27,6 +29,24 @@ export interface IterationTracker {
 /** 创建默认迭代跟踪器 */
 export function createTracker(): IterationTracker {
   return { iteration: 0, toolFailCount: 0, directReturn: false }
+}
+
+export class AgentExecutionError extends Error {
+  readonly messages: AgentMessage[]
+  readonly stopReason: 'aborted' | 'error'
+
+  constructor(
+    message: string,
+    options: {
+      messages: AgentMessage[]
+      stopReason: 'aborted' | 'error'
+    },
+  ) {
+    super(message)
+    this.name = 'AgentExecutionError'
+    this.messages = options.messages
+    this.stopReason = options.stopReason
+  }
 }
 
 function extractTextLike(value: unknown): string {

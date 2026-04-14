@@ -385,7 +385,7 @@ export function HomePageLayout() {
   }
 
   const handleChatLifecycleEvent = (event: 'run_completed' | 'run_paused' | 'run_failed') => {
-    if (event === 'run_completed' || event === 'run_paused') {
+    if (event === 'run_completed' || event === 'run_paused' || event === 'run_failed') {
       void refreshSessions()
     }
   }

@@ -160,10 +160,10 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
 
   return (
     <aside
-      className="flex h-full min-h-0 min-w-[22rem] shrink-0 flex-col overflow-hidden bg-surface-alt"
+      className="flex h-full min-h-0 min-w-[22rem] shrink-0 flex-col overflow-hidden border-l border-border/70 bg-surface"
       style={{ width }}
     >
-      <div className="flex shrink-0 items-start gap-2 bg-surface-alt px-5 py-4">
+      <div className="flex shrink-0 items-start gap-2 border-b border-border/70 bg-surface px-5 py-4">
         <button
           type="button"
           onClick={onClose}
@@ -191,23 +191,25 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-hidden bg-surface">
         {attachment.kind === 'image' ? (
-          <div className="flex h-full min-h-0 items-center justify-center overflow-auto rounded-[1.15rem] bg-surface p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-            <div className="overflow-hidden rounded-[1rem] bg-surface">
-              {imageUrl ? (
-                <img src={imageUrl} alt={attachment.name} className="max-h-[calc(100vh-12rem)] max-w-full object-contain" />
-              ) : (
-                <div className="flex h-64 w-64 items-center justify-center text-text-secondary">
-                  <ImageIcon className="size-10" />
-                </div>
-              )}
-            </div>
+          <div className="flex h-full min-h-0 items-center justify-center overflow-auto bg-surface px-6 py-6">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={attachment.name}
+                className="max-h-[calc(100vh-12rem)] max-w-full rounded-[1rem] object-contain shadow-[0_18px_38px_rgba(15,23,42,0.12)]"
+              />
+            ) : (
+              <div className="flex h-64 w-64 items-center justify-center rounded-[1rem] border border-dashed border-border/80 bg-surface text-text-secondary">
+                <ImageIcon className="size-10" />
+              </div>
+            )}
           </div>
         ) : (
-          <div className="flex h-full min-h-0 overflow-hidden rounded-[1.15rem] bg-surface shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+          <div className="flex h-full min-h-0 overflow-hidden bg-surface">
             {documentType === 'excel' && sections.length > 1 && (
-              <div className="w-44 shrink-0 border-r border-border bg-surface-alt p-3">
+              <div className="w-44 shrink-0 border-r border-border/70 bg-surface p-3">
                 <div className="mb-3 px-2 text-xs font-medium uppercase tracking-[0.14em] text-text-muted">Sheets</div>
                 <div className="space-y-1">
                   {sections.map((section) => (
@@ -218,7 +220,7 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
                       className={clsx(
                         'w-full rounded-xl px-3 py-2 text-left text-sm transition-colors',
                         activeSectionId === section.id
-                          ? 'bg-surface text-text-primary shadow-[0_6px_18px_rgba(15,23,42,0.06)]'
+                          ? 'border border-border/70 bg-surface-alt text-text-primary'
                           : 'text-text-secondary hover:bg-hover hover:text-text-primary',
                       )}
                     >
@@ -230,13 +232,13 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
             )}
 
             <div className="min-h-0 flex-1 overflow-hidden bg-surface">
-              <div className="h-full overflow-y-auto px-5 py-4">
+              <div className="h-full overflow-y-auto px-6 py-5">
                 <div className="mx-auto max-w-4xl">
                 {documentType === 'excel' ? (
                   <>
                     {activeSection && (
                       <>
-                        <div className="overflow-x-auto rounded-2xl bg-surface-alt px-4 py-3">
+                        <div className="overflow-x-auto rounded-2xl border border-border/70 bg-surface px-4 py-3">
                           {renderTextParagraphs(activeSection.content, true)}
                         </div>
                       </>
@@ -247,7 +249,7 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
                 ) : activeSection || (attachment.kind === 'file' && attachment.text.trim().length > 0) ? (
                   renderTextParagraphs(activeSection?.content ?? attachment.text, false)
                 ) : (
-                  <div className="rounded-2xl bg-surface-alt px-4 py-5 text-sm text-text-secondary">
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-surface px-4 py-5 text-sm text-text-secondary">
                     当前未能从该文档中提取可展示内容。请重新上传，或换用更容易解析的格式。
                   </div>
                 )}

@@ -30,6 +30,7 @@ export {
   type PreambleEvent,
 } from './tool-permission.js'
 export {
+  AgentExecutionError,
   MAX_ITERATIONS,
   MAX_TOOL_FAILURES,
   MAX_SUB_ITERATIONS,

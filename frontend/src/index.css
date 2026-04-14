@@ -103,6 +103,37 @@ body,
     background: var(--color-surface-alt);
 }
 
+.artifact-code-with-lines pre,
+.artifact-code-with-lines .shiki {
+    margin: 0;
+    min-width: 100%;
+}
+
+.artifact-code-with-lines code {
+    counter-reset: code-line;
+    display: block;
+    min-width: 100%;
+}
+
+.artifact-code-with-lines .line {
+    display: block;
+    min-width: 100%;
+    padding-right: 1.5rem;
+}
+
+.artifact-code-with-lines .line::before {
+    counter-increment: code-line;
+    content: counter(code-line);
+    display: inline-block;
+    width: 3.5rem;
+    margin-right: 1rem;
+    padding-right: 0.75rem;
+    border-right: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    text-align: right;
+    user-select: none;
+}
+
 /* 对话区滚动条：细线、低对比、右侧贴边 */
 .chat-scrollbar {
     scrollbar-width: thin;

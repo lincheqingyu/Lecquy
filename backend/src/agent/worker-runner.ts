@@ -17,6 +17,7 @@ import {
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
+  AgentExecutionError,
   createTracker,
   extractToolResultText,
   formatAgentFailureMessage,
@@ -342,10 +343,13 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
   }
 
   if (lastAssistantMessage?.stopReason === 'error' || lastAssistantMessage?.stopReason === 'aborted') {
-    throw new Error(formatAgentFailureMessage(
+    throw new AgentExecutionError(formatAgentFailureMessage(
       lastAssistantMessage.errorMessage ?? forcedStopReason ?? '子任务执行失败',
       lastToolError,
-    ))
+    ), {
+      messages,
+      stopReason: lastAssistantMessage.stopReason,
+    })
   }
 
   return {

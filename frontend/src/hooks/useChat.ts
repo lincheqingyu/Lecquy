@@ -220,6 +220,25 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }))
   }, [])
 
+  const finalizeRunningThoughts = useCallback((status: 'completed' | 'failed') => {
+    const finishedAt = Date.now()
+    setMessages((prev) => prev.map((message) => {
+      const timing = message.thoughtTiming
+      if (!timing || timing.status !== 'running') return message
+
+      return {
+        ...message,
+        stepStatus: message.stepStatus === 'started' && status === 'failed' ? 'failed' : message.stepStatus,
+        thoughtTiming: {
+          status,
+          startedAt: timing.startedAt,
+          finishedAt,
+          durationMs: Math.max(0, finishedAt - timing.startedAt),
+        },
+      }
+    }))
+  }, [])
+
   const ensurePlanMessage = useCallback(() => {
     const existing = todoMessageIdRef.current
     if (existing) return existing
@@ -329,12 +348,15 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'run_state') {
             const run = payload as ServerEventPayloadMap['run_state']
-            currentRunIdRef.current = run.runId
+            currentRunIdRef.current = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled'
+              ? null
+              : run.runId
             setIsStreaming(run.status === 'running')
             setIsWaiting(run.status === 'paused')
             if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
               currentPauseIdRef.current = null
               pendingUserIdRef.current = null
+              finalizeRunningThoughts(run.status === 'completed' ? 'completed' : 'failed')
             }
             if (run.status === 'failed' && run.error) {
               appendMessage(setMessages, {
@@ -402,7 +424,10 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             }
             updateMessage(setMessages, messageId, (message) => ({
               ...message,
-              content: step.summary && step.status === 'completed' ? step.summary : message.content,
+              content:
+                step.summary && (step.status === 'completed' || !message.content.trim())
+                  ? step.summary
+                  : message.content,
               stepStatus: step.status,
               thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
             }))
@@ -570,6 +595,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               timestamp: Date.now(),
             })
             setIsStreaming(false)
+            setIsWaiting(false)
+            currentRunIdRef.current = null
+            currentPauseIdRef.current = null
+            pendingUserIdRef.current = null
+            finalizeRunningThoughts('failed')
             onWsEvent?.(event, error)
           }
         } catch {
@@ -584,6 +614,12 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       onStatusChange: (status) => {
         setConnectionStatus(status)
         if (status === 'disconnected') {
+          setIsStreaming(false)
+          setIsWaiting(false)
+          currentRunIdRef.current = null
+          currentPauseIdRef.current = null
+          pendingUserIdRef.current = null
+          finalizeRunningThoughts('failed')
           appendMessage(setMessages, {
             id: createId('system'),
             role: 'system',
@@ -596,7 +632,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     reconnectWsRef.current = ws
     return ws
-  }, [WS_BASE, ensurePlanMessage, ensureStepMessage, onWsEvent])
+  }, [WS_BASE, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, onWsEvent])
 
   const buildModelOptions = useCallback(() => ({
     model: modelConfig.model,
@@ -678,12 +714,16 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
   const stop = useCallback(() => {
     if (!boundSessionKey) return
     const ws = ensureWs()
+    const runId = currentRunIdRef.current ?? undefined
+    finalizeRunningThoughts('failed')
+    setIsStreaming(false)
+    setIsWaiting(false)
     const payload: ClientEventPayloadMap['run_cancel'] = {
       sessionKey: boundSessionKey,
-      runId: currentRunIdRef.current ?? undefined,
+      runId,
     }
     ws.send(JSON.stringify({ event: 'run_cancel', payload }))
-  }, [boundSessionKey, ensureWs])
+  }, [boundSessionKey, ensureWs, finalizeRunningThoughts])
 
   useEffect(() => {
     return () => {

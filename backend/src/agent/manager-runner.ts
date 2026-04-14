@@ -13,6 +13,7 @@ import { createPermissionAwareTools, type AgentRuntimeEvent, type ConfirmRequire
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
 import {
+  AgentExecutionError,
   createTracker,
   extractToolResultText,
   formatAgentFailureMessage,
@@ -234,15 +235,20 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
     onEvent?.(event as AgentEvent)
   }
 
+  const mergedMessages = [...contextMessages, ...allMessages]
+
   if (lastAssistantMessage?.stopReason === 'error' || lastAssistantMessage?.stopReason === 'aborted') {
-    throw new Error(formatAgentFailureMessage(
+    throw new AgentExecutionError(formatAgentFailureMessage(
       lastAssistantMessage.errorMessage ?? forcedStopReason ?? '计划生成失败',
       lastToolError,
-    ))
+    ), {
+      messages: mergedMessages,
+      stopReason: lastAssistantMessage.stopReason,
+    })
   }
 
   return {
-    messages: [...contextMessages, ...allMessages],
+    messages: mergedMessages,
     pause: pausePrompt ? { prompt: pausePrompt } : undefined,
   }
 }

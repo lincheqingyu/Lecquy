@@ -143,6 +143,47 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
     messageById.set(message.id, message)
   }
 
+  const finalizeStep = (
+    stepId: string,
+    finishedAt: number,
+    status: 'completed' | 'failed',
+    fallbackIndex: number,
+  ) => {
+    const step = stepById.get(stepId)
+    if (!step || step.status !== 'running') return
+
+    const durationMs = typeof step.startedAt === 'number'
+      ? Math.max(0, finishedAt - step.startedAt)
+      : undefined
+    stepById.set(stepId, {
+      ...step,
+      status,
+      finishedAt,
+      durationMs,
+    })
+
+    const assistantMessageId = stepMessageById.get(stepId)
+    const assistantMessage = assistantMessageId ? messageById.get(assistantMessageId) : undefined
+    if (assistantMessage) {
+      assistantMessage.stepStatus = status
+      assistantMessage.thoughtTiming = toHistoryThoughtTiming(stepById.get(stepId) ?? {})
+      attachPendingArtifacts(stepId, assistantMessage)
+    }
+
+    if (!assistantMessage && (artifactsByStepId.get(stepId)?.length ?? 0) > 0) {
+      const syntheticMessage = ensureAssistantStepMessage(stepId, fallbackIndex)
+      if (syntheticMessage) {
+        syntheticMessage.timestamp = finishedAt
+        syntheticMessage.stepStatus = status
+        syntheticMessage.thoughtTiming = toHistoryThoughtTiming(stepById.get(stepId) ?? {})
+      }
+    }
+
+    if (activeStepId === stepId) {
+      activeStepId = null
+    }
+  }
+
   const attachPendingArtifacts = (stepId: string, message: ChatMessage) => {
     const pendingArtifacts = artifactsByStepId.get(stepId)
     if ((pendingArtifacts?.length ?? 0) === 0) return
@@ -163,7 +204,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
       return existingMessage
     }
 
-    const id = createHistoryId('assistant', index)
+    const id = createHistoryId(`assistant_${stepId}`, index)
     const message: ChatMessage = {
       id,
       role: 'assistant',
@@ -422,9 +463,27 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
     }
 
     if (entry.type === 'run_finished') {
+      const finishedAt = toEntryTimestamp(entry.timestamp)
+      const fallbackStatus = entry.status === 'completed' || entry.status === 'paused' ? 'completed' : 'failed'
+      for (const [stepId, step] of stepById.entries()) {
+        if (step.runId === entry.runId && step.status === 'running') {
+          finalizeStep(stepId, finishedAt, fallbackStatus, index)
+        }
+      }
       activeRunById.delete(entry.runId)
     }
   })
+
+  if (projection.workflow && projection.workflow.status !== 'queued' && projection.workflow.status !== 'running') {
+    const fallbackStatus = projection.workflow.status === 'completed' || projection.workflow.status === 'paused'
+      ? 'completed'
+      : 'failed'
+    for (const [stepId, step] of stepById.entries()) {
+      if (step.status === 'running') {
+        finalizeStep(stepId, projection.workflow.updatedAt, fallbackStatus, messages.length)
+      }
+    }
+  }
 
   if (projection.workflow?.mode === 'plan' && projection.workflow.todo?.items?.length) {
     const hasPlanMessage = messages.some((message) => message.eventType === 'plan')

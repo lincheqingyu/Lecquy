@@ -170,7 +170,6 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
   const previewMode = inferArtifactPreviewMode(resolvedArtifact)
   const canPreview = true
   const isDraft = artifact.status === 'draft'
-  const isHtmlPreview = viewMode === 'preview' && previewMode === 'html'
   const copyRawContent = async () => {
     const content = detail?.content ?? artifact.content ?? ''
     if (!content) return
@@ -206,18 +205,18 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
 
   return (
     <aside
-      className="flex h-full min-h-0 min-w-[26rem] shrink-0 flex-col overflow-hidden bg-surface"
+      className="flex h-full min-h-0 min-w-[26rem] shrink-0 flex-col overflow-hidden border-l border-border/70 bg-surface"
       style={{ width }}
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 px-3.5 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-surface px-5 py-4">
         <div className="min-w-0 flex items-center gap-2">
-          <div className="inline-flex items-center rounded-[0.95rem] bg-surface-alt p-0.5">
+          <div className="inline-flex items-center rounded-[1rem] border border-border/70 bg-surface p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('preview')}
               className={clsx(
-                'inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'preview' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
+                'inline-flex size-8 items-center justify-center rounded-[0.8rem] transition-colors',
+                viewMode === 'preview' ? 'bg-surface text-text-primary shadow-[0_1px_2px_rgba(15,23,42,0.08)]' : 'text-text-secondary hover:bg-hover hover:text-text-primary',
               )}
               aria-label="预览模式"
             >
@@ -227,8 +226,8 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
               type="button"
               onClick={() => setViewMode('source')}
               className={clsx(
-                'inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'source' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary',
+                'inline-flex size-8 items-center justify-center rounded-[0.8rem] transition-colors',
+                viewMode === 'source' ? 'bg-surface text-text-primary shadow-[0_1px_2px_rgba(15,23,42,0.08)]' : 'text-text-secondary hover:bg-hover hover:text-text-primary',
               )}
               aria-label="源码模式"
             >
@@ -236,10 +235,10 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
             </button>
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[1rem] font-semibold leading-tight text-text-primary">
+            <div className="truncate text-[1.35rem] font-semibold leading-tight text-text-primary">
               {stripExtension(artifact.name)} · {inferArtifactTypeLabel(artifact)}
             </div>
-            <div className="mt-px text-[11px] text-text-secondary">
+            <div className="mt-1 text-xs text-text-secondary">
               {formatBytes(resolvedArtifact.size)} · {isDraft ? '生成中' : `更新于 ${formatUpdatedAt(resolvedArtifact.updatedAt)}`}
             </div>
           </div>
@@ -247,7 +246,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
 
         <div className="flex shrink-0 items-center gap-0.5">
           <div ref={actionMenuRef} className="relative">
-            <div className="inline-flex h-8 items-stretch overflow-hidden rounded-[0.9rem] border border-border bg-surface">
+            <div className="inline-flex h-9 items-stretch overflow-hidden rounded-[1rem] border border-border/70 bg-surface">
               <button
                 type="button"
                 onClick={copyRawContent}
@@ -260,7 +259,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
               <button
                 type="button"
                 onClick={() => setIsActionMenuOpen((value) => !value)}
-                className="inline-flex w-9 items-center justify-center border-l border-border text-text-primary transition-colors hover:bg-hover"
+                className="inline-flex w-10 items-center justify-center border-l border-border text-text-primary transition-colors hover:bg-hover"
                 aria-label={isActionMenuOpen ? '关闭操作菜单' : '打开操作菜单'}
                 aria-expanded={isActionMenuOpen}
               >
@@ -312,17 +311,14 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
       <div className="min-h-0 flex-1 overflow-hidden">
         <div
           ref={previewRef}
-          className={clsx(
-            'h-full overflow-y-auto bg-surface',
-            isHtmlPreview ? 'px-0 py-0' : 'px-6 py-5',
-          )}
+          className="h-full overflow-y-auto bg-surface px-6 py-5"
         >
           {isLoading && !content ? (
             <div className="flex h-full min-h-[12rem] items-center justify-center text-sm text-text-secondary">正在加载文件内容...</div>
           ) : error ? (
             <div className="flex h-full min-h-[12rem] items-center justify-center text-sm text-text-secondary">{error}</div>
           ) : viewMode === 'source' ? (
-            <div>
+            <div className="space-y-4">
               {isDraft && (
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
                   <LoaderCircle className="size-3.5 animate-spin" />
@@ -333,29 +329,31 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                 <FileCode2 className="size-4" />
                 原始内容
               </div>
-              <pre className="min-h-full overflow-x-auto whitespace-pre-wrap break-words bg-surface font-mono text-[13px] leading-7 text-text-primary">
-                <code>{content}</code>
-              </pre>
+              <div className="overflow-hidden rounded-[1rem] border border-border/70 bg-surface">
+                <ShikiCodeView code={content} language={inferCodeLanguage(artifact.name)} />
+              </div>
             </div>
           ) : !canPreview ? (
             <div className="text-sm text-text-secondary">当前文件暂不支持预览</div>
           ) : previewMode === 'html' ? (
-            <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col gap-4">
               {isDraft && (
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
+                <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
                   <LoaderCircle className="size-3.5 animate-spin" />
                   预览已先展示草稿内容，完成后可下载正式文件
                 </div>
               )}
-              <iframe
-                title={artifact.name}
-                sandbox=""
-                srcDoc={content}
-                className="min-h-0 flex-1 bg-surface"
-              />
+              <div className="min-h-[18rem] flex-1 overflow-hidden rounded-[1rem] border border-border/70 bg-surface">
+                <iframe
+                  title={artifact.name}
+                  sandbox=""
+                  srcDoc={content}
+                  className="min-h-0 h-full w-full bg-white"
+                />
+              </div>
             </div>
           ) : previewMode === 'markdown' ? (
-            <div className="prose prose-slate dark:prose-invert max-w-none text-text-primary">
+            <div className="prose prose-slate dark:prose-invert mx-auto max-w-4xl text-text-primary">
               {isDraft && (
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary not-prose">
                   <LoaderCircle className="size-3.5 animate-spin" />
@@ -365,7 +363,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
               {renderMarkdown(content)}
             </div>
           ) : previewMode === 'text' ? (
-            <>
+            <div className="mx-auto max-w-4xl">
               {isDraft && (
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
                   <LoaderCircle className="size-3.5 animate-spin" />
@@ -373,7 +371,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                 </div>
               )}
               {renderTextPreview(content)}
-            </>
+            </div>
           ) : (
             <div className="space-y-4">
               {isDraft && (
@@ -382,7 +380,9 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                   正在生成文件内容
                 </div>
               )}
-              <ShikiCodeView code={content} language={inferCodeLanguage(artifact.name)} />
+              <div className="overflow-hidden rounded-[1rem] border border-border/70 bg-surface">
+                <ShikiCodeView code={content} language={inferCodeLanguage(artifact.name)} />
+              </div>
             </div>
           )}
         </div>
