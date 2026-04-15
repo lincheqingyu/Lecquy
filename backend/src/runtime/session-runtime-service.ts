@@ -154,8 +154,33 @@ function summarizeToolResultDetail(result: unknown): string | undefined {
   return summary.length > 0 ? summary : undefined
 }
 
-function extractPartialToolCall(event: AgentEvent): { toolName: string; args: unknown } | null {
-  if (event.type !== 'message_update' || event.assistantMessageEvent.type !== 'toolcall_delta') {
+function extractToolErrorMessage(result: unknown): string | undefined {
+  if (!result || typeof result !== 'object' || !('content' in result)) return undefined
+  const content = (result as { content?: unknown }).content
+  if (!Array.isArray(content)) return undefined
+
+  const firstText = content.find(
+    (item): item is { type: 'text'; text: string } =>
+      Boolean(item)
+      && typeof item === 'object'
+      && 'type' in item
+      && 'text' in item
+      && (item as { type?: unknown }).type === 'text'
+      && typeof (item as { text?: unknown }).text === 'string',
+  )
+
+  const text = firstText?.text.trim()
+  return text ? text : undefined
+}
+
+function extractPartialToolCall(event: AgentEvent): { toolCallId: string; toolName: string; args: unknown } | null {
+  if (
+    event.type !== 'message_update'
+    || (
+      event.assistantMessageEvent.type !== 'toolcall_start'
+      && event.assistantMessageEvent.type !== 'toolcall_delta'
+    )
+  ) {
     return null
   }
 
@@ -175,11 +200,13 @@ function extractPartialToolCall(event: AgentEvent): { toolName: string; args: un
   if (!toolCall || typeof toolCall !== 'object') return null
 
   const type = 'type' in toolCall ? (toolCall as { type?: unknown }).type : undefined
+  const toolCallId = 'id' in toolCall ? (toolCall as { id?: unknown }).id : undefined
   const toolName = 'name' in toolCall ? (toolCall as { name?: unknown }).name : undefined
   const args = 'arguments' in toolCall ? (toolCall as { arguments?: unknown }).arguments : undefined
-  if (type !== 'toolCall' || typeof toolName !== 'string') return null
+  if (type !== 'toolCall' || typeof toolCallId !== 'string' || typeof toolName !== 'string') return null
 
   return {
+    toolCallId,
     toolName,
     args,
   }
@@ -1085,6 +1112,49 @@ export class SessionRuntimeService {
     })
   }
 
+  private emitToolCallStart(
+    sessionKey: string,
+    runId: RunId,
+    stepId: StepId,
+    toolCallId: string,
+    toolName: string,
+    args?: unknown,
+  ): void {
+    this.notify(sessionKey, 'tool_call_start', {
+      sessionKey,
+      runId,
+      stepId,
+      toolCallId,
+      toolName,
+      args,
+    })
+  }
+
+  private emitToolCallDelta(
+    sessionKey: string,
+    runId: RunId,
+    stepId: StepId,
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+  ): void {
+    this.notify(sessionKey, 'tool_call_delta', {
+      sessionKey,
+      runId,
+      stepId,
+      toolCallId,
+      toolName,
+      args,
+    })
+  }
+
+  private emitToolCallEnd(
+    sessionKey: string,
+    payload: ServerEventPayloadMap['tool_call_end'],
+  ): void {
+    this.notify(sessionKey, 'tool_call_end', payload)
+  }
+
   private emitToolState(
     sessionKey: string,
     runId: RunId,
@@ -1673,6 +1743,21 @@ export class SessionRuntimeService {
     }
 
     if (event.type === 'message_update') {
+      if (event.assistantMessageEvent.type === 'toolcall_start') {
+        const partialToolCall = extractPartialToolCall(event)
+        if (partialToolCall) {
+          this.emitToolCallStart(
+            sessionKey,
+            runId,
+            step.stepId,
+            partialToolCall.toolCallId,
+            partialToolCall.toolName,
+            partialToolCall.args,
+          )
+        }
+        return
+      }
+
       if (event.assistantMessageEvent.type === 'text_delta' && event.assistantMessageEvent.delta) {
         this.emitStepDelta(sessionKey, runId, step, 'text', event.assistantMessageEvent.delta)
         return
@@ -1683,11 +1768,30 @@ export class SessionRuntimeService {
         return
       }
 
-      const partialToolCall = extractPartialToolCall(event)
-      if (partialToolCall) {
-        this.emitToolState(sessionKey, runId, step.stepId, 'delta', partialToolCall.toolName, {
-          args: partialToolCall.args,
-        })
+      if (event.assistantMessageEvent.type === 'toolcall_delta') {
+        const partialToolCall = extractPartialToolCall(event)
+        if (partialToolCall) {
+          this.emitToolCallDelta(
+            sessionKey,
+            runId,
+            step.stepId,
+            partialToolCall.toolCallId,
+            partialToolCall.toolName,
+            partialToolCall.args,
+          )
+        }
+        return
+      }
+
+      if (event.assistantMessageEvent.type === 'toolcall_end') {
+        this.emitToolCallDelta(
+          sessionKey,
+          runId,
+          step.stepId,
+          event.assistantMessageEvent.toolCall.id,
+          event.assistantMessageEvent.toolCall.name,
+          event.assistantMessageEvent.toolCall.arguments,
+        )
       }
       return
     }
@@ -1702,7 +1806,6 @@ export class SessionRuntimeService {
         toolName: event.toolName,
         args: event.args,
       })
-      this.emitToolState(sessionKey, runId, step.stepId, 'start', event.toolName, { args: event.args })
       return
     }
 
@@ -1745,10 +1848,31 @@ export class SessionRuntimeService {
           generatedArtifacts,
         })
       }
-      this.emitToolState(sessionKey, runId, step.stepId, 'end', event.toolName, {
-        summary: event.isError ? 'tool error' : 'tool completed',
+      if (event.isError) {
+        const errorMessage = extractToolErrorMessage(event.result) ?? detail ?? 'Tool execution failed'
+        this.emitToolCallEnd(sessionKey, {
+          sessionKey,
+          runId,
+          stepId: step.stepId,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          status: 'error',
+          errorMessage,
+          errorDetail: detail && detail !== errorMessage ? detail : undefined,
+        })
+        return
+      }
+
+      this.emitToolCallEnd(sessionKey, {
+        sessionKey,
+        runId,
+        stepId: step.stepId,
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        status: 'success',
+        result: event.result,
+        summary: 'tool completed',
         detail,
-        isError: event.isError,
         generatedArtifacts,
         artifactTraceItems,
       })

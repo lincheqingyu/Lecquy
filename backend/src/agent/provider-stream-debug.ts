@@ -3,6 +3,36 @@ import type { Model } from '@mariozechner/pi-ai'
 import { logger } from '../utils/logger.js'
 import { inferProviderFlavor } from './provider-payload.js'
 
+/**
+ * 诊断 <think> / </think> 字面标签来源的工具。
+ * - THINK_TAG_PATTERN：命中完整的 <think> 或 </think>
+ * - TRAILING_PARTIAL_TAG_PATTERN：命中 delta 末尾可能被跨 chunk 切断的半截标签
+ *   （例如 "…内容</th" 下一个 chunk 以 "ink>" 起）
+ */
+const THINK_TAG_PATTERN = /<\/?think>/i
+const TRAILING_PARTIAL_TAG_PATTERN = /<\/?t(?:h(?:i(?:nk?)?)?)?$/i
+
+function detectThinkTagAnomaly(
+  stream: 'text' | 'thinking',
+  delta: string,
+): { hitType: 'complete' | 'trailing'; match: string } | null {
+  const complete = delta.match(THINK_TAG_PATTERN)
+  if (complete) {
+    return { hitType: 'complete', match: complete[0] }
+  }
+
+  // thinking 流里出现半截标签倒不稀奇（思考里讨论标签是可能的），
+  // 重点看 text 流被切断 —— 所以 trailing 只在 text 流告警
+  if (stream === 'text') {
+    const trailing = delta.match(TRAILING_PARTIAL_TAG_PATTERN)
+    if (trailing && trailing[0].length >= 2) {
+      return { hitType: 'trailing', match: trailing[0] }
+    }
+  }
+
+  return null
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object'
 }
@@ -110,20 +140,54 @@ export function logProviderStreamEvent(
       })
       return
     }
-    case 'text_delta':
-      logger.debug('Provider stream text_delta', {
-        ...baseContext,
-        contentIndex: event.assistantMessageEvent.contentIndex,
-        deltaLength: event.assistantMessageEvent.delta.length,
-      })
+    case 'text_delta': {
+      const delta = event.assistantMessageEvent.delta
+      const anomaly = detectThinkTagAnomaly('text', delta)
+      if (anomaly) {
+        // 命中字面 <think> / </think>（或其跨 chunk 半截形式）于 text 流
+        // —— 说明 SDK 没把这段识别成 thinking，极可能是 qwen 解析漏了或模型输出了字面标签
+        logger.warn('Provider stream text_delta contains <think> tag literal', {
+          ...baseContext,
+          stream: 'text',
+          contentIndex: event.assistantMessageEvent.contentIndex,
+          hitType: anomaly.hitType,
+          match: anomaly.match,
+          deltaLength: delta.length,
+          delta,
+        })
+      } else {
+        logger.debug('Provider stream text_delta', {
+          ...baseContext,
+          contentIndex: event.assistantMessageEvent.contentIndex,
+          deltaLength: delta.length,
+        })
+      }
       return
-    case 'thinking_delta':
-      logger.debug('Provider stream thinking_delta', {
-        ...baseContext,
-        contentIndex: event.assistantMessageEvent.contentIndex,
-        deltaLength: event.assistantMessageEvent.delta.length,
-      })
+    }
+    case 'thinking_delta': {
+      const delta = event.assistantMessageEvent.delta
+      const anomaly = detectThinkTagAnomaly('thinking', delta)
+      if (anomaly) {
+        // 命中于 thinking 流：通常意味着模型在“思考内容”里把 <think>/</think>
+        // 当正文写了一次（幻觉），SDK 正常识别了外层但内层字面标签被透传
+        logger.warn('Provider stream thinking_delta contains <think> tag literal', {
+          ...baseContext,
+          stream: 'thinking',
+          contentIndex: event.assistantMessageEvent.contentIndex,
+          hitType: anomaly.hitType,
+          match: anomaly.match,
+          deltaLength: delta.length,
+          delta,
+        })
+      } else {
+        logger.debug('Provider stream thinking_delta', {
+          ...baseContext,
+          contentIndex: event.assistantMessageEvent.contentIndex,
+          deltaLength: delta.length,
+        })
+      }
       return
+    }
     default:
       return
   }

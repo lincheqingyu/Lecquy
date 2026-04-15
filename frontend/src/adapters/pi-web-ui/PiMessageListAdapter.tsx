@@ -11,6 +11,8 @@ interface PiMessageListAdapterProps {
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
+  onToggleToolCall?: (messageId: string, blockId: string) => void
+  onToggleToolGroup?: (messageId: string, groupKey: string) => void
   onOpenAttachment?: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact?: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
   onDownloadArtifact?: (artifact: ChatArtifact) => void

@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronUp, Copy, ListTodo, RotateCcw, Sparkles } fr
 import { useEffect, useState, type FocusEvent, type ReactNode } from 'react'
 import type { ChatMessage } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl } from '../../lib/chat-attachments'
+import { blocksToText, groupMessageBlocks } from '../../lib/message-blocks'
 import type { ChatAttachment } from '@lecquy/shared'
 import { ArtifactCard } from '../artifacts/ArtifactCard'
 import { ArtifactTrace } from '../artifacts/ArtifactTrace'
@@ -13,6 +14,8 @@ import {
   CHAT_ATTACHMENT_CARD_SIZE_CLASS,
 } from '../files/AttachmentFileCard'
 import type { ChatArtifact } from '../../lib/artifacts'
+import { ToolCallCard } from './ToolCallCard'
+import { ToolGroupCard } from './ToolGroupCard'
 
 interface MessageItemProps {
   message: ChatMessage
@@ -20,6 +23,8 @@ interface MessageItemProps {
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
+  onToggleToolCall?: (messageId: string, blockId: string) => void
+  onToggleToolGroup?: (messageId: string, groupKey: string) => void
   onOpenAttachment?: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact?: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
   onDownloadArtifact?: (artifact: ChatArtifact) => void
@@ -589,6 +594,8 @@ export function MessageItem({
   onToggleThinking,
   onToggleTodo,
   onTogglePlanTask,
+  onToggleToolCall,
+  onToggleToolGroup,
   onOpenAttachment,
   onOpenArtifact,
   onDownloadArtifact,
@@ -597,10 +604,12 @@ export function MessageItem({
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isEvent = message.role === 'event'
-  const hasPrimaryContent = message.content.trim().length > 0
+  const primaryTextContent = blocksToText(message.blocks).trim() || message.content.trim()
+  const hasToolBlocks = (message.blocks ?? []).some((block) => block.kind === 'tool_call')
+  const hasPrimaryContent = primaryTextContent.length > 0
   const hasThinkingContent = Boolean(message.hasThinking && message.thinkingContent?.trim())
   const showThoughtsCard = Boolean((isAssistant || isEvent) && hasThinkingContent)
-  const canCopyMessage = message.content.trim().length > 0
+  const canCopyMessage = primaryTextContent.length > 0
   const todoItems = message.todoItems ?? []
   const planDetails = message.planDetails ?? {}
   const isPlanPanel = isEvent && (message.eventType === 'plan' || message.eventType === 'todo')
@@ -648,7 +657,7 @@ export function MessageItem({
     ? formatThoughtDuration(thoughtDurationMs)
     : null
 
-  if (isAssistant && !hasPrimaryContent && !showThoughtsCard && !hasArtifactContent) {
+  if (isAssistant && !hasPrimaryContent && !hasToolBlocks && !showThoughtsCard && !hasArtifactContent) {
     return null
   }
 
@@ -761,7 +770,7 @@ export function MessageItem({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(message.content)
+      await navigator.clipboard.writeText(primaryTextContent)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     } catch {
@@ -881,6 +890,41 @@ export function MessageItem({
     )
   }
 
+  const renderAssistantBlocks = () => {
+    if (!isAssistant || (message.blocks?.length ?? 0) === 0) return null
+
+    return (
+      <div className="space-y-2">
+        {groupMessageBlocks(message.blocks ?? []).map((group) => {
+          if (group.kind === 'text') {
+            return <div key={group.block.id}>{renderMarkdown(group.block.content)}</div>
+          }
+
+          if (group.kind === 'tool_single') {
+            return (
+              <ToolCallCard
+                key={group.block.id}
+                block={group.block}
+                onToggle={() => onToggleToolCall?.(message.id, group.block.id)}
+              />
+            )
+          }
+
+          const collapsed = message.collapsedToolGroupKeys?.includes(group.key) ?? false
+          return (
+            <ToolGroupCard
+              key={group.key}
+              blocks={group.blocks}
+              collapsed={collapsed}
+              onToggleGroup={() => onToggleToolGroup?.(message.id, group.key)}
+              onToggleToolCall={(blockId) => onToggleToolCall?.(message.id, blockId)}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div
       className={clsx(
@@ -900,12 +944,14 @@ export function MessageItem({
       >
         {attachments.length > 0 && renderAttachments()}
 
-        {(showThoughtsCard || hasPrimaryContent || isEvent || hasArtifactContent) && (
+        {(showThoughtsCard || hasPrimaryContent || hasToolBlocks || isEvent || hasArtifactContent) && (
           <div
             className={clsx(
-              'rounded-2xl px-4 py-2 text-sm leading-relaxed',
-              isUser && hasPrimaryContent && 'w-fit bg-user-bubble text-text-primary border border-border/70',
-              isAssistant && (showThoughtsCard || hasArtifactContent ? 'w-full bg-transparent border-transparent shadow-none text-text-primary px-1 py-1' : 'w-fit max-w-full bg-transparent border-transparent shadow-none text-text-primary px-1 py-1'),
+              // 对话区放大字号 + 收紧行距：text-base(16) / leading-[1.55]
+              'rounded-2xl px-4 py-2 text-base leading-[1.55]',
+              // 用户/AI 正文与思考统一挂衬线字族；事件/系统保持无衬线
+              isUser && hasPrimaryContent && 'w-fit bg-user-bubble text-text-primary border border-border/70 font-serif-mix',
+              isAssistant && (showThoughtsCard || hasArtifactContent || hasToolBlocks ? 'w-full bg-transparent border-transparent shadow-none text-text-primary px-1 py-1 font-serif-mix' : 'w-fit max-w-full bg-transparent border-transparent shadow-none text-text-primary px-1 py-1 font-serif-mix'),
               isEvent && 'bg-surface text-text-secondary border border-border/80',
               message.role === 'system' && 'bg-hover text-text-secondary border border-border',
             )}
@@ -917,56 +963,50 @@ export function MessageItem({
             )}
 
             {showThoughtsCard && (
-              <div className="mb-4 overflow-hidden rounded-[1.35rem] border border-border bg-surface-thought">
-                <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
+              <div className="group/thoughts mb-3 transition-all">
+                {/* 折叠/展开头：一行低调 section header */}
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => onToggleThinking?.(message.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left transition-colors hover:text-text-primary"
+                    className="inline-flex items-center gap-1.5 rounded-md py-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
                     aria-expanded={message.isThinkingExpanded}
                     aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
                   >
-                    <span className="inline-flex size-6 items-center justify-center rounded-full bg-surface-thought text-accent-text">
-                      <Sparkles className="size-3.5" />
+                    <Sparkles className="size-3.5" />
+                    <span>
+                      {thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…'}
                     </span>
-                    <span className="text-sm font-semibold text-text-primary">Thoughts</span>
-                    {thoughtDurationLabel && (
-                      <span className="inline-flex items-center rounded-full border border-border/80 bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-secondary">
-                        {thoughtDurationLabel}
-                      </span>
+                    {message.isThinkingExpanded ? (
+                      <ChevronUp className="size-3.5" />
+                    ) : (
+                      <ChevronDown className="size-3.5" />
                     )}
                   </button>
-                  <div className="flex shrink-0 items-center gap-1 text-sm text-text-secondary">
+
+                  {/* 复制按钮：仅在展开且悬停时显示，不占折叠态空间 */}
+                  {message.isThinkingExpanded && (
                     <button
                       type="button"
                       onClick={handleCopyThoughts}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-hover/60"
+                      className="ml-0.5 inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary group-hover/thoughts:opacity-100"
                       aria-label="复制思考内容"
                       title="复制思考内容"
                     >
-                      {thoughtCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {thoughtCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onToggleThinking?.(message.id)}
-                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-sm text-text-secondary transition-colors hover:bg-hover/60"
-                      aria-expanded={message.isThinkingExpanded}
-                      aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
-                    >
-                      <span>{message.isThinkingExpanded ? '收起思考' : '展开思考'}</span>
-                      {message.isThinkingExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                    </button>
-                  </div>
+                  )}
                 </div>
 
+                {/* 展开内容区：左侧引导线而非外框 */}
                 {message.isThinkingExpanded && (
-                  <div className="border-t border-border px-4 py-4 text-text-primary select-text">
+                  <div className="mt-1.5 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
                     {isPlainThoughtContent ? (
-                      <div className="leading-relaxed text-text-primary">
-                        <span className="whitespace-pre-wrap break-words select-text">{thinkingContent}</span>
-                      </div>
+                      <span className="whitespace-pre-wrap break-words select-text">
+                        {thinkingContent}
+                      </span>
                     ) : (
-                      <div className="[&_p]:text-text-primary [&_li]:text-text-primary [&_blockquote]:text-text-primary [&_td]:text-text-primary [&_code]:text-text-primary">
+                      <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
                         {renderMarkdown(thinkingContent)}
                       </div>
                     )}
@@ -978,12 +1018,10 @@ export function MessageItem({
             {isAssistant && renderArtifactOperations()}
 
             {isAssistant ? (
-              hasPrimaryContent ? (
-                renderMarkdown(message.content)
-              ) : null
+              message.blocks?.length ? renderAssistantBlocks() : hasPrimaryContent ? renderMarkdown(primaryTextContent) : null
             ) : (
               hasPrimaryContent ? (
-                <div className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</div>
+                <div className="whitespace-pre-wrap break-words leading-relaxed">{primaryTextContent}</div>
               ) : null
             )}
 
@@ -1017,7 +1055,7 @@ export function MessageItem({
               {isUser && onResendUser && (
                 <button
                   type="button"
-                  onClick={() => onResendUser(message.content)}
+                  onClick={() => onResendUser(primaryTextContent)}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-surface-alt text-text-primary transition-colors hover:bg-surface dark:text-white"
                   aria-label="重新发送问题"
                   title="重新发送问题"

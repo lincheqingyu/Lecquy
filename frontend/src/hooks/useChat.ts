@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { ArtifactTraceItem, ChatAttachment, ClientEventPayloadMap, ServerEventPayloadMap, StepKind, ThinkingConfig } from '@lecquy/shared'
 import { WS_BASE } from '../config/api.ts'
 import { createDraftArtifact, mergeArtifacts, mergeArtifactTraceItems, type ChatArtifact } from '../lib/artifacts.ts'
+import {
+  appendTextDelta,
+  blocksToText,
+  patchToolCall,
+  pushToolCallStart,
+  type MessageBlock,
+  type MessageToolCallBlock,
+} from '../lib/message-blocks.ts'
 import { getPeerId } from '../lib/session.ts'
 import { buildDefaultRoute } from '../lib/session-route.ts'
 import { ReconnectableWs, type ConnectionStatus } from '../lib/ws-reconnect.ts'
@@ -27,6 +35,7 @@ export interface ChatMessage {
   id: string
   role: MessageRole
   content: string
+  blocks?: MessageBlock[]
   attachments?: ChatAttachment[]
   artifacts?: ChatArtifact[]
   artifactTraceItems?: ArtifactTraceItem[]
@@ -42,6 +51,7 @@ export interface ChatMessage {
   stepId?: string
   stepStatus?: ServerEventPayloadMap['step_state']['status']
   thoughtTiming?: ThoughtTiming
+  collapsedToolGroupKeys?: string[]
 }
 
 export interface ModelConfig {
@@ -125,23 +135,9 @@ function toThoughtTiming(
   }
 }
 
-function buildToolFailureGuidance(toolName: string, detail?: string): string {
-  if (toolName === 'execute_sql') {
-    if (detail?.includes('无效的表或视图名')) {
-      return '建议补充准确的表名，或者改成“先探查数据库里的表和字段，再继续查询”。'
-    }
-    if (detail?.includes('无效的列')) {
-      return '建议补充准确的字段名，或者让我先探查可用字段。'
-    }
-    return '建议补充更准确的表名、字段名或筛选条件，或者先让我探查 schema。'
-  }
-
-  return '建议补充更具体的目标、参数或上下文后再试。'
-}
-
-function formatToolFailureMessage(toolName: string, detail?: string): string {
-  const normalizedDetail = detail?.trim() || '工具执行失败'
-  return `${toolName} 执行失败：${normalizedDetail}\n\n${buildToolFailureGuidance(toolName, normalizedDetail)}`
+function isToolCallExpanded(block: MessageToolCallBlock): boolean {
+  if (typeof block.manualExpanded === 'boolean') return block.manualExpanded
+  return block.status === 'error'
 }
 
 export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: UseChatOptions) {
@@ -220,6 +216,35 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }))
   }, [])
 
+  const toggleToolCall = useCallback((id: string, blockId: string) => {
+    updateMessage(setMessages, id, (message) => ({
+      ...message,
+      blocks: message.blocks?.map((block) => {
+        if (block.kind !== 'tool_call' || block.id !== blockId) return block
+        return {
+          ...block,
+          manualExpanded: !isToolCallExpanded(block),
+        }
+      }),
+    }))
+  }, [])
+
+  const toggleToolGroup = useCallback((id: string, groupKey: string) => {
+    updateMessage(setMessages, id, (message) => {
+      const currentKeys = new Set(message.collapsedToolGroupKeys ?? [])
+      if (currentKeys.has(groupKey)) {
+        currentKeys.delete(groupKey)
+      } else {
+        currentKeys.add(groupKey)
+      }
+
+      return {
+        ...message,
+        collapsedToolGroupKeys: Array.from(currentKeys),
+      }
+    })
+  }, [])
+
   const finalizeRunningThoughts = useCallback((status: 'completed' | 'failed') => {
     const finishedAt = Date.now()
     setMessages((prev) => prev.map((message) => {
@@ -270,6 +295,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       id,
       role: 'assistant',
       content: '',
+      blocks: [],
       thinkingContent: '',
       hasThinking: false,
       isThinkingExpanded: true,
@@ -315,6 +341,19 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       pendingArtifactTraceRef.current.delete(stepId)
     }
   }, [ensureStepMessage])
+
+  const bufferDraftArtifact = useCallback((stepId: string, toolName: string, args: unknown) => {
+    const stepMeta = stepMetaRef.current.get(stepId)
+    const stepKind = stepMeta?.kind ?? 'simple_reply'
+    const draftArtifact = createDraftArtifact(stepId, toolName, args)
+    if (!draftArtifact) return
+
+    pendingArtifactsRef.current.set(
+      stepId,
+      mergeArtifacts(pendingArtifactsRef.current.get(stepId), [draftArtifact]) ?? [],
+    )
+    flushPendingStepArtifacts(stepId, stepKind, { force: true })
+  }, [flushPendingStepArtifacts])
 
   const ensureWs = useCallback(() => {
     if (reconnectWsRef.current) return reconnectWsRef.current
@@ -425,9 +464,13 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             updateMessage(setMessages, messageId, (message) => ({
               ...message,
               content:
-                step.summary && (step.status === 'completed' || !message.content.trim())
+                step.summary && !blocksToText(message.blocks).trim()
                   ? step.summary
                   : message.content,
+              blocks:
+                step.summary && !blocksToText(message.blocks).trim()
+                  ? appendTextDelta([], step.summary)
+                  : message.blocks,
               stepStatus: step.status,
               thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
             }))
@@ -487,6 +530,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               return {
                 ...message,
                 content: message.content + delta.content,
+                blocks: appendTextDelta(message.blocks ?? [], delta.content),
               }
             })
             flushPendingStepArtifacts(delta.stepId, delta.kind)
@@ -523,32 +567,79 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_state') {
             const tool = payload as ServerEventPayloadMap['tool_state']
-            if ((tool.status === 'start' || tool.status === 'delta') && tool.stepId) {
-              const stepMeta = stepMetaRef.current.get(tool.stepId)
-              const stepKind = stepMeta?.kind ?? 'simple_reply'
-              const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
-              if (draftArtifact) {
-                pendingArtifactsRef.current.set(
-                  tool.stepId,
-                  mergeArtifacts(pendingArtifactsRef.current.get(tool.stepId), [draftArtifact]) ?? [],
-                )
-                flushPendingStepArtifacts(tool.stepId, stepKind, { force: true })
-              }
+            onWsEvent?.(event, tool)
+            return
+          }
+
+          if (event === 'tool_call_start') {
+            const tool = payload as ServerEventPayloadMap['tool_call_start']
+            const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
+            const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
+            if (!messageId) {
               onWsEvent?.(event, tool)
               return
             }
-            if (tool.status === 'end' && tool.isError) {
-              appendMessage(setMessages, {
-                id: createId('tool_error'),
-                role: 'event',
-                content: formatToolFailureMessage(tool.toolName, tool.detail ?? tool.summary),
-                timestamp: Date.now(),
-                eventType: 'tool_error',
-              })
+
+            updateMessage(setMessages, messageId, (message) => ({
+              ...message,
+              blocks: pushToolCallStart(message.blocks ?? [], {
+                toolCallId: tool.toolCallId,
+                toolName: tool.toolName,
+                args: tool.args,
+              }),
+            }))
+            bufferDraftArtifact(tool.stepId, tool.toolName, tool.args)
+            onWsEvent?.(event, tool)
+            return
+          }
+
+          if (event === 'tool_call_delta') {
+            const tool = payload as ServerEventPayloadMap['tool_call_delta']
+            const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
+            const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
+            if (!messageId) {
+              onWsEvent?.(event, tool)
+              return
             }
-            if (tool.status === 'end' && !tool.isError && tool.stepId) {
-              const stepMeta = stepMetaRef.current.get(tool.stepId)
-              const stepKind = stepMeta?.kind ?? 'simple_reply'
+
+            updateMessage(setMessages, messageId, (message) => ({
+              ...message,
+              blocks: patchToolCall(
+                message.blocks ?? [],
+                tool.toolCallId,
+                { args: tool.args },
+                { toolName: tool.toolName, status: 'running' },
+              ),
+            }))
+            bufferDraftArtifact(tool.stepId, tool.toolName, tool.args)
+            onWsEvent?.(event, tool)
+            return
+          }
+
+          if (event === 'tool_call_end') {
+            const tool = payload as ServerEventPayloadMap['tool_call_end']
+            const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
+            const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
+            if (!messageId) {
+              onWsEvent?.(event, tool)
+              return
+            }
+
+            if (tool.status === 'success') {
+              updateMessage(setMessages, messageId, (message) => ({
+                ...message,
+                blocks: patchToolCall(
+                  message.blocks ?? [],
+                  tool.toolCallId,
+                  {
+                    status: 'success',
+                    result: tool.result,
+                    endedAt: Date.now(),
+                  },
+                  { toolName: tool.toolName, status: 'success' },
+                ),
+              }))
+
               const readyArtifacts = (tool.generatedArtifacts ?? []).map((artifact) => ({
                 ...artifact,
                 stepId: tool.stepId,
@@ -562,13 +653,28 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                 mergeArtifactTraceItems(pendingArtifactTraceRef.current.get(tool.stepId), tool.artifactTraceItems) ?? [],
               )
 
-              const hasGeneratedArtifacts = readyArtifacts.length > 0
-              if (hasGeneratedArtifacts) {
+              if (readyArtifacts.length > 0) {
                 flushPendingStepArtifacts(tool.stepId, stepKind, { force: true })
               } else if (stepMessageIdsRef.current.has(tool.stepId)) {
                 flushPendingStepArtifacts(tool.stepId, stepKind)
               }
+            } else {
+              updateMessage(setMessages, messageId, (message) => ({
+                ...message,
+                blocks: patchToolCall(
+                  message.blocks ?? [],
+                  tool.toolCallId,
+                  {
+                    status: 'error',
+                    errorMessage: tool.errorMessage,
+                    errorDetail: tool.errorDetail,
+                    endedAt: Date.now(),
+                  },
+                  { toolName: tool.toolName, status: 'error' },
+                ),
+              }))
             }
+
             onWsEvent?.(event, tool)
             return
           }
@@ -632,7 +738,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     reconnectWsRef.current = ws
     return ws
-  }, [WS_BASE, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, onWsEvent])
+  }, [WS_BASE, bufferDraftArtifact, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, onWsEvent])
 
   const buildModelOptions = useCallback(() => ({
     model: modelConfig.model,
@@ -741,6 +847,8 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     toggleThinking,
     toggleTodo,
     togglePlanTask,
+    toggleToolCall,
+    toggleToolGroup,
     send,
     stop,
     isStreaming,

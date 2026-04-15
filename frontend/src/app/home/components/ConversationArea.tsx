@@ -72,6 +72,8 @@ export function ConversationArea({
     toggleThinking,
     toggleTodo,
     togglePlanTask,
+    toggleToolCall,
+    toggleToolGroup,
     isStreaming,
     isWaiting,
     replaceMessages,
@@ -246,6 +248,8 @@ export function ConversationArea({
                 onToggleThinking={toggleThinking}
                 onToggleTodo={toggleTodo}
                 onTogglePlanTask={togglePlanTask}
+                onToggleToolCall={toggleToolCall}
+                onToggleToolGroup={toggleToolGroup}
                 onOpenAttachment={onOpenAttachment}
                 onOpenArtifact={onOpenArtifact}
                 onDownloadArtifact={onDownloadArtifact}

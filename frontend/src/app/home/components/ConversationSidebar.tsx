@@ -126,14 +126,14 @@ export function ConversationSidebar({
               aria-label="新建会话"
               title="新建会话"
             >
+              {/* "+" 按钮：展开态圈圈收紧到 h-7 w-7，Plus 放大到 size-5；折叠态无圈仅放大图标 */}
               <span
                 className={[
-                  collapsedIconShellClass,
-                  'text-text-primary',
-                  collapsed ? 'shrink-0' : 'bg-sidebar-active',
+                  'inline-flex shrink-0 items-center justify-center rounded-full text-text-primary',
+                  collapsed ? 'h-9 w-9' : 'h-7 w-7 bg-sidebar-active',
                 ].join(' ')}
               >
-                <Plus className={[collapsedGlyphClass, 'translate-y-px'].join(' ')} />
+                <Plus className="size-5 shrink-0 translate-y-px" />
               </span>
               {!collapsed && (
                 <span className="overflow-hidden whitespace-nowrap text-sm font-medium text-text-primary transition-[opacity,width] duration-200">
@@ -197,7 +197,8 @@ export function ConversationSidebar({
                     <li key={conversation.id}>
                       <div
                         className={[
-                          'group relative flex min-h-11 w-full items-center gap-2 rounded-2xl pl-3 pr-2 transition-colors',
+                          // 收紧：min-h-10 / rounded-lg(8px) / padding 收、gap 收，趋近长方形
+                          'group relative flex min-h-10 w-full items-center gap-1.5 rounded-lg pl-2.5 pr-1.5 transition-colors',
                           isActive ? 'bg-sidebar-active' : 'hover:bg-sidebar-hover',
                         ].join(' ')}
                       >
@@ -205,7 +206,7 @@ export function ConversationSidebar({
                           type="button"
                           onClick={() => onSelectConversation(conversation.id)}
                           className={[
-                            'min-w-0 flex-1 py-3 text-left text-[15px] leading-5 text-text-primary',
+                            'min-w-0 flex-1 py-2.5 text-left text-[15px] leading-5 text-text-primary',
                             isActive ? 'font-medium' : '',
                           ].join(' ')}
                           aria-current={isActive ? 'true' : undefined}

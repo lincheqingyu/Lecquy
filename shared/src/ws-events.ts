@@ -8,6 +8,7 @@ import type {
   ChatAttachment,
   GeneratedFileArtifact,
   PausePacket,
+  RunId,
   SerializedTodoItem,
   SessionChannel,
   SessionKind,
@@ -30,6 +31,9 @@ export type ServerEventType =
   | 'step_delta'
   | 'todo_state'
   | 'pause_requested'
+  | 'tool_call_start'
+  | 'tool_call_delta'
+  | 'tool_call_end'
   | 'tool_state'
   | 'session_tool_result'
   | 'session_title_updated'
@@ -106,6 +110,46 @@ export interface ServerEventPayloadMap {
     runId: string
     pause: PausePacket
   }
+  tool_call_start: {
+    sessionKey: string
+    runId: RunId
+    stepId: StepId
+    toolCallId: string
+    toolName: string
+    args?: unknown
+  }
+  tool_call_delta: {
+    sessionKey: string
+    runId: RunId
+    stepId: StepId
+    toolCallId: string
+    toolName: string
+    args: unknown
+  }
+  tool_call_end:
+    | {
+        sessionKey: string
+        runId: RunId
+        stepId: StepId
+        toolCallId: string
+        toolName: string
+        status: 'success'
+        result: unknown
+        summary?: string
+        detail?: string
+        generatedArtifacts?: GeneratedFileArtifact[]
+        artifactTraceItems?: ArtifactTraceItem[]
+    }
+    | {
+        sessionKey: string
+        runId: RunId
+        stepId: StepId
+        toolCallId: string
+        toolName: string
+        status: 'error'
+        errorMessage: string
+        errorDetail?: string
+    }
   tool_state: {
     sessionKey: string
     runId: string

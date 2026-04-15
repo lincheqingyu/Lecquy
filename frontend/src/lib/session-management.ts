@@ -2,7 +2,6 @@ import {
   type ArtifactTraceItem,
   extractSessionAttachments,
   extractSessionText,
-  extractSessionThinking,
   type SessionEventEntry,
   type SessionMessageRecord,
   type SessionProjection,
@@ -15,6 +14,13 @@ import {
   mergeArtifactTraceItems,
   type ChatArtifact,
 } from './artifacts'
+import {
+  appendTextDelta,
+  blocksFromAssistantContent,
+  blocksToText,
+  createTextBlocks,
+  type MessageBlock,
+} from './message-blocks'
 
 export interface SessionListItemVm {
   id: string
@@ -57,11 +63,15 @@ export function toChatMessages(records: SessionMessageRecord[]): ChatMessage[] {
   return records
     .filter((record) => record.role === 'user' || record.role === 'assistant')
     .map((record, index) => {
-      const thinkingContent = extractSessionThinking(record.content)
+      const { blocks, thinkingContent } = record.role === 'assistant'
+        ? blocksFromAssistantContent(record.content)
+        : { blocks: createTextBlocks(extractMessageText(record.content)), thinkingContent: '' }
+
       return {
         id: `history_${record.role}_${record.timestamp ?? Date.now()}_${index}`,
         role: record.role as ChatMessage['role'],
-        content: extractMessageText(record.content),
+        content: record.role === 'assistant' ? blocksToText(blocks) : extractMessageText(record.content),
+        blocks,
         attachments: record.role === 'user' ? extractSessionAttachments(record.content) : undefined,
         thinkingContent: thinkingContent || undefined,
         hasThinking: thinkingContent.trim().length > 0,
@@ -115,6 +125,36 @@ function extractArtifactTraceItems(data: unknown): ArtifactTraceItem[] {
   const artifactTraceItems = 'artifactTraceItems' in data ? (data as { artifactTraceItems?: unknown }).artifactTraceItems : undefined
   if (!Array.isArray(artifactTraceItems)) return []
   return artifactTraceItems.filter(isArtifactTraceItem)
+}
+
+function mergeMessageBlocks(
+  current: MessageBlock[] | undefined,
+  incoming: MessageBlock[],
+): MessageBlock[] | undefined {
+  let next = [...(current ?? [])]
+
+  for (const block of incoming) {
+    if (block.kind === 'text') {
+      next = appendTextDelta(next, block.content)
+      continue
+    }
+    next = [...next, block]
+  }
+
+  return next.length > 0 ? next : undefined
+}
+
+function appendAssistantContent(message: ChatMessage, content: unknown): void {
+  const { blocks, thinkingContent } = blocksFromAssistantContent(content)
+  message.blocks = mergeMessageBlocks(message.blocks, blocks)
+  message.content = blocksToText(message.blocks)
+
+  if (thinkingContent.trim()) {
+    message.thinkingContent = message.thinkingContent?.trim()
+      ? `${message.thinkingContent}\n\n${thinkingContent}`
+      : thinkingContent
+    message.hasThinking = true
+  }
 }
 
 export function toChatMessagesFromHistoryView(projection: SessionProjection, entries: SessionEventEntry[]): ChatMessage[] {
@@ -209,6 +249,7 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
       id,
       role: 'assistant',
       content: '',
+      blocks: [],
       thinkingContent: '',
       hasThinking: false,
       isThinkingExpanded: true,
@@ -287,10 +328,12 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
 
     if (entry.type === 'message') {
       if (entry.message.role === 'user') {
+        const textContent = extractSessionText(entry.message.content)
         appendMessage({
           id: createHistoryId('user', index),
           role: 'user',
-          content: extractSessionText(entry.message.content),
+          content: textContent,
+          blocks: createTextBlocks(textContent),
           attachments: extractSessionAttachments(entry.message.content),
           timestamp: entry.message.timestamp ?? new Date(entry.timestamp).getTime(),
         })
@@ -306,9 +349,10 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
         }
 
         if (step?.kind === 'task' && run?.mode === 'plan' && typeof step.todoIndex === 'number' && run.planMessageId) {
+          const parsedAssistantContent = blocksFromAssistantContent(entry.message.content)
           const planMessage = messageById.get(run.planMessageId)
           if (planMessage) {
-            const content = extractSessionText(entry.message.content)
+            const content = blocksToText(parsedAssistantContent.blocks)
             const existing = planMessage.planDetails?.[step.todoIndex] ?? {
               todoIndex: step.todoIndex,
               content: '',
@@ -323,34 +367,31 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
               },
             }
           }
-          return
-        }
 
-        const thinkingContent = extractSessionThinking(entry.message.content)
-        const content = extractSessionText(entry.message.content)
+          const hasToolCallBlock = parsedAssistantContent.blocks.some((block) => block.kind === 'tool_call')
+          if (!hasToolCallBlock) {
+            return
+          }
+        }
 
         if (step?.kind === 'simple_reply' && activeStepId) {
           const assistantMessage = ensureAssistantStepMessage(activeStepId, index)
           if (assistantMessage) {
             assistantMessage.timestamp = entry.message.timestamp ?? toEntryTimestamp(entry.timestamp)
-            if (content.trim()) {
-              assistantMessage.content = content
-            }
-            if (thinkingContent.trim()) {
-              assistantMessage.thinkingContent = assistantMessage.thinkingContent?.trim()
-                ? `${assistantMessage.thinkingContent}\n\n${thinkingContent}`
-                : thinkingContent
-              assistantMessage.hasThinking = true
-            }
+            appendAssistantContent(assistantMessage, entry.message.content)
             attachPendingArtifacts(activeStepId, assistantMessage)
           }
           return
         }
 
+        const { blocks, thinkingContent } = blocksFromAssistantContent(entry.message.content)
+        const content = blocksToText(blocks)
+
         appendMessage({
           id: createHistoryId('assistant', index),
           role: 'assistant',
           content,
+          blocks,
           thinkingContent: thinkingContent || undefined,
           hasThinking: thinkingContent.trim().length > 0,
           isThinkingExpanded: thinkingContent.trim().length > 0,
@@ -438,8 +479,9 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
       if (step?.kind === 'simple_reply') {
         const assistantMessageId = stepMessageById.get(entry.stepId)
         const assistantMessage = assistantMessageId ? messageById.get(assistantMessageId) : undefined
-        if (assistantMessage && entry.summary?.trim()) {
+        if (assistantMessage && entry.summary?.trim() && !blocksToText(assistantMessage.blocks).trim()) {
           assistantMessage.content = entry.summary
+          assistantMessage.blocks = appendTextDelta([], entry.summary)
         }
         if (assistantMessage) {
           assistantMessage.stepStatus = entry.status

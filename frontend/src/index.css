@@ -63,15 +63,20 @@
  * 所有用了语义化类名的组件（如 bg-surface）会自动切换颜色
  * ============================================ */
 .dark {
-    --color-surface: #222326;
-    --color-surface-alt: #1f2023;
+    /* 问答区 / 设置栏底色 rgb(33,33,33) */
+    --color-surface: #212121;
+    --color-surface-alt: #212121;
     --color-surface-thought: #26272b;
-    --color-surface-raised: #2a2b2f;
-    --color-sidebar-panel: #121315;
-    --color-sidebar-hover: #232427;
-    --color-sidebar-active: #2b2d31;
+    /* 设置栏 模型+内容卡片 未选中 rgb(37,37,37) */
+    --color-surface-raised: #252525;
+    /* 左侧侧边栏底色 rgb(24,24,24) */
+    --color-sidebar-panel: #181818;
+    --color-sidebar-hover: #242424;
+    /* 暗色选中色统一 rgb(48,48,48) —— 会话选中 / 设置卡片选中 共用 */
+    --color-sidebar-active: #303030;
     --color-browser-theme: #1f1f1f;
-    --color-user-bubble: #2a2a2a;
+    /* 用户消息卡片底色 rgb(48,48,48) */
+    --color-user-bubble: #303030;
     --color-text-primary: #ececec;
     --color-text-secondary: #a9a9a9;
     --color-text-muted: #7a7a7a;
@@ -224,4 +229,14 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
+}
+
+/* ============================================
+ * 对话区中英混排衬线字族
+ * 英文优先 Times / Times New Roman，中文回退到宋体系
+ * 仅挂在对话气泡 / AI 正文 / 思考模块上，不污染全局与控件
+ * ============================================ */
+.font-serif-mix {
+    font-family: "Times New Roman", Times, "Songti SC", "SimSun", "宋体",
+        "Source Han Serif SC", "Noto Serif CJK SC", serif;
 }

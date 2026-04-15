@@ -12,6 +12,8 @@ interface MessageListProps {
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
+  onToggleToolCall?: (messageId: string, blockId: string) => void
+  onToggleToolGroup?: (messageId: string, groupKey: string) => void
   onOpenAttachment?: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact?: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
   onDownloadArtifact?: (artifact: ChatArtifact) => void
@@ -20,8 +22,8 @@ interface MessageListProps {
   wideLayout?: boolean
 }
 
-const BOTTOM_THRESHOLD_PX = 48
-const USER_SCROLL_COOLDOWN_MS = 180
+const BOTTOM_THRESHOLD_PX = 96
+const USER_SCROLL_COOLDOWN_MS = 600
 
 export function MessageList({
   messages,
@@ -31,6 +33,8 @@ export function MessageList({
   onToggleThinking,
   onToggleTodo,
   onTogglePlanTask,
+  onToggleToolCall,
+  onToggleToolGroup,
   onOpenAttachment,
   onOpenArtifact,
   onDownloadArtifact,
@@ -53,7 +57,16 @@ export function MessageList({
   }
 
   const syncPinnedState = () => {
-    setIsPinnedToBottom(isNearBottom())
+    const near = isNearBottom()
+    setIsPinnedToBottom(near)
+    // 用户自行滚回底部 —— 立刻清掉冷却并恢复自动贴底，避免流式被压 600ms
+    if (near && userInteractingRef.current) {
+      userInteractingRef.current = false
+      if (userScrollCooldownRef.current) {
+        window.clearTimeout(userScrollCooldownRef.current)
+        userScrollCooldownRef.current = null
+      }
+    }
   }
 
   const scheduleUserInteractionRelease = () => {
@@ -79,49 +92,29 @@ export function MessageList({
     bottomAnchorRef.current?.scrollIntoView({ block: 'end', behavior })
   }
 
+  // Effect 1: 初始化 / 空态重置 / 显式滚动请求（新会话切换、用户主动跳底）
+  // 仅在 scrollRequestVersion 递增时强制重置 pinned 并跳到底部
   useEffect(() => {
     if (messages.length === 0) {
       setIsPinnedToBottom(true)
       return
     }
     scrollToBottom('auto')
-  }, [messages.length])
+    setIsPinnedToBottom(true)
+  }, [scrollRequestVersion])
 
+  // Effect 2: 流式 / 消息增长 / 思考区展开折叠时自动贴底
+  // messages 引用每次 updateMessage 都会变，能覆盖所有内容变化；
+  // 用 rAF 吸收同一帧内的多次 state 更新，让 scroll 发生在 DOM 重排之后
   useEffect(() => {
     if (messages.length === 0) return
-    scrollToBottom('smooth')
-    setIsPinnedToBottom(true)
-  }, [messages.length, scrollRequestVersion])
-
-  useEffect(() => {
-    if (messages.length === 0 || !(isStreaming || isWaiting) || !isPinnedToBottom) return
+    if (!isPinnedToBottom) return
     if (userInteractingRef.current) return
-    scrollToBottom('auto')
-  }, [isPinnedToBottom, isStreaming, isWaiting, messages])
-
-  useEffect(() => {
-    if (!(isStreaming || isWaiting)) return
-
-    const observed = contentRef.current
-    if (!observed || typeof ResizeObserver === 'undefined') return
-
-    const observer = new ResizeObserver(() => {
-      if (!isPinnedToBottom) return
-      if (userInteractingRef.current) return
-      window.requestAnimationFrame(() => {
-        scrollToBottom('auto')
-      })
+    const raf = window.requestAnimationFrame(() => {
+      scrollToBottom('auto')
     })
-
-    observer.observe(observed)
-    return () => observer.disconnect()
-  }, [isPinnedToBottom, isStreaming, isWaiting])
-
-  useEffect(() => {
-    if (!(isStreaming || isWaiting) || !isPinnedToBottom) return
-    if (userInteractingRef.current) return
-    scrollToBottom('auto')
-  }, [isPinnedToBottom, isStreaming, isWaiting])
+    return () => window.cancelAnimationFrame(raf)
+  }, [messages, isStreaming, isWaiting, isPinnedToBottom])
 
   useEffect(() => {
     return () => {
@@ -137,7 +130,6 @@ export function MessageList({
       onScroll={syncPinnedState}
       onWheel={markUserInteraction}
       onTouchMove={markUserInteraction}
-      onPointerDown={markUserInteraction}
       className={wideLayout
         ? 'chat-scroll-mask chat-scrollbar flex h-full w-full flex-col gap-3 overflow-y-auto px-4 pt-6 pb-28 md:px-6'
         : 'chat-scroll-mask chat-scrollbar flex h-full w-full flex-col gap-3 overflow-y-auto px-4 pt-6 pb-28 md:px-2'}
@@ -165,6 +157,8 @@ export function MessageList({
             onToggleThinking={onToggleThinking}
             onToggleTodo={onToggleTodo}
             onTogglePlanTask={onTogglePlanTask}
+            onToggleToolCall={onToggleToolCall}
+            onToggleToolGroup={onToggleToolGroup}
             onOpenAttachment={onOpenAttachment}
             onOpenArtifact={onOpenArtifact}
             onDownloadArtifact={onDownloadArtifact}
