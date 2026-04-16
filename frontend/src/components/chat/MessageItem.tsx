@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Check, ChevronDown, ChevronUp, Copy, ListTodo, RotateCcw, Sparkles } from 'lucide-react'
 import { useEffect, useState, type FocusEvent, type ReactNode } from 'react'
+import { MermaidBlock } from './MermaidBlock'
 import type { ChatMessage } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl } from '../../lib/chat-attachments'
 import { blocksToText, groupMessageBlocks } from '../../lib/message-blocks'
@@ -19,7 +20,8 @@ import { ToolGroupCard } from './ToolGroupCard'
 
 interface MessageItemProps {
   message: ChatMessage
-  onResendUser?: (message: string) => void
+  isLastAssistant?: boolean
+  onResendUser?: (messageId: string) => void
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
@@ -52,7 +54,71 @@ function formatAttachmentMeta(attachment: ChatAttachment): string {
   return sizeLabel ? `${typeLabel} · ${sizeLabel}` : typeLabel
 }
 
+/**
+ * 检测文本是否为 ASCII 图表内容（框图或树状图）。
+ * 框图使用 Unicode Box Drawing 字符（┌─┐│└─┘├┤┬┴┼ 等），
+ * 树状图使用 ├──、└── 等缩进树形结构。
+ */
+function isDiagramContent(text: string): boolean {
+  const lines = text.split('\n').filter(l => l.trim())
+  if (lines.length < 2) return false
+
+  // Box Drawing 区间 U+2500–U+257F 以及常见树状图模式
+  const boxDrawingRegex = /[\u2500-\u257F]/
+  const diagramLines = lines.filter(l => boxDrawingRegex.test(l))
+  // 至少 50% 的非空行包含图表字符
+  return diagramLines.length >= lines.length * 0.5
+}
+
+/**
+ * 图表块组件 —— 内联渲染 ASCII 框图和树状图。
+ * 不使用卡片容器，直接嵌入消息流。
+ * Box Drawing 字符以灰色显示且不可选中，文本内容保持正常颜色。
+ * 使用 leading-none 确保 │ 等竖线字符在相邻行间无间隙地连接。
+ */
+function DiagramBlock({ content }: { content: string }) {
+  // 空内容保护：避免渲染出空的灰色块
+  if (!content.trim()) return null
+
+  const boxDrawingTest = /[\u2500-\u257F]/
+
+  // 将整块内容逐字符分段：连续的绘图字符 vs 连续的普通字符（含换行）
+  const segments: ReactNode[] = []
+  let isBox = false
+  let buffer = ''
+  let key = 0
+
+  const flush = () => {
+    if (!buffer) return
+    if (isBox) {
+      segments.push(
+        <span key={key++} className="text-text-muted/60 select-none" aria-hidden="true">{buffer}</span>,
+      )
+    } else {
+      segments.push(<span key={key++}>{buffer}</span>)
+    }
+    buffer = ''
+  }
+
+  for (const char of content) {
+    const charIsBox = boxDrawingTest.test(char)
+    if (buffer && charIsBox !== isBox) flush()
+    isBox = charIsBox
+    buffer += char
+  }
+  flush()
+
+  return (
+    <pre className="overflow-x-auto font-mono text-sm leading-none text-text-primary">
+      <code>{segments}</code>
+    </pre>
+  )
+}
+
 function CodeBlock({ code, language }: { code: string; language?: string }) {
+  // 空内容保护：避免渲染出空的代码块
+  if (!code.trim()) return null
+
   const [copied, setCopied] = useState(false)
 
   const handleCopyCode = async () => {
@@ -74,7 +140,7 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
         onClick={handleCopyCode}
         className={[
           'absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md',
-          'bg-surface-alt text-black transition-all hover:bg-surface',
+          'bg-surface-alt text-text-primary transition-all hover:bg-surface',
           'opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100',
         ].join(' ')}
         aria-label="复制代码"
@@ -191,7 +257,8 @@ function splitMarkdownSegments(text: string): MarkdownSegment[] {
 
 function renderInlineMarkdown(text: string): Array<string | ReactNode> {
   const parts: Array<string | ReactNode> = []
-  const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g
+  // 支持：行内代码、加粗、斜体、删除线、图片、链接
+  const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\))/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   let key = 0
@@ -209,8 +276,25 @@ function renderInlineMarkdown(text: string): Array<string | ReactNode> {
       )
     } else if (token.startsWith('**') && token.endsWith('**')) {
       parts.push(<strong key={`strong-${key++}`} className="font-semibold">{token.slice(2, -2)}</strong>)
+    } else if (token.startsWith('~~') && token.endsWith('~~')) {
+      parts.push(<del key={`del-${key++}`} className="text-text-secondary line-through">{token.slice(2, -2)}</del>)
     } else if (token.startsWith('*') && token.endsWith('*')) {
       parts.push(<em key={`em-${key++}`} className="italic">{token.slice(1, -1)}</em>)
+    } else if (token.startsWith('![')) {
+      // 图片：![alt](url)
+      const m = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+      if (m) {
+        parts.push(
+          <img
+            key={`img-${key++}`}
+            src={m[2]}
+            alt={m[1]}
+            className="my-1 inline-block max-h-80 max-w-full rounded-lg"
+          />,
+        )
+      } else {
+        parts.push(token)
+      }
     } else if (token.startsWith('[')) {
       const m = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       if (m) {
@@ -265,7 +349,7 @@ function TableBlock({ raw, headers, alignments, rows }: {
         onClick={handleCopy}
         className={[
           'absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md',
-          'bg-surface-alt text-black transition-all hover:bg-surface',
+          'bg-surface-alt text-text-primary transition-all hover:bg-surface',
           'opacity-0 group-hover/table:opacity-100 group-focus-within/table:opacity-100',
         ].join(' ')}
         aria-label="复制表格"
@@ -315,6 +399,25 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
   let listKey = 0
   let tableLines: string[] = []
   let tableKey = 0
+  let diagramLines: string[] = []
+  let diagramPendingBlanks = 0 // 图表块内待定空行数
+  let diagramKey = 0
+
+  // Box Drawing 区间 U+2500–U+257F
+  const boxDrawingLineRegex = /[\u2500-\u257F]/
+
+  const flushDiagram = () => {
+    if (diagramLines.length === 0) return
+    // 去掉尾部空行
+    while (diagramLines.length > 0 && !diagramLines[diagramLines.length - 1].trim()) {
+      diagramLines.pop()
+    }
+    if (diagramLines.length === 0) return
+    const content = diagramLines.join('\n')
+    nodes.push(<DiagramBlock key={`diagram-${blockIndex}-${diagramKey++}`} content={content} />)
+    diagramLines = []
+    diagramPendingBlanks = 0
+  }
 
   const flushList = () => {
     if (!listType || listItems.length === 0) return
@@ -382,10 +485,50 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     const trimmed = line.trim()
 
     if (!trimmed) {
+      // 图表块内：用前瞻策略判断是否继续收集
+      if (diagramLines.length > 0) {
+        diagramPendingBlanks++
+        // 向前扫描：如果后续（最多 3 行内）还有图表行，继续收集空行
+        let hasUpcomingDiagram = false
+        for (let ahead = lineIndex + 1; ahead < lines.length && ahead <= lineIndex + 3; ahead++) {
+          const aheadTrimmed = lines[ahead].trim()
+          if (!aheadTrimmed) continue // 跳过连续空行继续向前看
+          if (boxDrawingLineRegex.test(aheadTrimmed)) {
+            hasUpcomingDiagram = true
+          }
+          break // 找到第一个非空行即停止
+        }
+        if (hasUpcomingDiagram) {
+          // 后面还有图表行，保持收集状态
+          return
+        }
+        // 后面没有图表行了，结束图表块
+        flushDiagram()
+        nodes.push(<div key={`gap-${blockIndex}-${lineIndex}`} className="h-2" />)
+        return
+      }
       flushTable()
       flushList()
       nodes.push(<div key={`gap-${blockIndex}-${lineIndex}`} className="h-2" />)
       return
+    }
+
+    // 图表行检测：包含 Box Drawing 字符（U+2500–U+257F）
+    if (boxDrawingLineRegex.test(trimmed)) {
+      flushTable()
+      flushList()
+      // 将待定空行补入图表缓冲区
+      for (let b = 0; b < diagramPendingBlanks; b++) {
+        diagramLines.push('')
+      }
+      diagramPendingBlanks = 0
+      diagramLines.push(line) // 保留原始缩进
+      return
+    }
+
+    // 非图表行时 flush 已收集的图表
+    if (diagramLines.length > 0) {
+      flushDiagram()
     }
 
     // 表格行检测：以 | 开头并以 | 结尾
@@ -432,6 +575,29 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
       return
     }
 
+    // 任务列表：- [ ] 或 - [x]
+    if (/^[-*]\s+\[[ xX]\]\s+/.test(trimmed)) {
+      if (listType !== 'ul') {
+        flushList()
+        listType = 'ul'
+      }
+      const checked = /^[-*]\s+\[[xX]\]/.test(trimmed)
+      const taskContent = trimmed.replace(/^[-*]\s+\[[ xX]\]\s+/, '')
+      listItems.push(
+        <li key={`li-task-${blockIndex}-${lineIndex}`} className="flex items-start gap-2 leading-relaxed list-none -ml-5">
+          <span className={clsx('mt-1.5 inline-block size-3.5 shrink-0 rounded border', checked ? 'border-accent-text bg-accent-text text-white' : 'border-border bg-surface')} aria-hidden="true">
+            {checked && (
+              <svg viewBox="0 0 14 14" fill="none" className="size-full">
+                <path d="M3.5 7l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+          <span className={checked ? 'text-text-secondary line-through' : ''}>{renderInlineMarkdown(taskContent)}</span>
+        </li>,
+      )
+      return
+    }
+
     if (/^[-*]\s+/.test(trimmed)) {
       if (listType !== 'ul') {
         flushList()
@@ -467,6 +633,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
   })
 
   flushTable()
+  flushDiagram()
   flushList()
   return <div className="space-y-2">{nodes}</div>
 }
@@ -485,6 +652,8 @@ function isPlainThoughtText(text: string): boolean {
     || /\[[^\]]+\]\([^)]+\)/.test(normalized)
     || /`[^`]+`/.test(normalized)
     || /\*\*[^*]+\*\*/.test(normalized)
+    || /~~[^~]+~~/.test(normalized)
+    || /!\[[^\]]*\]\([^)]+\)/.test(normalized)
   )
 }
 
@@ -508,7 +677,7 @@ function MarkdownPreviewBlock({ code }: { code: string }) {
         onClick={handleCopy}
         className={[
           'absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md',
-          'bg-surface-alt text-black transition-all hover:bg-surface',
+          'bg-surface-alt text-text-primary transition-all hover:bg-surface',
           'opacity-0 group-hover/mdblock:opacity-100 group-focus-within/mdblock:opacity-100',
         ].join(' ')}
         aria-label="复制源码"
@@ -529,9 +698,21 @@ export function renderMarkdown(text: string): ReactNode {
     <div className="space-y-2">
       {segments.map((segment, index) => {
         if (segment.kind === 'code') {
-          // markdown/md 语言的代码块：将内容作为 Markdown 递归渲染
+          // markdown/md 语言的代码块：空内容跳过，图表内容直接用 DiagramBlock，其余递归渲染
           if (segment.language === 'markdown' || segment.language === 'md') {
+            if (!segment.content.trim()) return null
+            if (isDiagramContent(segment.content)) {
+              return <DiagramBlock key={`diagram-${index}`} content={segment.content} />
+            }
             return <MarkdownPreviewBlock key={`md-${index}`} code={segment.content} />
+          }
+          // Mermaid 图表：交给 MermaidBlock 异步渲染为 SVG
+          if (segment.language === 'mermaid') {
+            return <MermaidBlock key={`mermaid-${index}`} code={segment.content} />
+          }
+          // 代码块若包含 ASCII 图表字符，以图表样式渲染（不论是否有语言标识）
+          if (isDiagramContent(segment.content)) {
+            return <DiagramBlock key={`diagram-${index}`} content={segment.content} />
           }
           return <CodeBlock key={`pre-${index}`} code={segment.content} language={segment.language} />
         }
@@ -590,6 +771,7 @@ function formatThoughtDuration(durationMs: number): string {
 
 export function MessageItem({
   message,
+  isLastAssistant: _isLastAssistant = false,
   onResendUser,
   onToggleThinking,
   onToggleTodo,
@@ -905,6 +1087,7 @@ export function MessageItem({
               <ToolCallCard
                 key={group.block.id}
                 block={group.block}
+                narration={group.narration}
                 onToggle={() => onToggleToolCall?.(message.id, group.block.id)}
               />
             )
@@ -915,6 +1098,7 @@ export function MessageItem({
             <ToolGroupCard
               key={group.key}
               blocks={group.blocks}
+              narration={group.narration}
               collapsed={collapsed}
               onToggleGroup={() => onToggleToolGroup?.(message.id, group.key)}
               onToggleToolCall={(blockId) => onToggleToolCall?.(message.id, blockId)}
@@ -1055,7 +1239,7 @@ export function MessageItem({
               {isUser && onResendUser && (
                 <button
                   type="button"
-                  onClick={() => onResendUser(primaryTextContent)}
+                  onClick={() => onResendUser(message.id)}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-surface-alt text-text-primary transition-colors hover:bg-surface dark:text-white"
                   aria-label="重新发送问题"
                   title="重新发送问题"
@@ -1066,6 +1250,20 @@ export function MessageItem({
             </div>
           </div>
         )}
+
+        {/* TODO: 品牌标识暂时禁用，后续重新设计再启用 */}
+        {/* {isLastAssistant && (
+          <div className="group/brand mt-2 flex items-center gap-2 pl-1">
+            <img
+              src="/lecquy-mark-nobg.png"
+              alt="Lecquy"
+              className="size-7 object-contain opacity-30 transition-opacity duration-200 group-hover/brand:opacity-70"
+            />
+            <span className="text-xs text-text-muted opacity-0 transition-opacity duration-200 group-hover/brand:opacity-100">
+              由 Lecquy 驱动的 AI 助手
+            </span>
+          </div>
+        )} */}
       </div>
     </div>
   )

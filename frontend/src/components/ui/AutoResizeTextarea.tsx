@@ -47,15 +47,15 @@ export function AutoResizeTextarea({
 
   /** 键盘事件：Enter 发送，Shift+Enter 换行，Shift+Tab 切换模式 */
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (disabled) return
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault()
-      onToggleThinking()
+      if (!disabled) onToggleThinking()
       return
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault()
-      onSend()
+      // 禁用态（流式输出中）仅阻止发送，不阻止打字
+      if (!disabled) onSend()
       return
     }
   }
@@ -69,7 +69,6 @@ export function AutoResizeTextarea({
       onPaste={onPaste}
       placeholder={placeholder}
       rows={1}
-      disabled={disabled}
       className={[
         'chat-scrollbar w-full resize-none border-0 outline-none bg-transparent',
         'text-text-primary placeholder:text-text-muted',

@@ -1,6 +1,6 @@
 import { normalizeSessionAssistantContent } from '@lecquy/shared'
 
-export type ToolCallStatus = 'running' | 'success' | 'error'
+export type ToolCallStatus = 'running' | 'success' | 'error' | 'unknown'
 
 export interface MessageTextBlock {
   kind: 'text'
@@ -26,8 +26,8 @@ export type MessageBlock = MessageTextBlock | MessageToolCallBlock
 
 export type RenderGroup =
   | { kind: 'text'; block: MessageTextBlock }
-  | { kind: 'tool_single'; block: MessageToolCallBlock }
-  | { kind: 'tool_group'; blocks: MessageToolCallBlock[]; key: string }
+  | { kind: 'tool_single'; block: MessageToolCallBlock; narration?: MessageTextBlock[] }
+  | { kind: 'tool_group'; blocks: MessageToolCallBlock[]; key: string; narration?: MessageTextBlock[] }
 
 export const TOOL_GROUP_THRESHOLD = 3
 
@@ -149,34 +149,78 @@ export function getToolGroupKey(blocks: MessageToolCallBlock[]): string {
 }
 
 export function groupMessageBlocks(blocks: MessageBlock[]): RenderGroup[] {
+  let lastToolIndex = -1
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index]?.kind === 'tool_call') {
+      lastToolIndex = index
+      break
+    }
+  }
+
   const groups: RenderGroup[] = []
+  let pendingNarration: MessageTextBlock[] = []
   let currentToolBlocks: MessageToolCallBlock[] = []
 
   const flushToolBlocks = () => {
-    if (currentToolBlocks.length === 0) return
+    if (currentToolBlocks.length === 0) {
+      return
+    }
+
+    const narration = pendingNarration.length > 0 ? pendingNarration : undefined
     if (currentToolBlocks.length >= TOOL_GROUP_THRESHOLD) {
       groups.push({
         kind: 'tool_group',
         blocks: currentToolBlocks,
         key: getToolGroupKey(currentToolBlocks),
+        narration,
+      })
+    } else if (currentToolBlocks.length === 1) {
+      groups.push({
+        kind: 'tool_single',
+        block: currentToolBlocks[0],
+        narration,
       })
     } else {
-      for (const block of currentToolBlocks) {
-        groups.push({ kind: 'tool_single', block })
-      }
+      currentToolBlocks.forEach((block, index) => {
+        groups.push({
+          kind: 'tool_single',
+          block,
+          narration: index === 0 ? narration : undefined,
+        })
+      })
     }
+
     currentToolBlocks = []
+    pendingNarration = []
   }
 
-  for (const block of blocks) {
+  blocks.forEach((block, index) => {
+    if (block.kind === 'text' && !block.content.trim()) {
+      return
+    }
+
     if (block.kind === 'tool_call') {
       currentToolBlocks.push(block)
-      continue
+      return
     }
 
-    flushToolBlocks()
-    groups.push({ kind: 'text', block })
-  }
+    if (lastToolIndex >= 0 && index > lastToolIndex) {
+      flushToolBlocks()
+      groups.push({ kind: 'text', block })
+      return
+    }
+
+    if (lastToolIndex < 0) {
+      groups.push({ kind: 'text', block })
+      return
+    }
+
+    if (currentToolBlocks.length > 0) {
+      flushToolBlocks()
+    }
+
+    pendingNarration.push(block)
+  })
 
   flushToolBlocks()
   return groups
@@ -203,13 +247,20 @@ export function blocksFromAssistantContent(content: unknown): {
     }
 
     if (part.type === 'toolCall') {
-      blocks = [...blocks, {
-        kind: 'tool_call',
-        id: part.id,
-        name: part.name,
-        args: part.arguments,
-        status: 'success',
-      }]
+      blocks = [
+        ...blocks,
+        {
+          kind: 'tool_call',
+          id: part.id,
+          name: part.name,
+          args: part.arguments,
+          status: part.status ?? 'unknown',
+          errorMessage: part.errorMessage,
+          errorDetail: part.errorDetail,
+          startedAt: part.startedAt,
+          endedAt: part.endedAt,
+        },
+      ]
     }
   }
 

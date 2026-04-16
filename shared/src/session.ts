@@ -123,6 +123,15 @@ export interface SessionToolCallContentBlock {
   readonly name: string
   readonly arguments: Record<string, unknown>
   readonly thoughtSignature?: string
+  // 工具执行完成后由后端回填（可空，以兼容旧数据）
+  // - status：成功 / 失败；未回填时前端按 'unknown' 中性态展示
+  // - errorMessage / errorDetail：仅 error 时可用，分别对应摘要消息与更长的明细
+  // - startedAt / endedAt：毫秒级时间戳，便于前端计算耗时
+  readonly status?: 'success' | 'error'
+  readonly errorMessage?: string
+  readonly errorDetail?: string
+  readonly startedAt?: number
+  readonly endedAt?: number
 }
 
 export type SessionAssistantContentBlock =

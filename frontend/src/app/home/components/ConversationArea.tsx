@@ -129,7 +129,7 @@ export function ConversationArea({
       type="button"
       onClick={stop}
       className={[
-        'inline-flex h-9 items-center gap-2 rounded-[1rem] border border-border/80 px-3.5',
+        'inline-flex size-9 items-center justify-center rounded-full border border-border/80',
         'bg-[linear-gradient(180deg,var(--color-surface-thought),var(--color-surface))]',
         'text-text-primary shadow-[0_10px_20px_rgba(15,23,42,0.05)] transition-all duration-200',
         'hover:border-[color:var(--border-strong)] hover:bg-[linear-gradient(180deg,var(--color-surface),var(--color-surface-thought))]',
@@ -137,10 +137,7 @@ export function ConversationArea({
       aria-label="中断回答"
       title="中断回答"
     >
-      <span className="inline-flex size-5 items-center justify-center rounded-[0.7rem] bg-surface-alt text-text-secondary" aria-hidden="true">
-        <Square className="size-3 fill-current" />
-      </span>
-      <span className="text-[13px] font-medium tracking-[0.02em]">停止</span>
+      <Square className="size-3 fill-current" />
     </button>
   ) : null
 
@@ -152,9 +149,21 @@ export function ConversationArea({
     }
   }
 
-  const handleResendUser = (text: string) => {
-    if (!text.trim() || !effectiveCanSend) return
-    const sent = send({ text })
+  const handleResendUser = (messageId: string) => {
+    if (!effectiveCanSend) return
+    // 找到被重发的用户消息，提取内容和附件
+    const index = messages.findIndex((m) => m.id === messageId)
+    if (index < 0) return
+    const target = messages[index]
+    if (target.role !== 'user') return
+    const text = target.content
+    const attachments = target.attachments
+    if (!text.trim() && (!attachments || attachments.length === 0)) return
+
+    // 截断：移除被重发的用户消息及其之后的所有消息（AI 回复等）
+    replaceMessages(messages.slice(0, index))
+
+    const sent = send({ text, attachments })
     if (sent) {
       setScrollRequestVersion((prev) => prev + 1)
     }

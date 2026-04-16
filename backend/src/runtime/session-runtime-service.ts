@@ -325,22 +325,70 @@ function lastAssistantText(messages: AgentMessage[]): string {
   return last ? extractSessionText(last.content) : ''
 }
 
-function appendAssistantMessages(manager: SessionManager, messages: AgentMessage[]): void {
+/**
+ * tool 调用运行期的状态缓存（按 sessionKey:runId:toolCallId 索引）。
+ * 在工具执行 start/end 时写入，落库 assistant message 时合并到对应 toolCall content block。
+ */
+interface ToolResultState {
+  startedAt?: number
+  endedAt?: number
+  status?: 'success' | 'error'
+  errorMessage?: string
+  errorDetail?: string
+}
+
+function enrichAssistantContent(
+  content: ReturnType<typeof normalizeSessionAssistantContent>,
+  lookup: (toolCallId: string) => ToolResultState | undefined,
+): ReturnType<typeof normalizeSessionAssistantContent> {
+  return content.map((part) => {
+    if (part.type !== 'toolCall') return part
+    const cached = lookup(part.id)
+    if (!cached) return part
+    // 只把有值的字段补上，保持 part 的原有结构；已有字段优先，不覆盖
+    return {
+      ...part,
+      status: part.status ?? cached.status,
+      errorMessage: part.errorMessage ?? cached.errorMessage,
+      errorDetail: part.errorDetail ?? cached.errorDetail,
+      startedAt: part.startedAt ?? cached.startedAt,
+      endedAt: part.endedAt ?? cached.endedAt,
+    }
+  })
+}
+
+function appendAssistantMessages(
+  manager: SessionManager,
+  messages: AgentMessage[],
+  enrichToolCalls?: (toolCallId: string) => ToolResultState | undefined,
+): void {
   for (const message of messages) {
     if (message.role === 'assistant') {
-      manager.appendMessage(toSessionMessageRecord(message))
+      manager.appendMessage(toSessionMessageRecord(message, enrichToolCalls))
     }
   }
 }
 
-function toSessionMessageRecord(message: AgentMessage): SessionMessageRecord {
+function toSessionMessageRecord(
+  message: AgentMessage,
+  enrichToolCalls?: (toolCallId: string) => ToolResultState | undefined,
+): SessionMessageRecord {
   const raw = message as unknown as SessionMessageRecord
+  const baseContent = message.role === 'assistant'
+    ? normalizeSessionAssistantContent(raw.content)
+    : extractSessionText(raw.content)
+
+  const content = message.role === 'assistant' && enrichToolCalls
+    ? enrichAssistantContent(
+      baseContent as ReturnType<typeof normalizeSessionAssistantContent>,
+      enrichToolCalls,
+    )
+    : baseContent
+
   return {
     ...raw,
     role: message.role,
-    content: message.role === 'assistant'
-      ? normalizeSessionAssistantContent(raw.content)
-      : extractSessionText(raw.content),
+    content,
     timestamp: typeof raw.timestamp === 'number' ? raw.timestamp : Date.now(),
     provider: raw.provider,
     model: raw.model,
@@ -493,6 +541,8 @@ export class SessionRuntimeService {
   private readonly activeRuns = new Map<string, ActiveRunHandle>()
   private readonly locks = new Map<string, Promise<void>>()
   private readonly toolArgsByCallId = new Map<string, unknown>()
+  // 与 toolArgsByCallId 并列，只存状态相关字段。落库 assistant message 时用于补全 toolCall block。
+  private readonly toolResultsByCallId = new Map<string, ToolResultState>()
   private readonly skillSessions = new Map<string, SkillSession>()
   private readonly sessionModes = new Map<string, SessionMode>()
 
@@ -1384,6 +1434,12 @@ export class SessionRuntimeService {
       }
 
       this.activeRuns.delete(sessionKey)
+      // run 结束后清理 tool 结果缓存，避免跨 run 的残留被错误合并
+      for (const key of this.toolResultsByCallId.keys()) {
+        if (key.startsWith(`${sessionKey}:${runId}:`)) {
+          this.toolResultsByCallId.delete(key)
+        }
+      }
       clearCurrentToolSessionKey()
       const finalProjection = await this.refreshProjection(sessionKey)
       const memoryCoordinator = getMemoryCoordinator()
@@ -1453,7 +1509,11 @@ export class SessionRuntimeService {
     } catch (error) {
       if (error instanceof AgentExecutionError) {
         const partialMessages = error.messages.slice(contextMessages.length)
-        appendAssistantMessages(bound.manager, partialMessages)
+        appendAssistantMessages(
+          bound.manager,
+          partialMessages,
+          (id) => this.toolResultsByCallId.get(this.getToolCallKey(sessionKey, runId, id)),
+        )
         const partialReply = lastAssistantText(partialMessages).trim()
         await this.finishStep(bound, runId, step, 'failed', partialReply || '回答已中断')
       }
@@ -1461,7 +1521,11 @@ export class SessionRuntimeService {
     }
 
     const newMessages = result.messages.slice(contextMessages.length)
-    appendAssistantMessages(bound.manager, newMessages)
+    appendAssistantMessages(
+      bound.manager,
+      newMessages,
+      (id) => this.toolResultsByCallId.get(this.getToolCallKey(sessionKey, runId, id)),
+    )
 
     const reply = lastAssistantText(newMessages)
     await this.finishStep(bound, runId, step, 'completed', reply)
@@ -1569,7 +1633,11 @@ export class SessionRuntimeService {
       }
 
       const managerMessages = managerResult.messages.slice(contextMessages.length)
-      appendAssistantMessages(bound.manager, managerMessages)
+      appendAssistantMessages(
+        bound.manager,
+        managerMessages,
+        (id) => this.toolResultsByCallId.get(this.getToolCallKey(sessionKey, runId, id)),
+      )
 
       const items = await persistTodoState()
 
@@ -1797,7 +1865,13 @@ export class SessionRuntimeService {
     }
 
     if (event.type === 'tool_execution_start') {
-      this.toolArgsByCallId.set(this.getToolCallKey(sessionKey, runId, event.toolCallId), event.args)
+      const execKey = this.getToolCallKey(sessionKey, runId, event.toolCallId)
+      this.toolArgsByCallId.set(execKey, event.args)
+      // 记录起始时间 —— 合并到 toolCall content block 后可作为历史加载的 startedAt
+      this.toolResultsByCallId.set(execKey, {
+        ...(this.toolResultsByCallId.get(execKey) ?? {}),
+        startedAt: Date.now(),
+      })
       logger.debug('工具开始执行', {
         sessionKey,
         runId,
@@ -1811,8 +1885,9 @@ export class SessionRuntimeService {
 
     if (event.type === 'tool_execution_end') {
       const detail = summarizeToolResultDetail(event.result)
-      const toolArgs = this.toolArgsByCallId.get(this.getToolCallKey(sessionKey, runId, event.toolCallId))
-      this.toolArgsByCallId.delete(this.getToolCallKey(sessionKey, runId, event.toolCallId))
+      const execKey = this.getToolCallKey(sessionKey, runId, event.toolCallId)
+      const toolArgs = this.toolArgsByCallId.get(execKey)
+      this.toolArgsByCallId.delete(execKey)
       const generatedArtifacts = event.isError ? [] : extractGeneratedArtifactsFromToolResult(event.result)
       const artifactTraceItems = event.isError ? [] : buildArtifactTraceItems(step.stepId, event.toolName, toolArgs, event.result)
       if (event.isError) {
@@ -1850,6 +1925,15 @@ export class SessionRuntimeService {
       }
       if (event.isError) {
         const errorMessage = extractToolErrorMessage(event.result) ?? detail ?? 'Tool execution failed'
+        const errorDetail = detail && detail !== errorMessage ? detail : undefined
+        // 回填 tool 结果缓存，后续 assistant message 落库时可还原成功/失败状态与错误文案
+        this.toolResultsByCallId.set(execKey, {
+          ...(this.toolResultsByCallId.get(execKey) ?? {}),
+          endedAt: Date.now(),
+          status: 'error',
+          errorMessage,
+          errorDetail,
+        })
         this.emitToolCallEnd(sessionKey, {
           sessionKey,
           runId,
@@ -1858,11 +1942,16 @@ export class SessionRuntimeService {
           toolName: event.toolName,
           status: 'error',
           errorMessage,
-          errorDetail: detail && detail !== errorMessage ? detail : undefined,
+          errorDetail,
         })
         return
       }
 
+      this.toolResultsByCallId.set(execKey, {
+        ...(this.toolResultsByCallId.get(execKey) ?? {}),
+        endedAt: Date.now(),
+        status: 'success',
+      })
       this.emitToolCallEnd(sessionKey, {
         sessionKey,
         runId,

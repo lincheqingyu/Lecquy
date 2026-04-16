@@ -7,7 +7,7 @@ interface PiMessageListAdapterProps {
   messages: ChatMessage[]
   isStreaming: boolean
   isWaiting: boolean
-  onResendUser?: (message: string) => void
+  onResendUser?: (messageId: string) => void
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void

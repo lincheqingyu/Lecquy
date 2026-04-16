@@ -136,8 +136,11 @@ function toThoughtTiming(
 }
 
 function isToolCallExpanded(block: MessageToolCallBlock): boolean {
+  // 与 ToolCallCard.getEffectiveToolCallExpanded 保持一致：
+  // 只有失败卡片才参与展开 / 折叠，其它状态视为不可展开
+  if (block.status !== 'error') return false
   if (typeof block.manualExpanded === 'boolean') return block.manualExpanded
-  return block.status === 'error'
+  return true
 }
 
 export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: UseChatOptions) {
