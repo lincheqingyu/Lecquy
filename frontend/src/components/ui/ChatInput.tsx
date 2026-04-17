@@ -178,7 +178,7 @@ export function ChatInput({
       />
       <div
         className={clsx(
-          'relative border border-border bg-surface',
+          'relative border border-border bg-input-surface',
           showExpanded ? 'rounded-[20px]' : compact ? 'rounded-full' : 'rounded-[20px]',
           'shadow-[var(--shadow-input)]',
           'transition-shadow duration-200',

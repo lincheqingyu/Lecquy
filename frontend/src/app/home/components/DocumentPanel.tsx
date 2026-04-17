@@ -3,7 +3,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatAttachment } from '@lecquy/shared'
 import { buildAttachmentPreviewUrl, getAttachmentDisplayText } from '../../../lib/chat-attachments'
-import { renderMarkdown } from '../../../components/chat/MessageItem'
+import { StreamdownMarkdown } from '../../../components/chat/StreamdownMarkdown'
 import { formatBytes, inferCodeLanguage, inferFileExtension, stripFileExtension } from '../../../lib/file-display'
 import { ShikiCodeView } from '../../../components/artifacts/ShikiCodeView'
 import { FilePreviewPanelHeader, type FilePreviewActionItem, type FilePreviewViewMode } from '../../../components/files/FilePreviewPanelHeader'
@@ -315,7 +315,7 @@ export function DocumentPanel({ document, width, onClose }: DocumentPanelProps) 
                 ) : documentType === 'markdown' ? (
                   <div className="px-5 py-4">
                     <div className="mx-auto max-w-4xl">
-                      {renderMarkdown(activeSection?.content ?? displayText)}
+                      <StreamdownMarkdown content={activeSection?.content ?? displayText} />
                     </div>
                   </div>
                 ) : activeSection || (attachment.kind === 'file' && displayText.trim().length > 0) ? (

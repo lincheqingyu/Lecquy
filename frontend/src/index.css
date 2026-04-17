@@ -6,7 +6,12 @@
  * 3. 开启 @theme 自定义能力
  * ============================================ */
 @import "tailwindcss";
+@import "streamdown/styles.css";
 @plugin "@tailwindcss/typography";
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -23,39 +28,66 @@
  * ============================================ */
 @theme {
     /* ---------- 背景色 ---------- */
-    --color-surface: #ffffff;               /* 主背景（页面、卡片、抽屉） */
-    --color-surface-alt: #faf9f5;           /* 应用底色 rgb(250, 249, 245) */
-    --color-surface-thought: #fdfcfa;       /* Thoughts / Plan 头部底色 rgb(253, 252, 250) */
-    --color-surface-raised: #ffffff;        /* 浮层、输入区、下拉 */
-    --color-sidebar-panel: #f7f5ef;         /* 展开侧栏底色 */
-    --color-sidebar-hover: #f3f0e8;         /* 侧栏 hover */
-    --color-sidebar-active: #ece9e1;        /* 侧栏选中 */
-    --color-browser-theme: #f6f6f7;         /* 浏览器壳 tint 提示 */
-    --color-user-bubble: #F0EEE6;           /* 用户消息气泡 */
+    --color-surface: #ffffff;               /* 主背景（白）· 对话卡片 / 下拉 / 抽屉 / 头像占位等 */
+    --color-surface-alt: #F8F8F6;           /* 应用底色 rgb(248, 248, 246) · 页面 body / 会话列表页 / 对话区外层 */
+    --color-surface-thought: #fdfcfa;       /* Thoughts / Plan 头部底色 rgb(253, 252, 250) · 思考折叠卡片 */
+    --color-surface-raised: #ffffff;        /* 浮层 / 卡片底色（白）· 设置内容卡片 / 浮窗 / 下拉菜单 */
+    --color-sidebar-panel: #F8F8F6;         /* 左侧边栏展开底色 · ConversationSidebar 展开态 */
+    --color-sidebar-hover: #EFEEEB;         /* 侧栏项 hover 底色 · 会话列表项 / 设置列表项 */
+    --color-sidebar-active: #EFEEEB;        /* 侧栏项选中底色 · 当前会话 / 当前设置项 */
+    --color-browser-theme: #f6f6f7;         /* 浏览器壳 tint · Claude in Chrome 入口提示条 */
+    --color-user-bubble: #EFEEEB;           /* 用户消息气泡底色 · MessageItem 用户角色背景 */
 
     /* ---------- 文字色 ---------- */
-    --color-text-primary: #0f172a;     /* 主文字：标题、正文 */
-    --color-text-secondary: #64748b;   /* 次要文字：副标题、说明 */
-    --color-text-muted: #94a3b8;       /* 最淡文字：占位符、禁用状态 */
+    --color-text-primary: #0f172a;          /* 主文字色 · 标题 / 正文 / 强按钮文字 / 输入框输入值 */
+    --color-text-secondary: #64748b;        /* 次要文字色 · 副标题 / 时间戳 / 占位标签 / 代码块 placeholder */
+    --color-text-muted: #94a3b8;            /* 最淡文字色 · 输入框 placeholder / 禁用态 / 行号 */
+    --color-foreground: var(--color-text-primary);          /* shadcn 别名 · 第三方组件默认前景色 */
+    --color-muted-foreground: var(--color-text-secondary);  /* shadcn 别名 · 次要前景（streamdown 语言标签默认用它） */
 
     /* ---------- 边框色 ---------- */
-    --color-border: #e7e4db;           /* 通用分割线、边框（暖色基调，与 surface-alt 色系一致） */
-    --color-artifact-gutter-border: rgb(235, 235, 235);
-    --color-diagram-line: rgb(220, 220, 220);
+    --color-border: #e7e4db;                            /* 通用边框 · 输入框 / 卡片 / 分隔线 / markdown 表格 / blockquote 左边线 */
+    --color-artifact-gutter-border: rgb(235, 235, 235); /* Artifact 代码行号右侧竖分隔线 · .artifact-code-with-lines .line::before */
+    --color-diagram-line: rgb(220, 220, 220);           /* ASCII 图表 / 树图导线色 · AsciiDiagramBlock */
+    --color-input: var(--color-border);                 /* shadcn 别名 · 第三方组件 input 边框 */
 
     /* ---------- 交互色 ---------- */
-    --color-hover: #f3f0e8;            /* 鼠标悬停时的背景色（暖米色，与 sidebar-hover 同色阶） */
-    --color-accent: #3b82f6;           /* 品牌强调色：按钮、链接 */
-    --color-accent-soft: #eff6ff;      /* 强调色柔和背景（标签 hover） */
-    --color-accent-text: #2563eb;      /* 强调色文字 */
-    --color-toggle-off: #d6dae1;       /* 开关关闭轨道 */
-    --color-toggle-on: #111111;        /* 开关开启轨道 */
-    --color-toggle-thumb: #ffffff;     /* 开关圆点 */
-    --color-toggle-thumb-active: #ffffff;
+    --color-hover: #f3f0e8;                             /* 鼠标悬停底色 · 按钮 hover / 列表项 hover / 代码块复制按钮 hover */
+    --color-accent: #3b82f6;                            /* 强调色（蓝）· 链接焦点环 / 选中指示 */
+    --color-accent-soft: #eff6ff;                       /* 强调色柔和背景 · 标签 hover tint / 轻量高亮 */
+    --color-accent-text: #2563eb;                       /* 强调色文字 · 链接文字颜色 */
+    --color-primary: var(--color-accent-text);          /* shadcn 别名 · 主按钮色 / link 变体继承 */
+    --color-primary-foreground: #ffffff;                /* shadcn 别名 · 主按钮上的白色文字 */
+    --color-toggle-off: #d6dae1;                        /* 开关关闭态轨道色 · Settings 所有 toggle 关态 */
+    --color-toggle-on: #111111;                         /* 开关开启态轨道色 · Settings 所有 toggle 开态 */
+    --color-toggle-thumb: #ffffff;                      /* 开关圆点颜色（默认态） */
+    --color-toggle-thumb-active: #ffffff;               /* 开关圆点颜色（开启态） */
+
+    /* ---------- streamdown / shadcn 兼容 token ---------- */
+    --color-background: var(--color-surface);           /* shadcn 别名 · body / 卡片默认底色 */
+    --color-card: var(--color-surface-raised);          /* shadcn 别名 · Card 组件底色 */
+    --color-card-foreground: var(--color-text-primary); /* shadcn 别名 · Card 内文字色 */
+    --color-muted: var(--color-hover);                  /* shadcn 别名 · 弱底（streamdown 默认 inline-code 底、表格斑马条） */
+    --color-sidebar: var(--color-surface-alt);          /* shadcn 别名 · Sidebar 组件底色 */
+
+    /* ---------- Markdown 专属 token（聊天区 + 文档预览区共用） ---------- */
+    --color-code-surface: #fcfcfb;                       /* 代码块整卡底色 rgb(252, 252, 251) · streamdown [data-streamdown="code-block"] 外层 */
+    --color-code-header: transparent;                    /* 代码块 header 独立底色 · 当前保持透明，和外层底色融为一体 */
+    --color-code-border: #e7e1d7;                        /* 代码块外框线 · [data-streamdown="code-block"] 的 border */
+    --color-code-label: #7a7468;                         /* 代码块语言标签文字色 · [data-streamdown="code-block-header"] 内 span */
+    --color-code-action: #58544c;                        /* 代码块复制按钮图标色 · [data-streamdown="code-block-copy-button"] */
+    --color-code-action-hover: rgba(88, 84, 76, 0.08);   /* 代码块复制按钮 hover tint */
+    --color-inline-code-text: #b54a36;                   /* 行内代码文字（暖红褐）· [data-streamdown="inline-code"] */
+    --color-inline-code-bg: rgba(181, 74, 54, 0.08);     /* 行内代码背景（极淡 tint）· [data-streamdown="inline-code"] */
+
+    /* ---------- 输入框专属 token ----------
+     * 浅色维持白底；暗色在 .dark 里改写为 rgb(48, 48, 48)，
+     * 让 ChatInput 比页面底色 #212121 略亮一档。 */
+    --color-input-surface: #ffffff;                      /* ChatInput 外层底色 · components/ui/ChatInput.tsx */
 
     /* ---------- 阴影 ---------- */
-    --shadow-input: 0 2px 8px rgba(15, 23, 42, 0.06);        /* 输入框默认阴影 */
-    --shadow-input-hover: 0 10px 28px rgba(15, 23, 42, 0.12);  /* 输入框悬停/聚焦阴影 */
+    --shadow-input: 0 2px 8px rgba(15, 23, 42, 0.06);        /* 输入框默认阴影 · ChatInput 静态态 */
+    --shadow-input-hover: 0 10px 28px rgba(15, 23, 42, 0.12); /* 输入框 hover / focus 阴影 · ChatInput 聚焦态 */
 }
 
 /* ============================================
@@ -64,41 +96,56 @@
  * 所有用了语义化类名的组件（如 bg-surface）会自动切换颜色
  * ============================================ */
 .dark {
-    /* 问答区 / 设置栏底色 rgb(33,33,33) */
-    --color-surface: #212121;
-    --color-surface-alt: #212121;
-    --color-surface-thought: #26272b;
-    /* 设置栏 模型+内容卡片 未选中 rgb(37,37,37) */
-    --color-surface-raised: #252525;
-    /* 左侧侧边栏底色 rgb(24,24,24) */
-    --color-sidebar-panel: #181818;
-    --color-sidebar-hover: #242424;
-    /* 暗色选中色统一 rgb(48,48,48) —— 会话选中 / 设置卡片选中 共用 */
-    --color-sidebar-active: #303030;
-    --color-browser-theme: #1f1f1f;
-    /* 用户消息卡片底色 rgb(48,48,48) */
-    --color-user-bubble: #303030;
-    --color-text-primary: #ececec;
-    --color-text-secondary: #a9a9a9;
-    --color-text-muted: #7a7a7a;
-    --color-border: #2f2f2f;
-    --color-artifact-gutter-border: #343434;
-    --color-diagram-line: rgba(255, 255, 255, 0.16);
-    --color-hover: #2a2a2a;
-    --color-accent: #ececec;
-    --color-accent-soft: rgba(255, 255, 255, 0.08);
-    --color-accent-text: #ffffff;
-    --color-toggle-off: #343434;
-    --color-toggle-on: #e8e8e8;
-    --color-toggle-thumb: #b4b4b4;
-    --color-toggle-thumb-active: #171717;
-    --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.3);
-    --shadow-input-hover: 0 12px 32px rgba(0, 0, 0, 0.36);
+    --color-surface: #212121;                  /* 暗色主背景 rgb(33, 33, 33) · 对话区 / 设置栏底色 */
+    --color-surface-alt: #212121;              /* 暗色应用底色 · 页面 body / 对话区外层 */
+    --color-surface-thought: #26272b;          /* 暗色思考折叠卡片底色 · Thoughts / Plan 头部 */
+    --color-surface-raised: #252525;           /* 暗色浮层底色 rgb(37, 37, 37) · 设置卡片未选中 */
+    --color-sidebar-panel: #181818;            /* 暗色左侧边栏底色 rgb(24, 24, 24) · ConversationSidebar */
+    --color-sidebar-hover: #242424;            /* 暗色侧栏项 hover */
+    --color-sidebar-active: #303030;           /* 暗色选中色 rgb(48, 48, 48) · 会话选中 / 设置卡片选中 */
+    --color-browser-theme: #1f1f1f;            /* 暗色浏览器壳 tint */
+    --color-user-bubble: #303030;              /* 暗色用户气泡底色 rgb(48, 48, 48) · MessageItem 用户角色 */
+    --color-text-primary: #ececec;             /* 暗色主文字 · 标题 / 正文 */
+    --color-text-secondary: #a9a9a9;           /* 暗色次要文字 · 副标题 / 说明 */
+    --color-text-muted: #7a7a7a;               /* 暗色最淡文字 · 占位符 / 禁用态 */
+    --color-foreground: var(--color-text-primary);
+    --color-muted-foreground: var(--color-text-secondary);
+    --color-border: #2f2f2f;                   /* 暗色通用边框 · 输入框 / 卡片 / 分割线 / 表格 / blockquote */
+    --color-artifact-gutter-border: #343434;   /* 暗色 Artifact 行号分隔线 */
+    --color-diagram-line: rgba(255, 255, 255, 0.16); /* 暗色 ASCII 图表 / 树图导线 */
+    --color-input: var(--color-border);
+    --color-hover: #2a2a2a;                    /* 暗色 hover 底色 · 按钮 / 列表项 / 代码块复制按钮 hover */
+    --color-accent: #ececec;                   /* 暗色强调色（反色）· 高对比高亮 */
+    --color-accent-soft: rgba(255, 255, 255, 0.08); /* 暗色强调色柔和背景 · 标签 hover tint */
+    --color-accent-text: #ffffff;              /* 暗色强调色文字 · 链接 */
+    --color-primary: var(--color-accent-text);
+    --color-primary-foreground: #171717;       /* 暗色主按钮文字（深色） */
+    --color-toggle-off: #343434;               /* 暗色开关关闭态轨道 */
+    --color-toggle-on: #e8e8e8;                /* 暗色开关开启态轨道 */
+    --color-toggle-thumb: #b4b4b4;             /* 暗色开关圆点（默认态） */
+    --color-toggle-thumb-active: #171717;      /* 暗色开关圆点（开启态） */
+    --color-background: var(--color-surface);          /* shadcn 别名（暗色镜像）· body 默认底 */
+    --color-card: var(--color-surface-raised);         /* shadcn 别名（暗色镜像）· Card 底色 */
+    --color-card-foreground: var(--color-text-primary);/* shadcn 别名（暗色镜像）· Card 内文字 */
+    --color-muted: var(--color-hover);                 /* shadcn 别名（暗色镜像）· 弱底 */
+    --color-sidebar: var(--color-surface-alt);         /* shadcn 别名（暗色镜像）· Sidebar 底色 */
+    /* Markdown 专属 token（暗色） */
+    --color-code-surface: #1c1c1a;             /* 暗色代码块整卡底色 · 比页面底 #212121 略深一档 */
+    --color-code-header: transparent;          /* 暗色代码块 header 底色 · 透明融入外层 */
+    --color-code-border: #35322d;              /* 暗色代码块外框线 */
+    --color-code-label: #a7a094;               /* 暗色代码块语言标签文字 */
+    --color-code-action: #d8d2c8;              /* 暗色代码块复制按钮图标 */
+    --color-code-action-hover: rgba(255, 255, 255, 0.08); /* 暗色代码块复制按钮 hover tint */
+    --color-inline-code-text: #f08a79;         /* 暗色行内代码文字 */
+    --color-inline-code-bg: rgba(240, 138, 121, 0.14); /* 暗色行内代码背景 tint */
+    --color-input-surface: #303030;            /* 暗色 ChatInput 底色 rgb(48, 48, 48) · 比页面底 #212121 亮一档 */
+    --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.3);      /* 暗色 ChatInput 默认阴影 */
+    --shadow-input-hover: 0 12px 32px rgba(0, 0, 0, 0.36); /* 暗色 ChatInput hover / focus 阴影 */
 }
 
 :root {
     color-scheme: light;
-    background-color: var(--color-surface-alt);
+    background-color: var(--color-surface-alt); /* 页面根节点兜底底色 · 用应用底色 */
 }
 
 :root.dark {
@@ -109,7 +156,7 @@ html,
 body,
 #root {
     min-height: 100%;
-    background: var(--color-surface-alt);
+    background: var(--color-surface-alt);       /* html/body/#root 全局背景 · 用应用底色 */
 }
 
 /* ============================================
@@ -125,7 +172,7 @@ body,
 }
 
 *:focus-visible {
-    outline: 2px solid var(--color-text-secondary);
+    outline: 2px solid var(--color-text-secondary); /* 键盘 Tab 聚焦环颜色 · 中性灰 */
     outline-offset: 2px;
 }
 
@@ -190,8 +237,8 @@ select:focus-visible {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-right: 1px solid var(--color-artifact-gutter-border);
-    color: var(--color-text-muted);
+    border-right: 1px solid var(--color-artifact-gutter-border); /* Artifact 行号槽右侧竖线 */
+    color: var(--color-text-muted);                              /* Artifact 行号文字色 · 最淡灰 */
     font-size: 11px;
     user-select: none;
 }
@@ -199,6 +246,7 @@ select:focus-visible {
 /* 对话区滚动条：细线、低对比、右侧贴边 */
 .chat-scrollbar {
     scrollbar-width: thin;
+    /* Firefox 滚动条：滑块用 text-muted 的 45% 透明度混色，轨道透明 */
     scrollbar-color: color-mix(in oklab, var(--color-text-muted) 45%, transparent) transparent;
 }
 
@@ -207,18 +255,18 @@ select:focus-visible {
 }
 
 .chat-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+    background: transparent;              /* WebKit 滚动条轨道 · 完全透明 */
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb {
-    background: color-mix(in oklab, var(--color-text-muted) 45%, transparent);
+    background: color-mix(in oklab, var(--color-text-muted) 45%, transparent); /* WebKit 滑块默认色 · 最淡灰 45% 透明 */
     border-radius: 9999px;
-    border: 2px solid transparent;
+    border: 2px solid transparent;        /* 滑块外描边占位，用 padding-box clip 缩窄视觉宽度 */
     background-clip: padding-box;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklab, var(--color-text-muted) 65%, transparent);
+    background: color-mix(in oklab, var(--color-text-muted) 65%, transparent); /* WebKit 滑块 hover · 最淡灰 65% 透明（更明显） */
 }
 
 /* 数字输入框统一隐藏浏览器自带步进箭头 */
@@ -241,4 +289,285 @@ input[type="number"] {
 .font-serif-mix {
     font-family: "Times New Roman", Times, "Songti SC", "SimSun", "宋体",
         "Source Han Serif SC", "Noto Serif CJK SC", serif;
+}
+
+/* ============================================
+ * Markdown 排版（聊天区 MessageItem + 文档预览区 DocumentPanel 共用）
+ * 设计目标：对齐 Claude.ai —— 无卡片外壳，靠留白和单线分隔构建层级。
+ * 所有规则都挂在 .streamdown-markdown 作用域下，不会污染其他区域。
+ * ============================================ */
+
+/* ---------- 段落 ---------- */
+.streamdown-markdown [data-streamdown="paragraph"] {
+    line-height: 1.65;
+    margin: 0.5rem 0;
+}
+
+/* ---------- 标题 ---------- */
+.streamdown-markdown [data-streamdown^="heading-"] {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-text-primary);  /* 标题文字色 · 主文字色 */
+}
+
+.streamdown-markdown [data-streamdown="heading-1"] {
+    font-size: 1.6rem;
+    margin: 1.75rem 0 0.75rem;
+}
+
+.streamdown-markdown [data-streamdown="heading-2"] {
+    font-size: 1.3rem;
+    margin: 1.5rem 0 0.5rem;
+}
+
+.streamdown-markdown [data-streamdown="heading-3"] {
+    font-size: 1.1rem;
+    margin: 1.25rem 0 0.5rem;
+}
+
+.streamdown-markdown [data-streamdown="heading-4"],
+.streamdown-markdown [data-streamdown="heading-5"],
+.streamdown-markdown [data-streamdown="heading-6"] {
+    font-size: 1rem;
+    margin: 1rem 0 0.375rem;
+}
+
+/* ---------- 水平分隔线 ---------- */
+.streamdown-markdown [data-streamdown="horizontal-rule"] {
+    border: none;
+    border-top: 1px solid var(--color-border);  /* 水平分隔线颜色 · 通用边框色 */
+    margin: 1.5rem 0;
+}
+
+/* ---------- 引用 ---------- */
+.streamdown-markdown [data-streamdown="blockquote"] {
+    border-left: 2px solid var(--color-border); /* 引用左竖线 · 通用边框色 */
+    padding: 0 0 0 0.875rem;
+    margin: 0.75rem 0;
+    color: var(--color-text-secondary);         /* 引用正文色 · 次要文字色（让引用比正文弱） */
+    background: transparent;                    /* 引用底色 · 透明，不喧宾夺主 */
+}
+
+/* ---------- 列表 ---------- */
+.streamdown-markdown [data-streamdown="ordered-list"],
+.streamdown-markdown [data-streamdown="unordered-list"] {
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
+}
+
+.streamdown-markdown [data-streamdown="list-item"] + [data-streamdown="list-item"] {
+    margin-top: 0.25rem;
+}
+
+/* ---------- 行内代码 ----------
+ * streamdown 默认用 shadcn 的 bg-muted + foreground；
+ * 这里改为 Claude 风的暖红褐文字 + 极淡 tint，不带边框。
+ */
+.streamdown-markdown [data-streamdown="inline-code"] {
+    color: var(--color-inline-code-text);       /* 行内代码文字色 · 暖红褐 */
+    background: var(--color-inline-code-bg);    /* 行内代码背景色 · 极淡红褐 tint */
+    padding: 0.125em 0.375em;
+    border-radius: 3px;
+    font-size: 0.9em;
+    border: none;
+}
+
+/* ---------- 表格 ----------
+ * streamdown 默认给表格外层套
+ *   "w-full divide-y divide-border overflow-hidden rounded-xl border border-border"，
+ *   并通过 controls.table 在顶部挂复制/下载/全屏按钮条（按钮已在
+ *   STREAMDOWN_CONTROLS 里全部关掉）。
+ * 这里改为 Claude 风："只保留表头下方和行间的水平分隔线，没有外框、圆角、竖线。"
+ */
+.streamdown-markdown [data-streamdown="table-wrapper"] {
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;            /* 表格外层底色 · 透明，不给表格加卡片壳 */
+}
+
+.streamdown-markdown [data-streamdown="table-wrapper"] > * + * {
+    border-top: none;
+}
+
+.streamdown-markdown [data-streamdown="table"] {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5rem 0;
+}
+
+.streamdown-markdown [data-streamdown="table"] thead {
+    border-bottom: 1px solid var(--color-border);  /* 表头下分隔线 · 通用边框色 */
+}
+
+.streamdown-markdown [data-streamdown="table"] tbody tr + tr {
+    border-top: 1px solid var(--color-border);     /* 行间分隔线 · 通用边框色 */
+}
+
+.streamdown-markdown [data-streamdown="table"] th,
+.streamdown-markdown [data-streamdown="table"] td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    vertical-align: top;
+    border: none;
+}
+
+.streamdown-markdown [data-streamdown="table"] th {
+    font-weight: 500;
+    color: var(--color-text-secondary);            /* 表头文字色 · 次要文字色 */
+}
+
+/* ============================================
+ * streamdown 代码块
+ * streamdown 默认给 [data-streamdown="code-block"] 套
+ *   "rounded-xl border border-border bg-sidebar gap-2 p-2"，
+ *   并在顶部渲染 [data-streamdown="code-block-header"]（语言标签
+ *   + [data-streamdown="code-block-actions"] 按钮条）。
+ *   代码正文 shiki 会给每一行 span 加
+ *   "before:content-[counter(line)] before:[counter-increment:line]"
+ *   生成行号。
+ * 当前设计：尽量贴近 Claude 的单层代码卡片
+ *   1) 外层：暖白底 + 细边框 + 大圆角
+ *   2) header：不再单独成条，只保留左上语言标签
+ *   3) actions：右上绝对定位，只保留复制图标
+ *   4) body：取消内层 card/border，直接在外层卡片里排代码
+ * ============================================ */
+.streamdown-markdown [data-streamdown="code-block"] {
+    position: relative;
+    margin: 0.875rem 0.5rem;
+    padding: 0;
+    gap: 0;
+    border: 1px solid var(--color-code-border); /* 代码块外框线 · 代码块专属边框色 */
+    border-radius: 0.5rem;                      /* 代码块圆角 · 8px，比原先 1rem 收小一档 */
+    background: var(--color-code-surface);      /* 代码块整卡底色 · rgb(252, 252, 251) */
+    overflow: hidden;
+}
+
+.streamdown-markdown [data-streamdown="code-block-header"] {
+    display: flex;
+    align-items: center;
+    min-height: 0;
+    height: auto;
+    padding: 1rem 4rem 0 1.25rem;
+    background: var(--color-code-header);       /* header 底色 · 透明，融入外层代码块底色 */
+    border: none;
+    color: var(--color-code-label);             /* header 语言标签文字色 · 暖灰 */
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.streamdown-markdown [data-streamdown="code-block-header"] span {
+    margin-left: 0;
+    font-family: inherit;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+.streamdown-markdown [data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
+    position: absolute;
+    top: 0.875rem;
+    right: 1rem;
+    z-index: 2;
+    margin: 0;
+    height: auto;
+    pointer-events: none;
+}
+
+.streamdown-markdown [data-streamdown="code-block-actions"] {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;  /* 复制按钮容器底色 · 透明，不抢戏 */
+    box-shadow: none;
+    backdrop-filter: none;
+    pointer-events: auto;
+}
+
+.streamdown-markdown [data-streamdown="code-block-copy-button"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.375rem;                /* 复制按钮圆角 · 6px，和外层代码块圆角同比例收小 */
+    background: transparent;                /* 复制按钮默认底色 · 透明 */
+    color: var(--color-code-action);        /* 复制按钮图标色 · 代码块 action 图标色 */
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.streamdown-markdown [data-streamdown="code-block-copy-button"]:hover {
+    background: var(--color-code-action-hover); /* 复制按钮 hover 底色 · 8% 淡 tint */
+    color: var(--color-code-action);            /* 复制按钮 hover 图标色 · 维持原色 */
+}
+
+.streamdown-markdown [data-streamdown="code-block-copy-button"] svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.streamdown-markdown [data-streamdown="code-block-body"] {
+    overflow-x: auto;
+    border: none;
+    border-radius: 0;
+    background: transparent;              /* 代码正文底色 · 透明，继承外层代码块底色 */
+    padding: 0.875rem 1.25rem 1.25rem;
+    color: var(--color-text-primary);     /* 代码正文默认文字色 · 主文字色（shiki 高亮会逐 token 覆写） */
+    font-size: 0.95rem;
+}
+
+.streamdown-markdown [data-streamdown="code-block-body"] pre {
+    margin: 0;
+    padding: 0;
+    background: transparent !important; /* 强制去掉 shiki 注入的 pre 内联底色，继承外层代码块底色 */
+    font-size: inherit;
+    line-height: 1.65;
+}
+
+.streamdown-markdown [data-streamdown="code-block-body"] code {
+    font-size: inherit;
+    line-height: inherit;
+}
+
+/* 关闭 streamdown 内置的行号：shiki 会在每行 span 上挂
+ * "before:content-[counter(line)]" + "before:[counter-increment:line]"，
+ * 这里用属性选择器匹配并清掉。 */
+.streamdown-markdown [data-streamdown="code-block-body"] span[class*="before:content"]::before,
+.streamdown-markdown [data-streamdown="code-block-body"] span[class*="before:[counter-increment"]::before {
+    content: none !important;
+    display: none !important;
+}
+
+.streamdown-markdown [data-streamdown="code-block-body"] span[class*="before:content"],
+.streamdown-markdown [data-streamdown="code-block-body"] span[class*="before:[counter-increment"] {
+    counter-increment: none !important;
+}
+
+.streamdown-markdown [data-streamdown="mermaid-block"] {
+    margin: 1rem 0;
+    border: none;
+    background: transparent;   /* Mermaid 外层容器底 · 透明，图表由 MermaidBlockRenderer 自己管 */
+    padding: 0;
+    gap: 0;
+}
+
+.streamdown-markdown [data-streamdown="mermaid-block"]>div:first-child,
+.streamdown-markdown [data-streamdown="mermaid-block-actions"] {
+    display: none;
+}
+
+.streamdown-markdown [data-streamdown="mermaid-block"]>div:last-child {
+    border: none;
+    background: transparent;   /* Mermaid 图表容器底 · 透明 */
+    border-radius: 0;
+}
+
+.streamdown-inline {
+    display: inline;
 }

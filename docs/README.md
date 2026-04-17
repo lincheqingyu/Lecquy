@@ -32,6 +32,7 @@
 
 - [`frontend/20260408-9-Tailwind className 编写 技术规范.md`](./frontend/20260408-9-Tailwind className 编写 技术规范.md)：Tailwind 4 + React className 编写约定
 - [`frontend/20260408-10-前端网络与 Public 资源 技术规范.md`](./frontend/20260408-10-前端网络与 Public 资源 技术规范.md)：前后端端口约定与 `frontend/public` 静态资源清单
+- [`frontend/20260417-1-Markdown 渲染排障 技术规范.md`](./frontend/20260417-1-Markdown%20渲染排障%20技术规范.md)：前端 markdown / Mermaid / ASCII 图表渲染链路、边界和排障顺序
 
 ## Backend 专题
 

@@ -4,6 +4,63 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 export type FilePreviewViewMode = 'preview' | 'source'
 
+interface FilePreviewModeToggleProps {
+  viewMode: FilePreviewViewMode
+  onViewModeChange: (mode: FilePreviewViewMode) => void
+  className?: string
+}
+
+export function FilePreviewModeToggle({
+  viewMode,
+  onViewModeChange,
+  className,
+}: FilePreviewModeToggleProps) {
+  return (
+    <div
+      className={clsx(
+        'relative inline-grid h-9 w-16 grid-cols-2 items-center rounded-[1rem] bg-[rgb(248,248,246)] p-1 dark:bg-[#2a2b2f]',
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={clsx(
+          'pointer-events-none absolute left-1 top-1 h-7 w-7 rounded-[0.8rem] bg-surface shadow-[0_1px_3px_rgba(15,23,42,0.12)] transition-transform duration-200 ease-out dark:bg-[#1f2023]',
+          viewMode === 'source' && 'translate-x-7',
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => onViewModeChange('preview')}
+        className={clsx(
+          'relative z-10 inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
+          viewMode === 'preview'
+            ? 'text-text-primary'
+            : 'text-text-secondary hover:text-text-primary',
+        )}
+        aria-label="预览模式"
+        aria-pressed={viewMode === 'preview'}
+      >
+        <Eye className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onViewModeChange('source')}
+        className={clsx(
+          'relative z-10 inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
+          viewMode === 'source'
+            ? 'text-text-primary'
+            : 'text-text-secondary hover:text-text-primary',
+        )}
+        aria-label="源码模式"
+        aria-pressed={viewMode === 'source'}
+      >
+        <Code2 className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
 export interface FilePreviewActionItem {
   label: string
   onSelect: () => void
@@ -55,44 +112,11 @@ export function FilePreviewPanelHeader({
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 bg-surface px-4 py-3">
       <div className="min-w-0 flex items-center gap-2">
-        {onViewModeChange ? (
-          <div className="relative inline-grid h-9 w-16 grid-cols-2 items-center rounded-[1rem] bg-[rgb(248,248,246)] p-1 dark:bg-[#2a2b2f]">
-            <span
-              aria-hidden="true"
-              className={clsx(
-                'pointer-events-none absolute left-1 top-1 h-7 w-7 rounded-[0.8rem] bg-surface shadow-[0_1px_3px_rgba(15,23,42,0.12)] transition-transform duration-200 ease-out dark:bg-[#1f2023]',
-                viewMode === 'source' && 'translate-x-7',
-              )}
-            />
-            <button
-              type="button"
-              onClick={() => onViewModeChange('preview')}
-              className={clsx(
-                'relative z-10 inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'preview'
-                  ? 'text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary',
-              )}
-              aria-label="预览模式"
-              aria-pressed={viewMode === 'preview'}
-            >
-              <Eye className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange('source')}
-              className={clsx(
-                'relative z-10 inline-flex size-7 items-center justify-center rounded-[0.8rem] transition-colors',
-                viewMode === 'source'
-                  ? 'text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary',
-              )}
-              aria-label="源码模式"
-              aria-pressed={viewMode === 'source'}
-            >
-              <Code2 className="size-3.5" />
-            </button>
-          </div>
+        {onViewModeChange && viewMode ? (
+          <FilePreviewModeToggle
+            viewMode={viewMode}
+            onViewModeChange={onViewModeChange}
+          />
         ) : null}
 
         <div className="min-w-0">

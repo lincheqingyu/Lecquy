@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ArtifactDetail } from '@lecquy/shared'
-import { renderMarkdown } from '../chat/MessageItem'
+import { StreamdownMarkdown } from '../chat/StreamdownMarkdown'
 import { fetchArtifactDetail, buildArtifactDownloadUrl } from '../../lib/session-api'
 import { formatBytes, inferArtifactPreviewMode, inferArtifactTypeLabel, inferCodeLanguage, stripFileExtension } from '../../lib/file-display'
 import { ShikiCodeView } from './ShikiCodeView'
@@ -225,14 +225,14 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
             </div>
           ) : previewMode === 'markdown' ? (
             <div className="px-5 py-4">
-              <div className="prose prose-slate dark:prose-invert mx-auto max-w-4xl text-text-primary">
-              {isDraft && (
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary not-prose">
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                  正在生成文件内容
-                </div>
-              )}
-              {renderMarkdown(content)}
+              <div className="mx-auto max-w-4xl text-text-primary">
+                {isDraft && (
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                    正在生成文件内容
+                  </div>
+                )}
+                <StreamdownMarkdown content={content} />
               </div>
             </div>
           ) : previewMode === 'text' ? (
