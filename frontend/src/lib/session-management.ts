@@ -15,6 +15,7 @@ import {
   type ChatArtifact,
 } from './artifacts'
 import {
+  appendThinkingDelta,
   appendTextDelta,
   blocksFromAssistantContent,
   blocksToText,
@@ -136,6 +137,10 @@ function mergeMessageBlocks(
   for (const block of incoming) {
     if (block.kind === 'text') {
       next = appendTextDelta(next, block.content)
+      continue
+    }
+    if (block.kind === 'thinking') {
+      next = appendThinkingDelta(next, block.content)
       continue
     }
     next = [...next, block]

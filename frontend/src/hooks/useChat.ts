@@ -3,6 +3,7 @@ import type { ArtifactTraceItem, ChatAttachment, ClientEventPayloadMap, ServerEv
 import { WS_BASE } from '../config/api.ts'
 import { createDraftArtifact, mergeArtifacts, mergeArtifactTraceItems, type ChatArtifact } from '../lib/artifacts.ts'
 import {
+  appendThinkingDelta,
   appendTextDelta,
   blocksToText,
   patchToolCall,
@@ -526,6 +527,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                 return {
                   ...message,
                   hasThinking: true,
+                  blocks: appendThinkingDelta(message.blocks ?? [], delta.content),
                   thinkingContent: (message.thinkingContent ?? '') + delta.content,
                 }
               }

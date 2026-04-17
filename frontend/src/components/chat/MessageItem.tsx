@@ -1,10 +1,11 @@
 import clsx from 'clsx'
-import { Check, ChevronDown, ChevronUp, Copy, ListTodo, RotateCcw, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, ListTodo, Sparkles } from 'lucide-react'
 import { useEffect, useState, type FocusEvent } from 'react'
 import { StreamdownMarkdown } from './StreamdownMarkdown'
+import { UserMessageBubble } from './UserMessageBubble'
 import type { ChatMessage } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl } from '../../lib/chat-attachments'
-import { blocksToText, groupMessageBlocks } from '../../lib/message-blocks'
+import { blocksToText, blocksToThinkingText, groupMessageBlocks } from '../../lib/message-blocks'
 import type { ChatAttachment } from '@lecquy/shared'
 import { ArtifactCard } from '../artifacts/ArtifactCard'
 import { ArtifactTrace } from '../artifacts/ArtifactTrace'
@@ -22,6 +23,7 @@ interface MessageItemProps {
   message: ChatMessage
   isLastAssistant?: boolean
   onResendUser?: (messageId: string) => void
+  onEditUser?: (messageId: string, nextContent: string) => void
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
@@ -124,6 +126,7 @@ export function MessageItem({
   message,
   isLastAssistant: _isLastAssistant = false,
   onResendUser,
+  onEditUser,
   onToggleThinking,
   onToggleTodo,
   onTogglePlanTask,
@@ -139,9 +142,11 @@ export function MessageItem({
   const isEvent = message.role === 'event'
   const primaryTextContent = blocksToText(message.blocks).trim() || message.content.trim()
   const hasToolBlocks = (message.blocks ?? []).some((block) => block.kind === 'tool_call')
+  const hasThinkingBlocks = (message.blocks ?? []).some((block) => block.kind === 'thinking')
   const hasPrimaryContent = primaryTextContent.length > 0
-  const hasThinkingContent = Boolean(message.hasThinking && message.thinkingContent?.trim())
-  const showThoughtsCard = Boolean((isAssistant || isEvent) && hasThinkingContent)
+  const thinkingContent = blocksToThinkingText(message.blocks).trim() || message.thinkingContent?.trim() || ''
+  const hasThinkingContent = thinkingContent.length > 0
+  const showThoughtsCard = Boolean((isAssistant || isEvent) && hasThinkingContent && !hasThinkingBlocks)
   const canCopyMessage = primaryTextContent.length > 0
   const todoItems = message.todoItems ?? []
   const planDetails = message.planDetails ?? {}
@@ -163,8 +168,6 @@ export function MessageItem({
   const hasArtifactOperations = artifactTraceItems.length > 0 || artifacts.some((artifact) => artifact.status === 'draft' || Boolean(artifact.content))
   const canRenderReadyArtifacts = readyArtifacts.length > 0 && message.stepStatus !== 'started'
   const hasArtifactContent = hasArtifactOperations || canRenderReadyArtifacts
-  const thinkingContent = message.thinkingContent ?? ''
-  const isPlainThoughtContent = isPlainThoughtText(thinkingContent)
   const isMarkdownStreaming = message.stepStatus === 'started' || thoughtTiming?.status === 'running'
 
   const renderMarkdownContent = (content: string, className?: string) => (
@@ -199,7 +202,7 @@ export function MessageItem({
     ? formatThoughtDuration(thoughtDurationMs)
     : null
 
-  if (isAssistant && !hasPrimaryContent && !hasToolBlocks && !showThoughtsCard && !hasArtifactContent) {
+  if (isAssistant && !hasPrimaryContent && !hasToolBlocks && !hasThinkingBlocks && !showThoughtsCard && !hasArtifactContent) {
     return null
   }
 
@@ -432,14 +435,105 @@ export function MessageItem({
     )
   }
 
+  const renderThinkingGroup = (
+    content: string,
+    label: string,
+    options?: { showCopyButton?: boolean },
+  ) => (
+    <div className="group/thoughts mb-3 transition-all">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onToggleThinking?.(message.id)}
+          className="inline-flex items-center gap-1.5 rounded-md py-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
+          aria-expanded={message.isThinkingExpanded}
+          aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
+        >
+          <Sparkles className="size-3.5" />
+          <span>{label}</span>
+          {message.isThinkingExpanded ? (
+            <ChevronUp className="size-3.5" />
+          ) : (
+            <ChevronDown className="size-3.5" />
+          )}
+        </button>
+
+        {options?.showCopyButton && message.isThinkingExpanded && (
+          <button
+            type="button"
+            onClick={handleCopyThoughts}
+            className="ml-0.5 inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary group-hover/thoughts:opacity-100"
+            aria-label="复制思考内容"
+            title="复制思考内容"
+          >
+            {thoughtCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
+          </button>
+        )}
+      </div>
+
+      {message.isThinkingExpanded && (
+        <div className="mt-1.5 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
+          {isPlainThoughtText(content) ? (
+            <span className="whitespace-pre-wrap break-words select-text">
+              {content}
+            </span>
+          ) : (
+            <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
+              {renderMarkdownContent(content)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderThinkingContinuation = (content: string) => {
+    if (!message.isThinkingExpanded) return null
+
+    return (
+      <div className="mb-3 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
+        {isPlainThoughtText(content) ? (
+          <span className="whitespace-pre-wrap break-words select-text">
+            {content}
+          </span>
+        ) : (
+          <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
+            {renderMarkdownContent(content)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const renderAssistantBlocks = () => {
     if (!isAssistant || (message.blocks?.length ?? 0) === 0) return null
 
+    let thoughtGroupIndex = 0
     return (
       <div className="space-y-2">
         {groupMessageBlocks(message.blocks ?? []).map((group) => {
           if (group.kind === 'text') {
-            return <div key={group.block.id}>{renderMarkdownContent(group.block.content)}</div>
+            const content = group.blocks.map((block) => block.content).join('')
+            return <div key={group.key}>{renderMarkdownContent(content)}</div>
+          }
+
+          if (group.kind === 'thinking') {
+            const content = group.blocks.map((block) => block.content).join('\n\n')
+            const isFirstGroup = thoughtGroupIndex === 0
+            thoughtGroupIndex += 1
+            if (!isFirstGroup) {
+              return <div key={group.key}>{renderThinkingContinuation(content)}</div>
+            }
+
+            return (
+              <div key={group.key}>
+                {renderThinkingGroup(
+                  content,
+                  thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…',
+                  { showCopyButton: true },
+                )}
+              </div>
+            )
           }
 
           if (group.kind === 'tool_single') {
@@ -472,7 +566,8 @@ export function MessageItem({
   return (
     <div
       className={clsx(
-        'flex w-full',
+        'relative flex w-full',
+        isAssistant && isActionBarVisible && 'z-10',
         isUser ? 'justify-end' : 'justify-start',
       )}
     >
@@ -488,16 +583,14 @@ export function MessageItem({
       >
         {attachments.length > 0 && renderAttachments()}
 
-        {(showThoughtsCard || hasPrimaryContent || hasToolBlocks || isEvent || hasArtifactContent) && (
+        {(showThoughtsCard || hasPrimaryContent || hasToolBlocks || hasThinkingBlocks || isEvent || hasArtifactContent) && (
           <div
             className={clsx(
-              // 对话区放大字号 + 收紧行距：text-base(16) / leading-[1.55]
-              'rounded-2xl px-4 py-2 text-base leading-[1.55]',
-              // 用户/AI 正文与思考统一挂衬线字族；事件/系统保持无衬线
-              isUser && hasPrimaryContent && 'w-fit bg-user-bubble text-text-primary border border-border/70 font-serif-mix',
-              isAssistant && 'w-full bg-transparent border-transparent shadow-none text-text-primary px-1 py-1 font-serif-mix',
-              isEvent && 'bg-surface text-text-secondary border border-border/80',
-              message.role === 'system' && 'bg-hover text-text-secondary border border-border',
+              'text-base leading-[1.55]',
+              isUser && 'w-fit max-w-full px-0 py-0',
+              isAssistant && 'w-full rounded-2xl bg-transparent border-transparent shadow-none px-1 py-1 text-text-primary font-serif-mix',
+              isEvent && 'rounded-2xl bg-surface px-4 py-2 text-text-secondary border border-border/80',
+              message.role === 'system' && 'rounded-2xl bg-hover text-text-secondary border border-border px-4 py-2',
             )}
           >
             {isEvent && eventLabel && (
@@ -506,62 +599,24 @@ export function MessageItem({
               </div>
             )}
 
-            {showThoughtsCard && (
-              <div className="group/thoughts mb-3 transition-all">
-                {/* 折叠/展开头：一行低调 section header */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onToggleThinking?.(message.id)}
-                    className="inline-flex items-center gap-1.5 rounded-md py-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
-                    aria-expanded={message.isThinkingExpanded}
-                    aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
-                  >
-                    <Sparkles className="size-3.5" />
-                    <span>
-                      {thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…'}
-                    </span>
-                    {message.isThinkingExpanded ? (
-                      <ChevronUp className="size-3.5" />
-                    ) : (
-                      <ChevronDown className="size-3.5" />
-                    )}
-                  </button>
-
-                  {/* 复制按钮：仅在展开且悬停时显示，不占折叠态空间 */}
-                  {message.isThinkingExpanded && (
-                    <button
-                      type="button"
-                      onClick={handleCopyThoughts}
-                      className="ml-0.5 inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary group-hover/thoughts:opacity-100"
-                      aria-label="复制思考内容"
-                      title="复制思考内容"
-                    >
-                      {thoughtCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-                    </button>
-                  )}
-                </div>
-
-                {/* 展开内容区：左侧引导线而非外框 */}
-                {message.isThinkingExpanded && (
-                  <div className="mt-1.5 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
-                    {isPlainThoughtContent ? (
-                      <span className="whitespace-pre-wrap break-words select-text">
-                        {thinkingContent}
-                      </span>
-                    ) : (
-                      <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
-                        {renderMarkdownContent(thinkingContent)}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+            {showThoughtsCard && renderThinkingGroup(
+              thinkingContent,
+              thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…',
+              { showCopyButton: true },
             )}
 
             {isAssistant && renderArtifactOperations()}
 
-            {isAssistant ? (
+            {isUser ? (
+              hasPrimaryContent ? (
+                <UserMessageBubble
+                  content={primaryTextContent}
+                  timestamp={message.timestamp}
+                  onResend={onResendUser ? () => onResendUser(message.id) : undefined}
+                  onEdit={onEditUser ? (nextContent) => onEditUser(message.id, nextContent) : undefined}
+                />
+              ) : null
+            ) : isAssistant ? (
               message.blocks?.length ? renderAssistantBlocks() : hasPrimaryContent ? renderMarkdownContent(primaryTextContent) : null
             ) : (
               hasPrimaryContent ? (
@@ -572,16 +627,16 @@ export function MessageItem({
             {isAssistant && renderReadyArtifactCards()}
           </div>
         )}
-        {(isUser || isAssistant) && canCopyMessage && (
+        {isAssistant && canCopyMessage && (
           <div
             className={clsx(
-              'mt-0.5 flex h-7 items-center',
-              isUser ? 'justify-end pr-0.5' : 'justify-start pl-1',
+              'relative mt-0.5 flex h-7 items-center',
+              'justify-start pl-1',
             )}
           >
             <div
               className={clsx(
-                'flex items-center gap-1 transition-opacity duration-150',
+                'relative z-10 flex items-center gap-1 transition-opacity duration-150',
                 isActionBarVisible
                   ? 'visible opacity-100 pointer-events-auto'
                   : 'invisible opacity-0 pointer-events-none',
@@ -596,17 +651,6 @@ export function MessageItem({
               >
                 {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
               </button>
-              {isUser && onResendUser && (
-                <button
-                  type="button"
-                  onClick={() => onResendUser(message.id)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-surface-alt text-text-primary transition-colors hover:bg-surface dark:text-white"
-                  aria-label="重新发送问题"
-                  title="重新发送问题"
-                >
-                  <RotateCcw className="size-3.5" />
-                </button>
-              )}
             </div>
           </div>
         )}

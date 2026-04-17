@@ -8,6 +8,12 @@ export interface MessageTextBlock {
   content: string
 }
 
+export interface MessageThinkingBlock {
+  kind: 'thinking'
+  id: string
+  content: string
+}
+
 export interface MessageToolCallBlock {
   kind: 'tool_call'
   id: string
@@ -22,10 +28,11 @@ export interface MessageToolCallBlock {
   manualExpanded?: boolean
 }
 
-export type MessageBlock = MessageTextBlock | MessageToolCallBlock
+export type MessageBlock = MessageTextBlock | MessageThinkingBlock | MessageToolCallBlock
 
 export type RenderGroup =
-  | { kind: 'text'; block: MessageTextBlock }
+  | { kind: 'text'; blocks: MessageTextBlock[]; key: string }
+  | { kind: 'thinking'; blocks: MessageThinkingBlock[]; key: string }
   | { kind: 'tool_single'; block: MessageToolCallBlock; narration?: MessageTextBlock[] }
   | { kind: 'tool_group'; blocks: MessageToolCallBlock[]; key: string; narration?: MessageTextBlock[] }
 
@@ -39,6 +46,14 @@ function createTextBlock(content: string): MessageTextBlock {
   return {
     kind: 'text',
     id: createBlockId('text'),
+    content,
+  }
+}
+
+function createThinkingBlock(content: string): MessageThinkingBlock {
+  return {
+    kind: 'thinking',
+    id: createBlockId('thinking'),
     content,
   }
 }
@@ -62,6 +77,23 @@ export function appendTextDelta(blocks: MessageBlock[], delta: string): MessageB
   }
 
   return [...blocks, createTextBlock(delta)]
+}
+
+export function appendThinkingDelta(blocks: MessageBlock[], delta: string): MessageBlock[] {
+  if (!delta) return blocks
+
+  const last = blocks.at(-1)
+  if (last?.kind === 'thinking') {
+    return [
+      ...blocks.slice(0, -1),
+      {
+        ...last,
+        content: last.content + delta,
+      },
+    ]
+  }
+
+  return [...blocks, createThinkingBlock(delta)]
 }
 
 export function pushToolCallStart(
@@ -142,87 +174,122 @@ export function blocksToText(blocks: MessageBlock[] | undefined): string {
     .join('')
 }
 
+export function blocksToThinkingText(blocks: MessageBlock[] | undefined): string {
+  return (blocks ?? [])
+    .filter((block): block is MessageThinkingBlock => block.kind === 'thinking')
+    .map((block) => block.content)
+    .join('\n\n')
+}
+
 export function getToolGroupKey(blocks: MessageToolCallBlock[]): string {
   const first = blocks[0]?.id ?? 'group'
   const last = blocks.at(-1)?.id ?? first
   return `${first}:${last}:${blocks.length}`
 }
 
+function getTextGroupKey(blocks: MessageTextBlock[]): string {
+  const first = blocks[0]?.id ?? 'text'
+  const last = blocks.at(-1)?.id ?? first
+  return `${first}:${last}:${blocks.length}`
+}
+
+function getThinkingGroupKey(blocks: MessageThinkingBlock[]): string {
+  const first = blocks[0]?.id ?? 'thinking'
+  const last = blocks.at(-1)?.id ?? first
+  return `${first}:${last}:${blocks.length}`
+}
+
 export function groupMessageBlocks(blocks: MessageBlock[]): RenderGroup[] {
-  let lastToolIndex = -1
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    if (blocks[index]?.kind === 'tool_call') {
-      lastToolIndex = index
-      break
+  const segments: Array<
+    | { kind: 'text'; blocks: MessageTextBlock[] }
+    | { kind: 'thinking'; blocks: MessageThinkingBlock[] }
+    | { kind: 'tool'; blocks: MessageToolCallBlock[] }
+  > = []
+
+  const appendSegmentBlock = (block: MessageBlock) => {
+    if ((block.kind === 'text' || block.kind === 'thinking') && !block.content.trim()) {
+      return
     }
+
+    const lastSegment = segments.at(-1)
+    if (!lastSegment) {
+      segments.push({
+        kind: block.kind === 'tool_call' ? 'tool' : block.kind,
+        blocks: [block] as MessageTextBlock[] & MessageThinkingBlock[] & MessageToolCallBlock[],
+      })
+      return
+    }
+
+    const segmentKind = block.kind === 'tool_call' ? 'tool' : block.kind
+    if (lastSegment.kind === segmentKind) {
+      ;(lastSegment.blocks as MessageBlock[]).push(block)
+      return
+    }
+
+    segments.push({
+      kind: segmentKind,
+      blocks: [block] as MessageTextBlock[] & MessageThinkingBlock[] & MessageToolCallBlock[],
+    })
   }
+
+  blocks.forEach(appendSegmentBlock)
 
   const groups: RenderGroup[] = []
-  let pendingNarration: MessageTextBlock[] = []
-  let currentToolBlocks: MessageToolCallBlock[] = []
+  segments.forEach((segment, index) => {
+    if (segment.kind === 'text') {
+      const next = segments[index + 1]
+      if (next?.kind === 'tool') {
+        return
+      }
 
-  const flushToolBlocks = () => {
-    if (currentToolBlocks.length === 0) {
+      groups.push({
+        kind: 'text',
+        blocks: segment.blocks,
+        key: getTextGroupKey(segment.blocks),
+      })
       return
     }
 
-    const narration = pendingNarration.length > 0 ? pendingNarration : undefined
-    if (currentToolBlocks.length >= TOOL_GROUP_THRESHOLD) {
+    if (segment.kind === 'thinking') {
+      groups.push({
+        kind: 'thinking',
+        blocks: segment.blocks,
+        key: getThinkingGroupKey(segment.blocks),
+      })
+      return
+    }
+
+    const previous = segments[index - 1]
+    const narration = previous?.kind === 'text' ? previous.blocks : undefined
+
+    if (segment.blocks.length >= TOOL_GROUP_THRESHOLD) {
       groups.push({
         kind: 'tool_group',
-        blocks: currentToolBlocks,
-        key: getToolGroupKey(currentToolBlocks),
+        blocks: segment.blocks,
+        key: getToolGroupKey(segment.blocks),
         narration,
       })
-    } else if (currentToolBlocks.length === 1) {
+      return
+    }
+
+    if (segment.blocks.length === 1) {
       groups.push({
         kind: 'tool_single',
-        block: currentToolBlocks[0],
+        block: segment.blocks[0],
         narration,
       })
-    } else {
-      currentToolBlocks.forEach((block, index) => {
-        groups.push({
-          kind: 'tool_single',
-          block,
-          narration: index === 0 ? narration : undefined,
-        })
+      return
+    }
+
+    segment.blocks.forEach((block, toolIndex) => {
+      groups.push({
+        kind: 'tool_single',
+        block,
+        narration: toolIndex === 0 ? narration : undefined,
       })
-    }
-
-    currentToolBlocks = []
-    pendingNarration = []
-  }
-
-  blocks.forEach((block, index) => {
-    if (block.kind === 'text' && !block.content.trim()) {
-      return
-    }
-
-    if (block.kind === 'tool_call') {
-      currentToolBlocks.push(block)
-      return
-    }
-
-    if (lastToolIndex >= 0 && index > lastToolIndex) {
-      flushToolBlocks()
-      groups.push({ kind: 'text', block })
-      return
-    }
-
-    if (lastToolIndex < 0) {
-      groups.push({ kind: 'text', block })
-      return
-    }
-
-    if (currentToolBlocks.length > 0) {
-      flushToolBlocks()
-    }
-
-    pendingNarration.push(block)
+    })
   })
 
-  flushToolBlocks()
   return groups
 }
 
@@ -241,6 +308,7 @@ export function blocksFromAssistantContent(content: unknown): {
 
     if (part.type === 'thinking') {
       if (part.thinking.trim()) {
+        blocks = appendThinkingDelta(blocks, part.thinking)
         thinkingParts.push(part.thinking)
       }
       continue

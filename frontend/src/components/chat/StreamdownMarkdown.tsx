@@ -1,10 +1,15 @@
 import clsx from 'clsx'
 import { Streamdown, CodeBlockCopyButton, type ControlsConfig, type CustomRendererProps, type MermaidOptions, type PluginConfig } from 'streamdown'
-import { useEffect, useId, useState } from 'react'
+import { Copy } from 'lucide-react'
+import { useEffect, useId, useState, type ComponentProps } from 'react'
 import { code } from '@streamdown/code'
 import { mermaid as mermaidPlugin } from '@streamdown/mermaid'
 import { cjk } from '@streamdown/cjk'
 import { FilePreviewModeToggle, type FilePreviewViewMode } from '../files/FilePreviewPanelHeader'
+
+function ClaudeCopyIcon({ size = 16, ...props }: ComponentProps<typeof Copy> & { size?: number }) {
+  return <Copy size={size} strokeWidth={1.55} {...props} />
+}
 
 function MermaidBlockRenderer({ code, isIncomplete }: CustomRendererProps) {
   const isDark = useDocumentDarkMode()
@@ -46,7 +51,7 @@ function MermaidBlockRenderer({ code, isIncomplete }: CustomRendererProps) {
   }, [code, isDark, isIncomplete, renderId, showPreview])
 
   return (
-    <div className="my-4 overflow-hidden rounded-[1.5rem] border border-border/80 bg-surface text-text-primary">
+    <div className="my-4 overflow-hidden rounded-[0.25rem] border border-border/80 bg-surface text-text-primary">
       <div className="relative">
         <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
           <CodeBlockCopyButton
@@ -186,6 +191,7 @@ export function StreamdownMarkdown({
       isAnimating={isAnimating}
       className={clsx('streamdown-markdown space-y-2', className)}
       controls={STREAMDOWN_CONTROLS}
+      icons={{ CopyIcon: ClaudeCopyIcon }}
       lineNumbers={false}
       linkSafety={{ enabled: false }}
       mermaid={mermaidOptions}

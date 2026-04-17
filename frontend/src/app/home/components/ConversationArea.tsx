@@ -169,6 +169,27 @@ export function ConversationArea({
     }
   }
 
+  const handleEditUser = (messageId: string, nextContent: string) => {
+    if (!effectiveCanSend) return
+
+    const index = messages.findIndex((candidate) => candidate.id === messageId)
+    if (index < 0) return
+
+    const target = messages[index]
+    if (target.role !== 'user') return
+
+    const text = nextContent.trim()
+    const attachments = target.attachments
+    if (!text && (!attachments || attachments.length === 0)) return
+
+    replaceMessages(messages.slice(0, index))
+
+    const sent = send({ text, attachments })
+    if (sent) {
+      setScrollRequestVersion((prev) => prev + 1)
+    }
+  }
+
   return (
     <div
       className={[
@@ -253,7 +274,8 @@ export function ConversationArea({
                 messages={messages}
                 isStreaming={isStreaming}
                 isWaiting={isWaiting}
-                onResendUser={handleResendUser}
+                onResendUser={effectiveCanSend ? handleResendUser : undefined}
+                onEditUser={effectiveCanSend ? handleEditUser : undefined}
                 onToggleThinking={toggleThinking}
                 onToggleTodo={toggleTodo}
                 onTogglePlanTask={togglePlanTask}

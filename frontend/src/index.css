@@ -382,9 +382,12 @@ input[type="number"] {
 .streamdown-markdown [data-streamdown="table-wrapper"] {
     margin-left: 0.5rem;
     margin-right: 0.5rem;
+    padding: 0;
+    gap: 0;
     border: none;
     border-radius: 0;
     background: transparent;            /* 表格外层底色 · 透明，不给表格加卡片壳 */
+    width: 100%;
 }
 
 .streamdown-markdown [data-streamdown="table-wrapper"] > * + * {
@@ -394,7 +397,7 @@ input[type="number"] {
 .streamdown-markdown [data-streamdown="table"] {
     border-collapse: collapse;
     width: 100%;
-    margin: 0.5rem 0;
+    margin: 0;
 }
 
 .streamdown-markdown [data-streamdown="table"] thead {
@@ -466,12 +469,22 @@ input[type="number"] {
 
 .streamdown-markdown [data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
     position: absolute;
-    top: 0.875rem;
-    right: 1rem;
+    top: 0.5rem;
+    right: 0.5rem;
     z-index: 2;
     margin: 0;
     height: auto;
+    opacity: 0;
+    transform: translateY(-1px);
+    transition: opacity 140ms ease, transform 140ms ease;
     pointer-events: none;
+}
+
+.streamdown-markdown [data-streamdown="code-block"]:hover > [data-streamdown="code-block-header"] + div,
+.streamdown-markdown [data-streamdown="code-block"]:focus-within > [data-streamdown="code-block-header"] + div {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 .streamdown-markdown [data-streamdown="code-block-actions"] {
@@ -491,15 +504,15 @@ input[type="number"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
     padding: 0;
     border: none;
-    border-radius: 0.375rem;                /* 复制按钮圆角 · 6px，和外层代码块圆角同比例收小 */
+    border-radius: 0.5rem;                  /* 复制按钮圆角 · 8px，贴近 Claude 的柔和按钮轮廓 */
     background: transparent;                /* 复制按钮默认底色 · 透明 */
     color: var(--color-code-action);        /* 复制按钮图标色 · 代码块 action 图标色 */
     cursor: pointer;
-    transition: background-color 120ms ease, color 120ms ease;
+    transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
 .streamdown-markdown [data-streamdown="code-block-copy-button"]:hover {
@@ -508,8 +521,9 @@ input[type="number"] {
 }
 
 .streamdown-markdown [data-streamdown="code-block-copy-button"] svg {
-    width: 1.25rem;
-    height: 1.25rem;
+    width: 1rem;
+    height: 1rem;
+    stroke-width: 1.55;
 }
 
 .streamdown-markdown [data-streamdown="code-block-body"] {

@@ -9,6 +9,7 @@ interface MessageListProps {
   isStreaming: boolean
   isWaiting: boolean
   onResendUser?: (messageId: string) => void
+  onEditUser?: (messageId: string, nextContent: string) => void
   onToggleThinking?: (messageId: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
@@ -34,6 +35,7 @@ export function MessageList({
   isStreaming,
   isWaiting,
   onResendUser,
+  onEditUser,
   onToggleThinking,
   onToggleTodo,
   onTogglePlanTask,
@@ -225,6 +227,7 @@ export function MessageList({
             message={message}
             isLastAssistant={message.id === lastAssistantId}
             onResendUser={onResendUser}
+            onEditUser={onEditUser}
             onToggleThinking={onToggleThinking}
             onToggleTodo={onToggleTodo}
             onTogglePlanTask={onTogglePlanTask}
