@@ -58,6 +58,9 @@ function formatAttachmentMeta(attachment: ChatAttachment): string {
  * 检测文本是否为 ASCII 图表内容（框图或树状图）。
  * 框图使用 Unicode Box Drawing 字符（┌─┐│└─┘├┤┬┴┼ 等），
  * 树状图使用 ├──、└── 等缩进树形结构。
+ *
+ * 阈值放宽：只要有 ≥ 2 行包含图表字符，并且占比 ≥ 30%，即视为图表。
+ * 原本 50% 阈值在"带解释性文字的树" 场景下容易失效（例如根节点 + 多行描述 + 少量分支行）。
  */
 function isDiagramContent(text: string): boolean {
   const lines = text.split('\n').filter(l => l.trim())
@@ -65,21 +68,208 @@ function isDiagramContent(text: string): boolean {
 
   // Box Drawing 区间 U+2500–U+257F 以及常见树状图模式
   const boxDrawingRegex = /[\u2500-\u257F]/
-  const diagramLines = lines.filter(l => boxDrawingRegex.test(l))
-  // 至少 50% 的非空行包含图表字符
-  return diagramLines.length >= lines.length * 0.5
+  const diagramLineCount = lines.filter(l => boxDrawingRegex.test(l)).length
+  if (diagramLineCount < 2) return false
+  return diagramLineCount >= lines.length * 0.3
+}
+
+function isStandaloneDiagramMarkdown(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  if (/(^|\n)\s*`{3,}/m.test(trimmed)) return false
+
+  const hasMarkdownStructure = /(^|\n)\s*(#{1,6}\s+|---+\s*$|\*\*\*+\s*$|[-*]\s+|\d+\.\s+|>\s+|\|.+\|\s*$)/m.test(trimmed)
+  if (hasMarkdownStructure) return false
+
+  return isDiagramContent(trimmed)
 }
 
 /**
  * 图表块组件 —— 内联渲染 ASCII 框图和树状图。
- * 不使用卡片容器，直接嵌入消息流。
- * Box Drawing 字符以灰色显示且不可选中，文本内容保持正常颜色。
- * 使用 leading-none 确保 │ 等竖线字符在相邻行间无间隙地连接。
+ * - 简单盒子图改为结构化边框，避免中英混排导致右侧竖线错位
+ * - 树状图改为 CSS 导线渲染，避免原始 │ 字符造成行距抖动
+ * - 复杂 ASCII 图表保留等宽兜底展示
  */
-function DiagramBlock({ content }: { content: string }) {
-  // 空内容保护：避免渲染出空的灰色块
-  if (!content.trim()) return null
+interface ParsedTreeLine {
+  depth: number
+  label: string
+  hasBranch: boolean
+}
 
+interface TreeDiagramNode {
+  id: string
+  label: string
+  hasBranch: boolean
+  children: TreeDiagramNode[]
+}
+
+function splitDiagramSections(content: string): string[][] {
+  // 代码围栏行（``` 或 ```lang）在图表内容里视为视觉分隔符，避免它们被当成树节点文本
+  const isFenceLine = (line: string) => /^`{3,}[^`]*$/.test(line.trim())
+  return normalizeDiagramLines(content).reduce<string[][]>((groups, line) => {
+    if (!line.trim() || isFenceLine(line)) {
+      if (groups[groups.length - 1]?.length) groups.push([])
+      return groups
+    }
+    if (!groups[groups.length - 1]) groups.push([])
+    groups[groups.length - 1].push(line)
+    return groups
+  }, [[]]).filter(group => group.length > 0)
+}
+
+function normalizeDiagramLines(content: string): string[] {
+  const rawLines = content.replace(/\r\n/g, '\n').split('\n')
+
+  while (rawLines.length > 0 && !rawLines[0].trim()) rawLines.shift()
+  while (rawLines.length > 0 && !rawLines[rawLines.length - 1].trim()) rawLines.pop()
+
+  if (rawLines.length === 0) return []
+
+  const minIndent = rawLines
+    .filter(line => line.trim())
+    .reduce((smallest, line) => {
+      const indentMatch = line.match(/^[ \t]*/)
+      const indentLength = indentMatch?.[0].length ?? 0
+      return Math.min(smallest, indentLength)
+    }, Number.POSITIVE_INFINITY)
+
+  if (!Number.isFinite(minIndent) || minIndent <= 0) {
+    return rawLines
+  }
+
+  return rawLines.map(line => line.slice(minIndent))
+}
+
+function extractBoxSectionContent(lines: string[]): string | null {
+  if (lines.length < 3) return null
+
+  const top = lines[0].trim()
+  const bottom = lines[lines.length - 1].trim()
+
+  const topIsBox = /^[┌╭][─━═\s]*[┐╮]$/.test(top)
+  const bottomIsBox = /^[└╰][─━═\s]*[┘╯]$/.test(bottom)
+
+  if (!topIsBox || !bottomIsBox) return null
+
+  const middle = lines.slice(1, -1)
+  if (middle.length === 0) return null
+
+  const innerLines = middle.map((line) => {
+    const trimmedEnd = line.trimEnd()
+    const withoutLeft = trimmedEnd.replace(/^\s*[│┃]\s?/, '')
+    const withoutRight = withoutLeft.replace(/\s?[│┃]\s*$/, '')
+    return withoutRight.trimEnd()
+  })
+
+  return normalizeDiagramLines(innerLines.join('\n')).join('\n')
+}
+
+function buildBoxDiagram(content: string): string[] | null {
+  const sections = splitDiagramSections(content)
+  if (sections.length === 0) return null
+
+  const innerContents = sections.map(extractBoxSectionContent)
+  if (innerContents.some((section) => section == null)) {
+    return null
+  }
+
+  return innerContents as string[]
+}
+
+function parseTreeLine(line: string): ParsedTreeLine | null {
+  if (!line.trim()) return null
+
+  let rest = line
+  let depth = 0
+
+  while (rest.startsWith('│   ') || rest.startsWith('    ')) {
+    depth += 1
+    rest = rest.slice(4)
+  }
+
+  const branchMatch = rest.match(/^([├└])(?:[─━═]{2,})\s?(.*)$/)
+  if (branchMatch) {
+    return {
+      depth,
+      hasBranch: true,
+      label: branchMatch[2].trimEnd(),
+    }
+  }
+
+  const paddedBranchMatch = rest.match(/^(\s+)([├└])(?:[─━═]{2,})\s?(.*)$/)
+  if (paddedBranchMatch && paddedBranchMatch[1].length >= 2) {
+    return {
+      depth: depth + 1,
+      hasBranch: true,
+      label: paddedBranchMatch[3].trimEnd(),
+    }
+  }
+
+  return {
+    depth,
+    hasBranch: false,
+    label: rest.trim(),
+  }
+}
+
+function buildTreeDiagram(content: string): TreeDiagramNode[][] | null {
+  const sections = splitDiagramSections(content)
+  if (sections.length === 0) return null
+
+  let nodeId = 0
+  const groups = sections.map((section) => {
+    let parsedLines = section.map(parseTreeLine).filter((line): line is ParsedTreeLine => Boolean(line))
+    const branchCount = parsedLines.filter(line => line.hasBranch).length
+    if (parsedLines.length === 0 || branchCount === 0) return null
+
+    // 根节点归并：若首行是 depth=0 且无分支字符的纯文本（例如 "Lecquy System"），
+    // 后续存在 depth=0 的分支行，则把首行视作 root，其余行整体下沉一级，
+    // 避免 root 与首层兄弟节点被渲染成平级列表。
+    if (parsedLines.length >= 2) {
+      const head = parsedLines[0]
+      const restHasTopLevelBranch = parsedLines
+        .slice(1)
+        .some(line => line.depth === 0 && line.hasBranch)
+      if (head.depth === 0 && !head.hasBranch && restHasTopLevelBranch) {
+        parsedLines = [
+          head,
+          ...parsedLines.slice(1).map(line => ({ ...line, depth: line.depth + 1 })),
+        ]
+      }
+    }
+
+    const root: TreeDiagramNode = {
+      id: 'root',
+      label: '',
+      hasBranch: false,
+      children: [],
+    }
+    const stack: Array<{ depth: number; node: TreeDiagramNode }> = [{ depth: -1, node: root }]
+
+    parsedLines.forEach((line) => {
+      const normalizedDepth = Math.min(line.depth, Math.max(0, stack.length - 1))
+      while (stack.length > normalizedDepth + 1) {
+        stack.pop()
+      }
+
+      const node: TreeDiagramNode = {
+        id: `tree-node-${nodeId++}`,
+        label: line.label,
+        hasBranch: line.hasBranch,
+        children: [],
+      }
+      stack[stack.length - 1].node.children.push(node)
+      stack.push({ depth: normalizedDepth, node })
+    })
+
+    return root.children
+  })
+
+  const validGroups = groups.filter((group): group is TreeDiagramNode[] => group != null && group.length > 0)
+  return validGroups.length > 0 ? validGroups : null
+}
+
+function RawDiagramBlock({ content }: { content: string }) {
   const boxDrawingTest = /[\u2500-\u257F]/
 
   // 将整块内容逐字符分段：连续的绘图字符 vs 连续的普通字符（含换行）
@@ -109,9 +299,196 @@ function DiagramBlock({ content }: { content: string }) {
   flush()
 
   return (
-    <pre className="overflow-x-auto font-mono text-sm leading-none text-text-primary">
+    <pre className="overflow-x-auto whitespace-pre font-mono text-sm leading-relaxed text-text-primary">
       <code>{segments}</code>
     </pre>
+  )
+}
+
+interface DiagramCopyControl {
+  copied: boolean
+  onCopy: () => void
+}
+
+function DiagramCard({
+  children,
+  copyControl,
+}: {
+  children: ReactNode
+  copyControl?: DiagramCopyControl
+}) {
+  return (
+    <div className="relative rounded-md border border-diagram-line px-6 py-5 pr-16">
+      {copyControl ? (
+        <button
+          type="button"
+          onClick={copyControl.onCopy}
+          className={[
+            'absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-md',
+            'bg-surface text-text-primary transition-all hover:bg-surface-alt',
+            'opacity-0 shadow-sm group-hover/diagram:opacity-100 group-focus-within/diagram:opacity-100',
+          ].join(' ')}
+          aria-label="复制图表"
+          title="复制图表"
+        >
+          {copyControl.copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </button>
+      ) : null}
+      {children}
+    </div>
+  )
+}
+
+function TreeNodeList({ nodes, showGuide }: { nodes: TreeDiagramNode[]; showGuide: boolean }) {
+  return (
+    <div className={clsx('space-y-0.5', showGuide && 'relative ml-1.5')}>
+      {showGuide ? (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-[0.55rem] left-[7px] top-[0.95rem] w-px bg-diagram-line"
+        />
+      ) : null}
+      {nodes.map(node => (
+        <div key={node.id}>
+          <div
+            className={clsx(
+              'relative whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-text-primary',
+              showGuide && 'pl-[26px]',
+            )}
+          >
+            {showGuide ? (
+              <span
+                aria-hidden="true"
+                className="absolute left-[7px] top-[0.95rem] h-px w-[18px] bg-diagram-line"
+              />
+            ) : null}
+            {renderInlineMarkdown(node.label)}
+          </div>
+          {node.children.length > 0 ? (
+            <div className="pt-1">
+              <TreeNodeList nodes={node.children} showGuide />
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TreeDiagramGroups({ groups }: { groups: TreeDiagramNode[][] }) {
+  return (
+    <div className="space-y-3">
+      {groups.map((nodes, index) => {
+        const showGuide = nodes.length > 0 && nodes.every(node => node.hasBranch)
+        return <TreeNodeList key={`tree-group-${index}`} nodes={nodes} showGuide={showGuide} />
+      })}
+    </div>
+  )
+}
+
+function TreeDiagramBlock({
+  groups,
+  copyControl,
+}: {
+  groups: TreeDiagramNode[][]
+  copyControl?: DiagramCopyControl
+}) {
+  return (
+    <div className="space-y-4">
+      {groups.map((nodes, index) => (
+        <DiagramCard key={`tree-card-${index}`} copyControl={index === 0 ? copyControl : undefined}>
+          <TreeDiagramGroups groups={[nodes]} />
+        </DiagramCard>
+      ))}
+    </div>
+  )
+}
+
+function DiagramSectionContent({ content }: { content: string }) {
+  const treeGroups = buildTreeDiagram(content)
+  if (treeGroups) {
+    return <TreeDiagramGroups groups={treeGroups} />
+  }
+
+  return <RawDiagramBlock content={content} />
+}
+
+function BoxSectionBlock({ section }: { section: string }) {
+  return (
+    <DiagramCard>
+      <DiagramSectionContent content={section} />
+    </DiagramCard>
+  )
+}
+
+function BoxDiagramBlock({
+  sections,
+  copyControl,
+}: {
+  sections: string[]
+  copyControl?: DiagramCopyControl
+}) {
+  return (
+    <div className="space-y-4">
+      {sections.map((section, index) => {
+        if (index === 0) {
+          return (
+            <DiagramCard key={`box-section-${index}`} copyControl={copyControl}>
+              <DiagramSectionContent content={section} />
+            </DiagramCard>
+          )
+        }
+
+        return <BoxSectionBlock key={`box-section-${index}`} section={section} />
+      })}
+    </div>
+  )
+}
+
+function DiagramContent({
+  content,
+  copyControl,
+}: {
+  content: string
+  copyControl?: DiagramCopyControl
+}) {
+  const boxSections = buildBoxDiagram(content)
+  if (boxSections) {
+    return <BoxDiagramBlock sections={boxSections} copyControl={copyControl} />
+  }
+
+  const treeGroups = buildTreeDiagram(content)
+  if (treeGroups) {
+    return <TreeDiagramBlock groups={treeGroups} copyControl={copyControl} />
+  }
+
+  return (
+    <DiagramCard copyControl={copyControl}>
+      <RawDiagramBlock content={content} />
+    </DiagramCard>
+  )
+}
+
+function DiagramBlock({ content }: { content: string }) {
+  // 空内容保护：避免渲染出空的灰色块
+  if (!content.trim()) return null
+
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyDiagram = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="group/diagram mx-2">
+      <DiagramContent content={content} copyControl={{ copied, onCopy: handleCopyDiagram }} />
+    </div>
   )
 }
 
@@ -179,6 +556,9 @@ function splitMarkdownSegments(text: string): MarkdownSegment[] {
   let nestedDepth = 0 // 嵌套代码块深度（处理 LLM 输出嵌套 ``` 的场景）
   let language = ''
   let buffer: string[] = []
+  // markdown/md 语言围栏的外层关闭行号
+  // -1 表示未启用前瞻特殊处理（按原通用规则处理）
+  let markdownOuterCloseIdx = -1
 
   const flushText = () => {
     const content = buffer.join('\n')
@@ -200,7 +580,14 @@ function splitMarkdownSegments(text: string): MarkdownSegment[] {
     return match ? match[0].length : 0
   }
 
-  for (const line of lines) {
+  // 判断某行是否是裸反引号围栏（``` 后无语言标识）
+  const isBareFence = (line: string): boolean => {
+    const count = countLeadingBackticks(line)
+    return count >= 3 && line.slice(count).trim() === ''
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const backtickCount = countLeadingBackticks(line)
 
     if (!inCode && backtickCount >= 3) {
@@ -210,6 +597,21 @@ function splitMarkdownSegments(text: string): MarkdownSegment[] {
       fenceLength = backtickCount
       nestedDepth = 0
       language = line.slice(backtickCount).trim()
+      markdownOuterCloseIdx = -1
+
+      // markdown/md 围栏专项前瞻：
+      // LLM 输出常见嵌套 ```markdown + ``` + 内容 + ``` + ```（全部 3 反引号），
+      // 此时第一个裸 ``` 其实是内层打开，而非关闭外层。
+      // 通过前瞻统计裸 ``` 的个数：奇数 → 最后一个才是外层关闭，前面都是内层 toggle。
+      if (language === 'markdown' || language === 'md') {
+        const bareFenceIdxs: number[] = []
+        for (let j = i + 1; j < lines.length; j++) {
+          if (isBareFence(lines[j])) bareFenceIdxs.push(j)
+        }
+        if (bareFenceIdxs.length >= 1 && bareFenceIdxs.length % 2 === 1) {
+          markdownOuterCloseIdx = bareFenceIdxs[bareFenceIdxs.length - 1]
+        }
+      }
       continue
     }
 
@@ -219,6 +621,22 @@ function splitMarkdownSegments(text: string): MarkdownSegment[] {
       if (trailing !== '') {
         // 有语言标识（如 ```python）：嵌套代码块开启，深度 +1
         nestedDepth++
+        buffer.push(line)
+        continue
+      }
+
+      // 裸 ``` —— markdown/md 围栏走前瞻驱动的分支
+      if (markdownOuterCloseIdx >= 0) {
+        if (i === markdownOuterCloseIdx) {
+          flushCode()
+          inCode = false
+          fenceLength = 0
+          nestedDepth = 0
+          language = ''
+          markdownOuterCloseIdx = -1
+          continue
+        }
+        // 其余裸 ``` 均视为内层嵌套的一部分，保留为内容
         buffer.push(line)
         continue
       }
@@ -402,9 +820,24 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
   let diagramLines: string[] = []
   let diagramPendingBlanks = 0 // 图表块内待定空行数
   let diagramKey = 0
+  // 延迟 paragraph：当下一个非空行是图表行时，
+  // 把当前 paragraph 当作图表的根节点吸入 diagramLines，避免根与树被割裂。
+  let pendingParagraphLine: string | null = null
+  let pendingParagraphKey = 0
 
   // Box Drawing 区间 U+2500–U+257F
   const boxDrawingLineRegex = /[\u2500-\u257F]/
+
+  const flushPendingParagraph = () => {
+    if (pendingParagraphLine === null) return
+    const text = pendingParagraphLine
+    pendingParagraphLine = null
+    nodes.push(
+      <p key={`pp-${blockIndex}-${pendingParagraphKey++}`} className="whitespace-pre-wrap break-words leading-relaxed">
+        {renderInlineMarkdown(text)}
+      </p>,
+    )
+  }
 
   const flushDiagram = () => {
     if (diagramLines.length === 0) return
@@ -485,6 +918,8 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     const trimmed = line.trim()
 
     if (!trimmed) {
+      // 空行先落定前一行待定段落（它与后续图表已被空行隔开，不再属于图表 root）
+      flushPendingParagraph()
       // 图表块内：用前瞻策略判断是否继续收集
       if (diagramLines.length > 0) {
         diagramPendingBlanks++
@@ -517,6 +952,12 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     if (boxDrawingLineRegex.test(trimmed)) {
       flushTable()
       flushList()
+      // 把紧邻的上一行普通段落（如 "Lecquy System"）当作树状图的根节点吸入图表块，
+      // 避免树 root 被渲染成游离的 <p>。
+      if (diagramLines.length === 0 && pendingParagraphLine !== null) {
+        diagramLines.push(pendingParagraphLine)
+        pendingParagraphLine = null
+      }
       // 将待定空行补入图表缓冲区
       for (let b = 0; b < diagramPendingBlanks; b++) {
         diagramLines.push('')
@@ -533,6 +974,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
 
     // 表格行检测：以 | 开头并以 | 结尾
     if (/^\|.+\|$/.test(trimmed)) {
+      flushPendingParagraph()
       flushList()
       tableLines.push(trimmed)
       return
@@ -544,12 +986,14 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     }
 
     if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+      flushPendingParagraph()
       flushList()
       nodes.push(<hr key={`hr-${blockIndex}-${lineIndex}`} className="my-2 border-border" />)
       return
     }
 
     if (/^#{1,6}\s+/.test(trimmed)) {
+      flushPendingParagraph()
       flushList()
       const level = trimmed.match(/^#+/)?.[0].length ?? 1
       const content = trimmed.replace(/^#{1,6}\s+/, '')
@@ -563,6 +1007,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     }
 
     if (/^>\s+/.test(trimmed)) {
+      flushPendingParagraph()
       flushList()
       nodes.push(
         <blockquote
@@ -577,6 +1022,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
 
     // 任务列表：- [ ] 或 - [x]
     if (/^[-*]\s+\[[ xX]\]\s+/.test(trimmed)) {
+      flushPendingParagraph()
       if (listType !== 'ul') {
         flushList()
         listType = 'ul'
@@ -599,6 +1045,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     }
 
     if (/^[-*]\s+/.test(trimmed)) {
+      flushPendingParagraph()
       if (listType !== 'ul') {
         flushList()
         listType = 'ul'
@@ -612,6 +1059,7 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
     }
 
     if (/^\d+\.\s+/.test(trimmed)) {
+      flushPendingParagraph()
       if (listType !== 'ol') {
         flushList()
         listType = 'ol'
@@ -624,14 +1072,14 @@ function renderTextBlock(block: string, blockIndex: number): ReactNode {
       return
     }
 
+    // 普通段落：先把上一行待定段落落定，再把当前行置为新的 pending，
+    // 等下一行来判断：如果是图表行，就把它吸入 diagramLines 当根节点。
+    flushPendingParagraph()
     flushList()
-    nodes.push(
-      <p key={`p-${blockIndex}-${lineIndex}`} className="whitespace-pre-wrap break-words leading-relaxed">
-        {renderInlineMarkdown(line)}
-      </p>,
-    )
+    pendingParagraphLine = line
   })
 
+  flushPendingParagraph()
   flushTable()
   flushDiagram()
   flushList()
@@ -701,7 +1149,7 @@ export function renderMarkdown(text: string): ReactNode {
           // markdown/md 语言的代码块：空内容跳过，图表内容直接用 DiagramBlock，其余递归渲染
           if (segment.language === 'markdown' || segment.language === 'md') {
             if (!segment.content.trim()) return null
-            if (isDiagramContent(segment.content)) {
+            if (isStandaloneDiagramMarkdown(segment.content)) {
               return <DiagramBlock key={`diagram-${index}`} content={segment.content} />
             }
             return <MarkdownPreviewBlock key={`md-${index}`} code={segment.content} />
