@@ -1,5 +1,5 @@
 import { Ellipsis, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 export interface ConversationItem {
   id: string
@@ -37,9 +37,37 @@ export function ConversationSidebar({
   isLoading = false,
 }: ConversationSidebarProps) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [menuPlacement, setMenuPlacement] = useState<'up' | 'down'>('down')
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const menuPanelRef = useRef<HTMLDivElement | null>(null)
   const collapsedIconShellClass = 'inline-flex h-9 w-9 items-center justify-center rounded-full'
   const collapsedGlyphClass = 'size-[18px] shrink-0'
+
+  const updateMenuPlacement = useCallback(() => {
+    const button = menuButtonRef.current
+    const panel = menuPanelRef.current
+    if (!button || !panel) return
+
+    const buttonRect = button.getBoundingClientRect()
+    const panelRect = panel.getBoundingClientRect()
+    const gap = 8
+    const requiredHeight = panelRect.height + gap
+    const spaceAbove = buttonRect.top
+    const spaceBelow = window.innerHeight - buttonRect.bottom
+
+    if (spaceBelow >= requiredHeight) {
+      setMenuPlacement('down')
+      return
+    }
+
+    if (spaceAbove >= requiredHeight) {
+      setMenuPlacement('up')
+      return
+    }
+
+    setMenuPlacement(spaceAbove > spaceBelow ? 'up' : 'down')
+  }, [])
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -51,6 +79,27 @@ export function ConversationSidebar({
     window.addEventListener('mousedown', handlePointerDown)
     return () => window.removeEventListener('mousedown', handlePointerDown)
   }, [])
+
+  useLayoutEffect(() => {
+    if (!menuOpenId) return
+    updateMenuPlacement()
+  }, [menuOpenId, updateMenuPlacement])
+
+  useEffect(() => {
+    if (!menuOpenId) return
+
+    const handleLayoutChange = () => {
+      updateMenuPlacement()
+    }
+
+    window.addEventListener('resize', handleLayoutChange)
+    document.addEventListener('scroll', handleLayoutChange, true)
+
+    return () => {
+      window.removeEventListener('resize', handleLayoutChange)
+      document.removeEventListener('scroll', handleLayoutChange, true)
+    }
+  }, [menuOpenId, updateMenuPlacement])
 
   return (
     <aside
@@ -216,9 +265,11 @@ export function ConversationSidebar({
 
                         <div ref={menuOpenId === conversation.id ? menuRef : null} className="relative shrink-0">
                           <button
+                            ref={menuOpenId === conversation.id ? menuButtonRef : null}
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
+                              setMenuPlacement('down')
                               setMenuOpenId((prev) => (prev === conversation.id ? null : conversation.id))
                             }}
                             className={[
@@ -233,7 +284,13 @@ export function ConversationSidebar({
                           </button>
 
                           {menuOpenId === conversation.id && (
-                            <div className="absolute right-0 top-10 z-20 min-w-40 rounded-2xl border border-border/80 bg-surface p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.12)]">
+                            <div
+                              ref={menuPanelRef}
+                              className={[
+                                'absolute right-0 z-20 min-w-40 rounded-2xl border border-border/80 bg-surface p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.12)]',
+                                menuPlacement === 'up' ? 'bottom-10' : 'top-10',
+                              ].join(' ')}
+                            >
                               <button
                                 type="button"
                                 onClick={(e) => {
