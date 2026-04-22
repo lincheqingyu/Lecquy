@@ -23,6 +23,8 @@ import {
   type MessageBlock,
 } from './message-blocks'
 
+const CANCELLED_STEP_SUMMARY = '回答已中断'
+
 export interface SessionListItemVm {
   id: string
   title: string
@@ -162,6 +164,23 @@ function appendAssistantContent(message: ChatMessage, content: unknown): void {
   }
 }
 
+function sanitizeCancelledAssistantMessage(message: ChatMessage): void {
+  const blockText = blocksToText(message.blocks).trim()
+  const contentText = message.content.trim()
+  const retainedText =
+    blockText && blockText !== CANCELLED_STEP_SUMMARY
+      ? blockText
+      : !blockText && contentText && contentText !== CANCELLED_STEP_SUMMARY
+        ? contentText
+        : ''
+
+  message.content = retainedText
+  message.blocks = retainedText ? appendTextDelta([], retainedText) : []
+  message.thinkingContent = undefined
+  message.hasThinking = false
+  message.thoughtTiming = undefined
+}
+
 export function toChatMessagesFromHistoryView(projection: SessionProjection, entries: SessionEventEntry[]): ChatMessage[] {
   const messages: ChatMessage[] = []
   const messageById = new Map<string, ChatMessage>()
@@ -267,6 +286,18 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
     stepMessageById.set(stepId, id)
     attachPendingArtifacts(stepId, message)
     return message
+  }
+
+  const cleanupCancelledRun = (runId: string) => {
+    for (const [stepId, step] of stepById.entries()) {
+      if (step.runId !== runId) continue
+
+      const assistantMessageId = stepMessageById.get(stepId)
+      const assistantMessage = assistantMessageId ? messageById.get(assistantMessageId) : undefined
+      if (!assistantMessage) continue
+
+      sanitizeCancelledAssistantMessage(assistantMessage)
+    }
   }
 
   entries.forEach((entry, index) => {
@@ -516,6 +547,9 @@ export function toChatMessagesFromHistoryView(projection: SessionProjection, ent
         if (step.runId === entry.runId && step.status === 'running') {
           finalizeStep(stepId, finishedAt, fallbackStatus, index)
         }
+      }
+      if (entry.status === 'cancelled') {
+        cleanupCancelledRun(entry.runId)
       }
       activeRunById.delete(entry.runId)
     }

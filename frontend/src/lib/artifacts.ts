@@ -190,6 +190,21 @@ export function formatArtifactTraceSummary(items: ArtifactTraceItem[]): string {
   return items.map((item) => item.subtitle).join(', ')
 }
 
+export function isFileOperationTraceItem(item: ArtifactTraceItem): boolean {
+  return item.kind === 'created_file' || item.kind === 'updated_file'
+}
+
+export function doesArtifactMatchTraceItem(trace: ArtifactTraceItem, artifact: ChatArtifact): boolean {
+  return trace.detail === artifact.name || trace.detail === artifact.filePath
+}
+
+export function hasFileOperationTraceItem(
+  items: ArtifactTraceItem[] | undefined,
+  artifact: ChatArtifact,
+): boolean {
+  return (items ?? []).some((item) => isFileOperationTraceItem(item) && doesArtifactMatchTraceItem(item, artifact))
+}
+
 export function createDraftArtifact(
   stepId: string,
   toolName: string,

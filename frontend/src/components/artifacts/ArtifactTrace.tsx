@@ -1,7 +1,11 @@
 import { ChevronDown, ChevronUp, FileText, LoaderCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ArtifactTraceItem } from '@lecquy/shared'
-import type { ChatArtifact } from '../../lib/artifacts'
+import {
+  doesArtifactMatchTraceItem,
+  isFileOperationTraceItem,
+  type ChatArtifact,
+} from '../../lib/artifacts'
 
 interface ArtifactTraceProps {
   items: ArtifactTraceItem[]
@@ -9,7 +13,7 @@ interface ArtifactTraceProps {
   onOpenArtifact?: (artifact: ChatArtifact) => void
 }
 
-interface ArtifactOperationEntry {
+export interface ArtifactOperationEntry {
   key: string
   artifact?: ChatArtifact
   trace?: ArtifactTraceItem
@@ -18,40 +22,39 @@ interface ArtifactOperationEntry {
 
 const PREVIEW_STREAM_INTERVAL_MS = 16
 
-function isFileOperationTrace(item: ArtifactTraceItem): boolean {
-  return item.kind === 'created_file' || item.kind === 'updated_file'
-}
-
-function matchTraceToArtifact(trace: ArtifactTraceItem, artifact: ChatArtifact): boolean {
-  return trace.detail === artifact.name || trace.detail === artifact.filePath
-}
-
-function buildOperationEntries(items: ArtifactTraceItem[], artifacts: ChatArtifact[]): ArtifactOperationEntry[] {
-  const fileTraces = items.filter(isFileOperationTrace)
-  const usedTraceIds = new Set<string>()
+export function buildFileOperationEntries(items: ArtifactTraceItem[], artifacts: ChatArtifact[]): ArtifactOperationEntry[] {
+  const fileTraces = items.filter(isFileOperationTraceItem)
+  const usedArtifactIds = new Set<string>()
   const entries: ArtifactOperationEntry[] = []
 
-  for (const [artifactIndex, artifact] of artifacts.entries()) {
-    const matchedTrace = fileTraces.find((item) => !usedTraceIds.has(item.traceId) && matchTraceToArtifact(item, artifact))
-    if (matchedTrace) {
-      usedTraceIds.add(matchedTrace.traceId)
-    }
-
-    if (artifact.status === 'draft' || matchedTrace || artifact.content) {
+  for (const trace of fileTraces) {
+    const artifactIndex = artifacts.findIndex((artifact) =>
+      !usedArtifactIds.has(artifact.artifactId) && doesArtifactMatchTraceItem(trace, artifact),
+    )
+    if (artifactIndex >= 0) {
+      const artifact = artifacts[artifactIndex]
+      usedArtifactIds.add(artifact.artifactId)
       entries.push({
         key: artifact.artifactId,
         artifact,
-        trace: matchedTrace,
+        trace,
         artifactIndex,
       })
+      continue
     }
-  }
-
-  for (const trace of fileTraces) {
-    if (usedTraceIds.has(trace.traceId)) continue
     entries.push({
       key: trace.traceId,
       trace,
+    })
+  }
+
+  for (const [artifactIndex, artifact] of artifacts.entries()) {
+    if (usedArtifactIds.has(artifact.artifactId)) continue
+    if (artifact.status === 'draft' || !artifact.content) continue
+    entries.push({
+      key: artifact.artifactId,
+      artifact,
+      artifactIndex,
     })
   }
 
@@ -60,7 +63,7 @@ function buildOperationEntries(items: ArtifactTraceItem[], artifacts: ChatArtifa
 
 function resolveOperationHeader(entry: ArtifactOperationEntry): string {
   if (entry.trace?.subtitle) return entry.trace.subtitle
-  return entry.artifact?.status === 'draft' ? 'Creating a file' : 'Created a file'
+  return 'Created a file'
 }
 
 function resolveOperationDetail(entry: ArtifactOperationEntry): string {
@@ -242,7 +245,7 @@ function ReadyOperationRow({
   )
 }
 
-function ArtifactOperation({
+export function ArtifactOperationCard({
   entry,
   onOpenArtifact,
 }: {
@@ -258,13 +261,13 @@ function ArtifactOperation({
 }
 
 export function ArtifactTrace({ items, artifacts = [], onOpenArtifact }: ArtifactTraceProps) {
-  const operations = buildOperationEntries(items, artifacts)
+  const operations = buildFileOperationEntries(items, artifacts)
   if (operations.length === 0) return null
 
   return (
     <div className="space-y-2">
       {operations.map((entry) => (
-        <ArtifactOperation
+        <ArtifactOperationCard
           key={`${entry.key}:${entry.artifact?.status ?? 'trace'}:${entry.artifact?.content ? 'preview' : 'empty'}`}
           entry={entry}
           onOpenArtifact={onOpenArtifact}

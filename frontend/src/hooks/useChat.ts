@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ArtifactTraceItem, ChatAttachment, ClientEventPayloadMap, ServerEventPayloadMap, StepKind, ThinkingConfig } from '@lecquy/shared'
 import { WS_BASE } from '../config/api.ts'
-import { createDraftArtifact, mergeArtifacts, mergeArtifactTraceItems, type ChatArtifact } from '../lib/artifacts.ts'
+import { mergeArtifacts, mergeArtifactTraceItems, type ChatArtifact } from '../lib/artifacts.ts'
+import {
+  logChatStream,
+  previewUnknown,
+  previewStreamContent,
+  summarizeBlocks,
+  summarizeGroups,
+} from '../lib/chat-stream-debug.ts'
 import {
   appendThinkingDelta,
   appendTextDelta,
   blocksToText,
+  closeTrailingThinkingBlock,
+  finalizeRunningThinkingBlocks,
   patchToolCall,
   pushToolCallStart,
   type MessageBlock,
@@ -52,6 +61,7 @@ export interface ChatMessage {
   stepId?: string
   stepStatus?: ServerEventPayloadMap['step_state']['status']
   thoughtTiming?: ThoughtTiming
+  collapsedThinkingGroupKeys?: string[]
   collapsedToolGroupKeys?: string[]
 }
 
@@ -144,6 +154,43 @@ function isToolCallExpanded(block: MessageToolCallBlock): boolean {
   return true
 }
 
+const CANCELLED_STEP_SUMMARY = '回答已中断'
+
+function extractEventSessionKey(
+  payload: ServerEventPayloadMap[keyof ServerEventPayloadMap],
+): string | null {
+  if (!payload || typeof payload !== 'object' || !('sessionKey' in payload)) return null
+  return typeof payload.sessionKey === 'string' ? payload.sessionKey : null
+}
+
+function extractEventRunId(
+  payload: ServerEventPayloadMap[keyof ServerEventPayloadMap],
+): string | null {
+  if (!payload || typeof payload !== 'object' || !('runId' in payload)) return null
+  return typeof payload.runId === 'string' ? payload.runId : null
+}
+
+function sanitizeCancelledAssistantMessage(message: ChatMessage): ChatMessage {
+  const blockText = blocksToText(message.blocks).trim()
+  const contentText = message.content.trim()
+  const retainedText =
+    blockText && blockText !== CANCELLED_STEP_SUMMARY
+      ? blockText
+      : !blockText && contentText && contentText !== CANCELLED_STEP_SUMMARY
+        ? contentText
+        : ''
+
+  return {
+    ...message,
+    content: retainedText,
+    blocks: retainedText ? appendTextDelta([], retainedText) : [],
+    thinkingContent: '',
+    hasThinking: false,
+    thoughtTiming: undefined,
+    stepStatus: 'failed',
+  }
+}
+
 export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: UseChatOptions) {
   const [mode, setMode] = useState<ChatMode>('simple')
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -162,8 +209,14 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
   const pendingArtifactTraceRef = useRef<Map<string, ArtifactTraceItem[]>>(new Map())
   const todoMessageIdRef = useRef<string | null>(null)
   const pendingUserIdRef = useRef<string | null>(null)
+  const currentSessionKeyRef = useRef<string | null>(currentSessionKey ?? null)
+  const allowedSessionKeyRef = useRef<string | null>(currentSessionKey ?? null)
+  const pendingSessionBindingRef = useRef(false)
+  const locallyCancelledRunIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
+    currentSessionKeyRef.current = currentSessionKey ?? null
+    allowedSessionKeyRef.current = currentSessionKey ?? null
     setBoundSessionKey(currentSessionKey ?? null)
   }, [currentSessionKey])
 
@@ -176,6 +229,8 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     pendingArtifactTraceRef.current.clear()
     todoMessageIdRef.current = null
     pendingUserIdRef.current = null
+    pendingSessionBindingRef.current = false
+    locallyCancelledRunIdsRef.current.clear()
     setIsStreaming(false)
     setIsWaiting(false)
   }, [])
@@ -190,11 +245,27 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     replaceMessages([])
   }, [replaceMessages])
 
-  const toggleThinking = useCallback((id: string) => {
-    updateMessage(setMessages, id, (message) => ({
-      ...message,
-      isThinkingExpanded: !message.isThinkingExpanded,
-    }))
+  const toggleThinking = useCallback((id: string, groupKey?: string) => {
+    updateMessage(setMessages, id, (message) => {
+      if (!groupKey) {
+        return {
+          ...message,
+          isThinkingExpanded: !message.isThinkingExpanded,
+        }
+      }
+
+      const currentKeys = new Set(message.collapsedThinkingGroupKeys ?? [])
+      if (currentKeys.has(groupKey)) {
+        currentKeys.delete(groupKey)
+      } else {
+        currentKeys.add(groupKey)
+      }
+
+      return {
+        ...message,
+        collapsedThinkingGroupKeys: Array.from(currentKeys),
+      }
+    })
   }, [])
 
   const togglePlanTask = useCallback((id: string, todoIndex: number) => {
@@ -253,19 +324,58 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     const finishedAt = Date.now()
     setMessages((prev) => prev.map((message) => {
       const timing = message.thoughtTiming
-      if (!timing || timing.status !== 'running') return message
+      const nextBlocks = message.blocks
+        ? finalizeRunningThinkingBlocks(message.blocks, status, finishedAt)
+        : message.blocks
+      if ((!timing || timing.status !== 'running') && nextBlocks === message.blocks) return message
 
       return {
         ...message,
+        blocks: nextBlocks,
         stepStatus: message.stepStatus === 'started' && status === 'failed' ? 'failed' : message.stepStatus,
-        thoughtTiming: {
-          status,
-          startedAt: timing.startedAt,
-          finishedAt,
-          durationMs: Math.max(0, finishedAt - timing.startedAt),
-        },
+        thoughtTiming: timing && timing.status === 'running'
+          ? {
+              status,
+              startedAt: timing.startedAt,
+              finishedAt,
+              durationMs: Math.max(0, finishedAt - timing.startedAt),
+            }
+          : timing,
       }
     }))
+  }, [])
+
+  const cleanupCancelledRunMessages = useCallback(() => {
+    const activeMessageIds = new Set(stepMessageIdsRef.current.values())
+    if (activeMessageIds.size === 0) return
+
+    setMessages((prev) => prev.map((message) => (
+      activeMessageIds.has(message.id)
+        ? sanitizeCancelledAssistantMessage(message)
+        : message
+    )))
+
+    stepMessageIdsRef.current.clear()
+    stepMetaRef.current.clear()
+    pendingArtifactsRef.current.clear()
+    pendingArtifactTraceRef.current.clear()
+  }, [])
+
+  const logAssistantSnapshot = useCallback((
+    scope: string,
+    meta: Record<string, unknown>,
+    message: ChatMessage,
+  ) => {
+    logChatStream(scope, {
+      ...meta,
+      messageId: message.id,
+      stepId: message.stepId,
+      stepStatus: message.stepStatus,
+      contentPreview: previewStreamContent(message.content),
+      thinkingPreview: previewStreamContent(message.thinkingContent),
+      blocks: summarizeBlocks(message.blocks),
+      groups: summarizeGroups(message.blocks),
+    })
   }, [])
 
   const ensurePlanMessage = useCallback(() => {
@@ -346,19 +456,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }
   }, [ensureStepMessage])
 
-  const bufferDraftArtifact = useCallback((stepId: string, toolName: string, args: unknown) => {
-    const stepMeta = stepMetaRef.current.get(stepId)
-    const stepKind = stepMeta?.kind ?? 'simple_reply'
-    const draftArtifact = createDraftArtifact(stepId, toolName, args)
-    if (!draftArtifact) return
-
-    pendingArtifactsRef.current.set(
-      stepId,
-      mergeArtifacts(pendingArtifactsRef.current.get(stepId), [draftArtifact]) ?? [],
-    )
-    flushPendingStepArtifacts(stepId, stepKind, { force: true })
-  }, [flushPendingStepArtifacts])
-
   const ensureWs = useCallback(() => {
     if (reconnectWsRef.current) return reconnectWsRef.current
 
@@ -370,9 +467,40 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
           const event = parsed.event
           if (!event) return
           const payload = (parsed.payload ?? {}) as ServerEventPayloadMap[keyof ServerEventPayloadMap]
+          const payloadSessionKey = extractEventSessionKey(payload)
+          const payloadRunId = extractEventRunId(payload)
+
+          if (payloadSessionKey) {
+            const shouldAcceptSession =
+              event === 'session_bound'
+                ? pendingSessionBindingRef.current
+                  || currentSessionKeyRef.current === null
+                  || currentSessionKeyRef.current === payloadSessionKey
+                : allowedSessionKeyRef.current === payloadSessionKey
+
+            if (!shouldAcceptSession) {
+              if (event === 'run_state') {
+                onWsEvent?.(event, payload as ServerEventPayloadMap['run_state'])
+              } else if (event === 'session_title_updated') {
+                onWsEvent?.(event, payload as ServerEventPayloadMap['session_title_updated'])
+              }
+              return
+            }
+          }
+
+          const isLocallyCancelledRun = Boolean(
+            payloadRunId
+            && locallyCancelledRunIdsRef.current.has(payloadRunId)
+          )
+
+          if (isLocallyCancelledRun && event !== 'run_state') {
+            return
+          }
 
           if (event === 'session_bound') {
             const bound = payload as ServerEventPayloadMap['session_bound']
+            pendingSessionBindingRef.current = false
+            allowedSessionKeyRef.current = bound.sessionKey
             setBoundSessionKey(bound.sessionKey)
             setCurrentSessionId(bound.sessionId)
             onWsEvent?.(event, bound)
@@ -391,6 +519,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'run_state') {
             const run = payload as ServerEventPayloadMap['run_state']
+            const wasLocallyCancelled = locallyCancelledRunIdsRef.current.has(run.runId)
             currentRunIdRef.current = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled'
               ? null
               : run.runId
@@ -399,9 +528,14 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
               currentPauseIdRef.current = null
               pendingUserIdRef.current = null
-              finalizeRunningThoughts(run.status === 'completed' ? 'completed' : 'failed')
+              if (wasLocallyCancelled && run.status !== 'completed') {
+                cleanupCancelledRunMessages()
+              } else {
+                finalizeRunningThoughts(run.status === 'completed' ? 'completed' : 'failed')
+              }
+              locallyCancelledRunIdsRef.current.delete(run.runId)
             }
-            if (run.status === 'failed' && run.error) {
+            if (run.status === 'failed' && run.error && !wasLocallyCancelled) {
               appendMessage(setMessages, {
                 id: createId('system'),
                 role: 'system',
@@ -415,6 +549,14 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'step_state') {
             const step = payload as ServerEventPayloadMap['step_state']
+            logChatStream('ws:step_state', {
+              sessionKey: step.sessionKey,
+              runId: step.runId,
+              stepId: step.stepId,
+              kind: step.kind,
+              status: step.status,
+              summaryPreview: previewStreamContent(step.summary),
+            })
             stepMetaRef.current.set(step.stepId, { kind: step.kind, todoIndex: step.todoIndex })
 
             if (step.kind === 'planner') {
@@ -465,19 +607,31 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               onWsEvent?.(event, step)
               return
             }
-            updateMessage(setMessages, messageId, (message) => ({
-              ...message,
-              content:
-                step.summary && !blocksToText(message.blocks).trim()
-                  ? step.summary
-                  : message.content,
-              blocks:
-                step.summary && !blocksToText(message.blocks).trim()
-                  ? appendTextDelta([], step.summary)
-                  : message.blocks,
-              stepStatus: step.status,
-              thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
-            }))
+            updateMessage(setMessages, messageId, (message) => {
+              const nextBlocks = step.status === 'started'
+                ? message.blocks
+                : finalizeRunningThinkingBlocks(message.blocks ?? [], step.status, step.finishedAt ?? Date.now())
+              const nextMessage = {
+                ...message,
+                content:
+                  step.summary && !blocksToText(nextBlocks).trim()
+                    ? step.summary
+                    : message.content,
+                blocks:
+                  step.summary && !blocksToText(nextBlocks).trim()
+                    ? appendTextDelta([], step.summary)
+                    : nextBlocks,
+                stepStatus: step.status,
+                thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
+              }
+              logAssistantSnapshot('message:update:step_state', {
+                sessionKey: step.sessionKey,
+                runId: step.runId,
+                kind: step.kind,
+                status: step.status,
+              }, nextMessage)
+              return nextMessage
+            })
             flushPendingStepArtifacts(step.stepId, step.kind)
             onWsEvent?.(event, step)
             return
@@ -485,6 +639,15 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'step_delta') {
             const delta = payload as ServerEventPayloadMap['step_delta']
+            logChatStream('ws:step_delta', {
+              sessionKey: delta.sessionKey,
+              runId: delta.runId,
+              stepId: delta.stepId,
+              kind: delta.kind,
+              stream: delta.stream,
+              contentPreview: previewStreamContent(delta.content),
+              contentLength: delta.content.length,
+            })
             if (delta.kind === 'task') {
               const todoIndex = stepMetaRef.current.get(delta.stepId)?.todoIndex
               if (typeof todoIndex === 'number') {
@@ -524,19 +687,36 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             const stream = delta.stream ?? 'text'
             updateMessage(setMessages, messageId, (message) => {
               if (stream === 'thinking') {
-                return {
+                const nextMessage = {
                   ...message,
                   hasThinking: true,
-                  blocks: appendThinkingDelta(message.blocks ?? [], delta.content),
+                  blocks: appendThinkingDelta(message.blocks ?? [], delta.content, { startedAt: Date.now() }),
                   thinkingContent: (message.thinkingContent ?? '') + delta.content,
                 }
+                logAssistantSnapshot('message:update:step_delta:thinking', {
+                  sessionKey: delta.sessionKey,
+                  runId: delta.runId,
+                  stream,
+                  contentPreview: previewStreamContent(delta.content),
+                }, nextMessage)
+                return nextMessage
               }
 
-              return {
+              const nextMessage = {
                 ...message,
                 content: message.content + delta.content,
-                blocks: appendTextDelta(message.blocks ?? [], delta.content),
+                blocks: appendTextDelta(
+                  closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
+                  delta.content,
+                ),
               }
+              logAssistantSnapshot('message:update:step_delta:text', {
+                sessionKey: delta.sessionKey,
+                runId: delta.runId,
+                stream,
+                contentPreview: previewStreamContent(delta.content),
+              }, nextMessage)
+              return nextMessage
             })
             flushPendingStepArtifacts(delta.stepId, delta.kind)
             return
@@ -578,6 +758,13 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_call_start') {
             const tool = payload as ServerEventPayloadMap['tool_call_start']
+            logChatStream('ws:tool_call_start', {
+              sessionKey: tool.sessionKey,
+              runId: tool.runId,
+              stepId: tool.stepId,
+              toolCallId: tool.toolCallId,
+              toolName: tool.toolName,
+            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -585,21 +772,36 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               return
             }
 
-            updateMessage(setMessages, messageId, (message) => ({
-              ...message,
-              blocks: pushToolCallStart(message.blocks ?? [], {
+            updateMessage(setMessages, messageId, (message) => {
+              const nextMessage = {
+                ...message,
+                blocks: pushToolCallStart(closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()), {
+                  toolCallId: tool.toolCallId,
+                  toolName: tool.toolName,
+                  args: tool.args,
+                }),
+              }
+              logAssistantSnapshot('message:update:tool_call_start', {
+                sessionKey: tool.sessionKey,
+                runId: tool.runId,
                 toolCallId: tool.toolCallId,
                 toolName: tool.toolName,
-                args: tool.args,
-              }),
-            }))
-            bufferDraftArtifact(tool.stepId, tool.toolName, tool.args)
+              }, nextMessage)
+              return nextMessage
+            })
             onWsEvent?.(event, tool)
             return
           }
 
           if (event === 'tool_call_delta') {
             const tool = payload as ServerEventPayloadMap['tool_call_delta']
+            logChatStream('ws:tool_call_delta', {
+              sessionKey: tool.sessionKey,
+              runId: tool.runId,
+              stepId: tool.stepId,
+              toolCallId: tool.toolCallId,
+              toolName: tool.toolName,
+            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -607,22 +809,40 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               return
             }
 
-            updateMessage(setMessages, messageId, (message) => ({
-              ...message,
-              blocks: patchToolCall(
-                message.blocks ?? [],
-                tool.toolCallId,
-                { args: tool.args },
-                { toolName: tool.toolName, status: 'running' },
-              ),
-            }))
-            bufferDraftArtifact(tool.stepId, tool.toolName, tool.args)
+            updateMessage(setMessages, messageId, (message) => {
+              const nextMessage = {
+                ...message,
+                blocks: patchToolCall(
+                  closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
+                  tool.toolCallId,
+                  { args: tool.args },
+                  { toolName: tool.toolName, status: 'running' },
+                ),
+              }
+              logAssistantSnapshot('message:update:tool_call_delta', {
+                sessionKey: tool.sessionKey,
+                runId: tool.runId,
+                toolCallId: tool.toolCallId,
+                toolName: tool.toolName,
+              }, nextMessage)
+              return nextMessage
+            })
             onWsEvent?.(event, tool)
             return
           }
 
           if (event === 'tool_call_end') {
             const tool = payload as ServerEventPayloadMap['tool_call_end']
+            logChatStream('ws:tool_call_end', {
+              sessionKey: tool.sessionKey,
+              runId: tool.runId,
+              stepId: tool.stepId,
+              toolCallId: tool.toolCallId,
+              toolName: tool.toolName,
+              status: tool.status,
+              resultPreview: tool.status === 'success' ? previewUnknown(tool.result) : undefined,
+              errorPreview: tool.status === 'error' ? previewStreamContent(tool.errorMessage) : undefined,
+            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -631,19 +851,28 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             }
 
             if (tool.status === 'success') {
-              updateMessage(setMessages, messageId, (message) => ({
-                ...message,
-                blocks: patchToolCall(
-                  message.blocks ?? [],
-                  tool.toolCallId,
-                  {
-                    status: 'success',
-                    result: tool.result,
-                    endedAt: Date.now(),
-                  },
-                  { toolName: tool.toolName, status: 'success' },
-                ),
-              }))
+              updateMessage(setMessages, messageId, (message) => {
+                const nextMessage = {
+                  ...message,
+                  blocks: patchToolCall(
+                    closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
+                    tool.toolCallId,
+                    {
+                      status: 'success',
+                      result: tool.result,
+                      endedAt: Date.now(),
+                    },
+                    { toolName: tool.toolName, status: 'success' },
+                  ),
+                }
+                logAssistantSnapshot('message:update:tool_call_end:success', {
+                  sessionKey: tool.sessionKey,
+                  runId: tool.runId,
+                  toolCallId: tool.toolCallId,
+                  toolName: tool.toolName,
+                }, nextMessage)
+                return nextMessage
+              })
 
               const readyArtifacts = (tool.generatedArtifacts ?? []).map((artifact) => ({
                 ...artifact,
@@ -664,20 +893,29 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                 flushPendingStepArtifacts(tool.stepId, stepKind)
               }
             } else {
-              updateMessage(setMessages, messageId, (message) => ({
-                ...message,
-                blocks: patchToolCall(
-                  message.blocks ?? [],
-                  tool.toolCallId,
-                  {
-                    status: 'error',
-                    errorMessage: tool.errorMessage,
-                    errorDetail: tool.errorDetail,
-                    endedAt: Date.now(),
-                  },
-                  { toolName: tool.toolName, status: 'error' },
-                ),
-              }))
+              updateMessage(setMessages, messageId, (message) => {
+                const nextMessage = {
+                  ...message,
+                  blocks: patchToolCall(
+                    closeTrailingThinkingBlock(message.blocks ?? [], 'failed', Date.now()),
+                    tool.toolCallId,
+                    {
+                      status: 'error',
+                      errorMessage: tool.errorMessage,
+                      errorDetail: tool.errorDetail,
+                      endedAt: Date.now(),
+                    },
+                    { toolName: tool.toolName, status: 'error' },
+                  ),
+                }
+                logAssistantSnapshot('message:update:tool_call_end:error', {
+                  sessionKey: tool.sessionKey,
+                  runId: tool.runId,
+                  toolCallId: tool.toolCallId,
+                  toolName: tool.toolName,
+                }, nextMessage)
+                return nextMessage
+              })
             }
 
             onWsEvent?.(event, tool)
@@ -743,7 +981,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     reconnectWsRef.current = ws
     return ws
-  }, [WS_BASE, bufferDraftArtifact, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, onWsEvent])
+  }, [WS_BASE, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, logAssistantSnapshot, onWsEvent])
 
   const buildModelOptions = useCallback(() => ({
     model: modelConfig.model,
@@ -810,6 +1048,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       return true
     }
 
+    pendingSessionBindingRef.current = !boundSessionKey
     const payload: ClientEventPayloadMap['run_start'] = {
       route: buildDefaultRoute({ peerId: peerId ?? getPeerId() }),
       mode,
@@ -826,7 +1065,10 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     if (!boundSessionKey) return
     const ws = ensureWs()
     const runId = currentRunIdRef.current ?? undefined
-    finalizeRunningThoughts('failed')
+    if (runId) {
+      locallyCancelledRunIdsRef.current.add(runId)
+    }
+    cleanupCancelledRunMessages()
     setIsStreaming(false)
     setIsWaiting(false)
     const payload: ClientEventPayloadMap['run_cancel'] = {
@@ -834,7 +1076,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
       runId,
     }
     ws.send(JSON.stringify({ event: 'run_cancel', payload }))
-  }, [boundSessionKey, ensureWs, finalizeRunningThoughts])
+  }, [boundSessionKey, cleanupCancelledRunMessages, ensureWs])
 
   useEffect(() => {
     return () => {

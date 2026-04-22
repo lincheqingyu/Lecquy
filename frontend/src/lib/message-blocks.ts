@@ -12,6 +12,10 @@ export interface MessageThinkingBlock {
   kind: 'thinking'
   id: string
   content: string
+  status?: 'running' | 'completed' | 'failed'
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
 }
 
 export interface MessageToolCallBlock {
@@ -33,8 +37,8 @@ export type MessageBlock = MessageTextBlock | MessageThinkingBlock | MessageTool
 export type RenderGroup =
   | { kind: 'text'; blocks: MessageTextBlock[]; key: string }
   | { kind: 'thinking'; blocks: MessageThinkingBlock[]; key: string }
-  | { kind: 'tool_single'; block: MessageToolCallBlock; narration?: MessageTextBlock[] }
-  | { kind: 'tool_group'; blocks: MessageToolCallBlock[]; key: string; narration?: MessageTextBlock[] }
+  | { kind: 'tool_single'; block: MessageToolCallBlock }
+  | { kind: 'tool_group'; blocks: MessageToolCallBlock[]; key: string }
 
 export const TOOL_GROUP_THRESHOLD = 3
 
@@ -50,11 +54,23 @@ function createTextBlock(content: string): MessageTextBlock {
   }
 }
 
-function createThinkingBlock(content: string): MessageThinkingBlock {
+function createThinkingBlock(
+  content: string,
+  options?: {
+    status?: MessageThinkingBlock['status']
+    startedAt?: number
+    endedAt?: number
+    durationMs?: number
+  },
+): MessageThinkingBlock {
   return {
     kind: 'thinking',
     id: createBlockId('thinking'),
     content,
+    status: options?.status,
+    startedAt: options?.startedAt,
+    endedAt: options?.endedAt,
+    durationMs: options?.durationMs,
   }
 }
 
@@ -79,21 +95,80 @@ export function appendTextDelta(blocks: MessageBlock[], delta: string): MessageB
   return [...blocks, createTextBlock(delta)]
 }
 
-export function appendThinkingDelta(blocks: MessageBlock[], delta: string): MessageBlock[] {
+export function appendThinkingDelta(
+  blocks: MessageBlock[],
+  delta: string,
+  options?: {
+    startedAt?: number
+  },
+): MessageBlock[] {
   if (!delta) return blocks
 
   const last = blocks.at(-1)
-  if (last?.kind === 'thinking') {
+  if (last?.kind === 'thinking' && last.status !== 'completed' && last.status !== 'failed') {
     return [
       ...blocks.slice(0, -1),
       {
         ...last,
         content: last.content + delta,
+        startedAt: last.startedAt ?? options?.startedAt,
+        status: last.status ?? (typeof options?.startedAt === 'number' ? 'running' : undefined),
       },
     ]
   }
 
-  return [...blocks, createThinkingBlock(delta)]
+  return [
+    ...blocks,
+    createThinkingBlock(delta, {
+      startedAt: options?.startedAt,
+      status: typeof options?.startedAt === 'number' ? 'running' : undefined,
+    }),
+  ]
+}
+
+function finalizeThinkingBlock(
+  block: MessageThinkingBlock,
+  status: 'completed' | 'failed',
+  finishedAt: number,
+): MessageThinkingBlock {
+  const startedAt = block.startedAt
+  return {
+    ...block,
+    status,
+    endedAt: finishedAt,
+    durationMs: typeof startedAt === 'number'
+      ? Math.max(0, finishedAt - startedAt)
+      : block.durationMs,
+  }
+}
+
+export function closeTrailingThinkingBlock(
+  blocks: MessageBlock[],
+  status: 'completed' | 'failed' = 'completed',
+  finishedAt = Date.now(),
+): MessageBlock[] {
+  const last = blocks.at(-1)
+  if (!last || last.kind !== 'thinking' || last.status === 'completed' || last.status === 'failed') {
+    return blocks
+  }
+
+  return [
+    ...blocks.slice(0, -1),
+    finalizeThinkingBlock(last, status, finishedAt),
+  ]
+}
+
+export function finalizeRunningThinkingBlocks(
+  blocks: MessageBlock[],
+  status: 'completed' | 'failed',
+  finishedAt = Date.now(),
+): MessageBlock[] {
+  return blocks.map((block) => {
+    if (block.kind !== 'thinking' || block.status === 'completed' || block.status === 'failed') {
+      return block
+    }
+    return finalizeThinkingBlock(block, status, finishedAt)
+  })
 }
 
 export function pushToolCallStart(
@@ -235,13 +310,8 @@ export function groupMessageBlocks(blocks: MessageBlock[]): RenderGroup[] {
   blocks.forEach(appendSegmentBlock)
 
   const groups: RenderGroup[] = []
-  segments.forEach((segment, index) => {
+  segments.forEach((segment) => {
     if (segment.kind === 'text') {
-      const next = segments[index + 1]
-      if (next?.kind === 'tool') {
-        return
-      }
-
       groups.push({
         kind: 'text',
         blocks: segment.blocks,
@@ -259,15 +329,11 @@ export function groupMessageBlocks(blocks: MessageBlock[]): RenderGroup[] {
       return
     }
 
-    const previous = segments[index - 1]
-    const narration = previous?.kind === 'text' ? previous.blocks : undefined
-
     if (segment.blocks.length >= TOOL_GROUP_THRESHOLD) {
       groups.push({
         kind: 'tool_group',
         blocks: segment.blocks,
         key: getToolGroupKey(segment.blocks),
-        narration,
       })
       return
     }
@@ -276,16 +342,14 @@ export function groupMessageBlocks(blocks: MessageBlock[]): RenderGroup[] {
       groups.push({
         kind: 'tool_single',
         block: segment.blocks[0],
-        narration,
       })
       return
     }
 
-    segment.blocks.forEach((block, toolIndex) => {
+    segment.blocks.forEach((block) => {
       groups.push({
         kind: 'tool_single',
         block,
-        narration: toolIndex === 0 ? narration : undefined,
       })
     })
   })

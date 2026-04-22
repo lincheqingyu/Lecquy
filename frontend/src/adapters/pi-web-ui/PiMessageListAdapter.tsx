@@ -9,7 +9,7 @@ interface PiMessageListAdapterProps {
   isWaiting: boolean
   onResendUser?: (messageId: string) => void
   onEditUser?: (messageId: string, nextContent: string) => void
-  onToggleThinking?: (messageId: string) => void
+  onToggleThinking?: (messageId: string, groupKey?: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
   onToggleToolCall?: (messageId: string, blockId: string) => void

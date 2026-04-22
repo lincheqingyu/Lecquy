@@ -1,12 +1,11 @@
 import clsx from 'clsx'
 import { AlertCircle, ChevronDown, LoaderCircle, Wrench } from 'lucide-react'
-import type { MessageTextBlock, MessageToolCallBlock } from '../../lib/message-blocks'
+import type { MessageToolCallBlock } from '../../lib/message-blocks'
 
 interface ToolCallCardProps {
   block: MessageToolCallBlock
   onToggle: () => void
   compact?: boolean
-  narration?: MessageTextBlock[]
 }
 
 /**
@@ -27,11 +26,81 @@ function formatDuration(durationMs: number): string {
   return `${(durationMs / 1000).toFixed(1)}s`
 }
 
-function formatToolTitle(block: MessageToolCallBlock): string {
-  if (block.status === 'running') return `正在调用 ${block.name}`
-  if (block.status === 'error') return `${block.name} 执行失败`
-  // success / unknown 统一文案，避免"勾选"感
-  return `已调用 ${block.name}`
+function extractStringArg(args: unknown, key: string): string | null {
+  if (!args || typeof args !== 'object' || !(key in args)) return null
+  const value = (args as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function basename(value: string | null): string | null {
+  if (!value) return null
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '')
+  const segments = normalized.split('/')
+  return segments.at(-1) || normalized
+}
+
+function summarizeCommand(command: string | null): string | null {
+  if (!command) return null
+  const compact = command.replace(/\s+/g, ' ').trim()
+  if (!compact) return null
+  return compact.length > 36 ? `${compact.slice(0, 33)}...` : compact
+}
+
+interface ToolCardPresentation {
+  title: string
+  hidden: boolean
+}
+
+function resolveWriteAction(block: MessageToolCallBlock): 'created' | 'updated' | 'unknown' {
+  if (!block.result || typeof block.result !== 'object' || !('details' in block.result)) return 'unknown'
+  const details = (block.result as { details?: unknown }).details
+  if (!details || typeof details !== 'object' || !('writeMode' in details)) return 'unknown'
+  const writeMode = (details as { writeMode?: unknown }).writeMode
+  return writeMode === 'created' || writeMode === 'updated' ? writeMode : 'unknown'
+}
+
+function resolveToolPresentation(block: MessageToolCallBlock): ToolCardPresentation {
+  const fileName = basename(extractStringArg(block.args, 'file_path'))
+  const skillName = extractStringArg(block.args, 'skill_name')
+  const readPath = basename(extractStringArg(block.args, 'path'))
+  const commandSummary = summarizeCommand(extractStringArg(block.args, 'command'))
+
+  switch (block.name) {
+    case 'write_file': {
+      if (block.status !== 'error') {
+        return { title: '', hidden: true }
+      }
+      const action = resolveWriteAction(block)
+      if (action === 'updated') {
+        return { title: fileName ? `Failed to update ${fileName}` : 'Failed to update a file', hidden: false }
+      }
+      return { title: fileName ? `Failed to create ${fileName}` : 'Failed to create a file', hidden: false }
+    }
+    case 'edit_file':
+      if (block.status === 'running') return { title: fileName ? `Editing ${fileName}` : 'Editing a file', hidden: false }
+      if (block.status === 'error') return { title: fileName ? `Failed to edit ${fileName}` : 'Failed to edit a file', hidden: false }
+      return { title: fileName ? `Edited ${fileName}` : 'Edited a file', hidden: false }
+    case 'read_file':
+      if (block.status === 'running') return { title: readPath ? `Reading ${readPath}` : 'Reading a file', hidden: false }
+      if (block.status === 'error') return { title: readPath ? `Failed to read ${readPath}` : 'Failed to read a file', hidden: false }
+      return { title: readPath ? `Viewed ${readPath}` : 'Viewed a file', hidden: false }
+    case 'skill':
+      if (block.status === 'running') return { title: skillName ? `Loading ${skillName}` : 'Loading a skill', hidden: false }
+      if (block.status === 'error') return { title: skillName ? `Failed to load ${skillName}` : 'Failed to load a skill', hidden: false }
+      return { title: skillName ? `Loaded ${skillName}` : 'Loaded a skill', hidden: false }
+    case 'bash':
+      if (block.status === 'running') return { title: commandSummary ? `Running ${commandSummary}` : 'Running a command', hidden: false }
+      if (block.status === 'error') return { title: commandSummary ? `Command failed: ${commandSummary}` : 'Command failed', hidden: false }
+      return { title: commandSummary ? `Ran ${commandSummary}` : 'Ran a command', hidden: false }
+    default:
+      if (block.status === 'running') return { title: 'Using a tool', hidden: false }
+      if (block.status === 'error') return { title: 'Tool execution failed', hidden: false }
+      return { title: 'Used a tool', hidden: false }
+  }
+}
+
+export function shouldRenderToolCallCard(block: MessageToolCallBlock): boolean {
+  return !resolveToolPresentation(block).hidden
 }
 
 function ToolStatusIcon({ block }: { block: MessageToolCallBlock }) {
@@ -45,34 +114,10 @@ function ToolStatusIcon({ block }: { block: MessageToolCallBlock }) {
   return <Wrench className="size-3.5 shrink-0 text-text-muted" />
 }
 
-/**
- * tool 前置解释性文字（narration）。默认低调灰显，失败 tool 的前置 narration 会提亮以突出因果。
- */
-export function ToolNarration({
-  blocks,
-  forceVisible = false,
-}: {
-  blocks: MessageTextBlock[]
-  forceVisible?: boolean
-}) {
-  if (!blocks.length) return null
-  return (
-    <div
-      className={clsx(
-        'mb-1 space-y-1 text-[12.5px] leading-relaxed',
-        forceVisible ? 'text-text-secondary' : 'text-text-muted',
-      )}
-    >
-      {blocks.map((block) => (
-        <div key={block.id} className="whitespace-pre-wrap">
-          {block.content}
-        </div>
-      ))}
-    </div>
-  )
-}
+export function ToolCallCard({ block, onToggle, compact = false }: ToolCallCardProps) {
+  const presentation = resolveToolPresentation(block)
+  if (presentation.hidden) return null
 
-export function ToolCallCard({ block, onToggle, compact = false, narration }: ToolCallCardProps) {
   const expanded = getEffectiveToolCallExpanded(block)
   const isError = block.status === 'error'
   const expandable = hasExpandableDetail(block)
@@ -91,8 +136,6 @@ export function ToolCallCard({ block, onToggle, compact = false, narration }: To
           : 'py-1',
       )}
     >
-      {narration && narration.length > 0 && <ToolNarration blocks={narration} forceVisible={isError} />}
-
       <button
         type="button"
         onClick={expandable ? onToggle : undefined}
@@ -104,7 +147,7 @@ export function ToolCallCard({ block, onToggle, compact = false, narration }: To
       >
         <ToolStatusIcon block={block} />
         <span className={clsx('truncate', isError && 'font-medium text-[#b44a4a] dark:text-[#f2b8b8]')}>
-          {formatToolTitle(block)}
+          {presentation.title}
         </span>
         {durationLabel && (
           <span className="ml-auto shrink-0 text-[11px] text-text-muted">{durationLabel}</span>

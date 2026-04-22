@@ -1,22 +1,40 @@
 import clsx from 'clsx'
 import { Check, ChevronDown, ChevronUp, Copy, ListTodo, Sparkles } from 'lucide-react'
-import { useEffect, useState, type FocusEvent } from 'react'
+import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { StreamdownMarkdown } from './StreamdownMarkdown'
 import { UserMessageBubble } from './UserMessageBubble'
 import type { ChatMessage } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl } from '../../lib/chat-attachments'
-import { blocksToText, blocksToThinkingText, groupMessageBlocks } from '../../lib/message-blocks'
+import {
+  createBlocksSignature,
+  logChatStream,
+  previewStreamContent,
+  summarizeBlocks,
+  summarizeGroups,
+} from '../../lib/chat-stream-debug'
+import {
+  blocksToText,
+  blocksToThinkingText,
+  groupMessageBlocks,
+  TOOL_GROUP_THRESHOLD,
+  type MessageToolCallBlock,
+  type MessageThinkingBlock,
+} from '../../lib/message-blocks'
 import type { ChatAttachment } from '@lecquy/shared'
 import { ArtifactCard } from '../artifacts/ArtifactCard'
-import { ArtifactTrace } from '../artifacts/ArtifactTrace'
+import {
+  ArtifactOperationCard,
+  buildFileOperationEntries,
+  type ArtifactOperationEntry,
+} from '../artifacts/ArtifactTrace'
 import {
   AttachmentFileCard,
   CHAT_ATTACHMENT_CARD_BODY_CLASS,
   CHAT_ATTACHMENT_CARD_PREVIEW_CLASS,
   CHAT_ATTACHMENT_CARD_SIZE_CLASS,
 } from '../files/AttachmentFileCard'
-import type { ChatArtifact } from '../../lib/artifacts'
-import { ToolCallCard } from './ToolCallCard'
+import { hasFileOperationTraceItem, type ChatArtifact } from '../../lib/artifacts'
+import { shouldRenderToolCallCard, ToolCallCard } from './ToolCallCard'
 import { ToolGroupCard } from './ToolGroupCard'
 
 interface MessageItemProps {
@@ -24,7 +42,7 @@ interface MessageItemProps {
   isLastAssistant?: boolean
   onResendUser?: (messageId: string) => void
   onEditUser?: (messageId: string, nextContent: string) => void
-  onToggleThinking?: (messageId: string) => void
+  onToggleThinking?: (messageId: string, groupKey?: string) => void
   onToggleTodo?: (messageId: string) => void
   onTogglePlanTask?: (messageId: string, todoIndex: number) => void
   onToggleToolCall?: (messageId: string, blockId: string) => void
@@ -122,6 +140,102 @@ function formatThoughtDuration(durationMs: number): string {
   return `${seconds.toFixed(1)}s`
 }
 
+function resolveThinkingDurationMs(
+  blocks: MessageThinkingBlock[],
+  currentTimeMs: number,
+  fallback?: ChatMessage['thoughtTiming'],
+): number | undefined {
+  const startedAt = blocks.find((block) => typeof block.startedAt === 'number')?.startedAt
+  const runningBlock = blocks.find((block) => block.status === 'running')
+  if (runningBlock && typeof runningBlock.startedAt === 'number') {
+    return Math.max(0, currentTimeMs - runningBlock.startedAt)
+  }
+
+  const explicitDuration = [...blocks].reverse().find((block) => typeof block.durationMs === 'number')?.durationMs
+  if (typeof explicitDuration === 'number') return explicitDuration
+
+  const endedAt = [...blocks].reverse().find((block) => typeof block.endedAt === 'number')?.endedAt
+  if (typeof startedAt === 'number' && typeof endedAt === 'number') {
+    return Math.max(0, endedAt - startedAt)
+  }
+
+  if (!fallback || typeof startedAt === 'number') return undefined
+  if (fallback.status === 'running') {
+    return Math.max(0, currentTimeMs - fallback.startedAt)
+  }
+  if (typeof fallback.durationMs === 'number') return fallback.durationMs
+  if (typeof fallback.finishedAt === 'number') {
+    return Math.max(0, fallback.finishedAt - fallback.startedAt)
+  }
+  return undefined
+}
+
+function formatThinkingLabel(
+  blocks: MessageThinkingBlock[],
+  currentTimeMs: number,
+  fallback?: ChatMessage['thoughtTiming'],
+): string {
+  const durationMs = resolveThinkingDurationMs(blocks, currentTimeMs, fallback)
+  return typeof durationMs === 'number' ? `思考了 ${formatThoughtDuration(durationMs)}` : '思考'
+}
+
+function basename(value: string | null | undefined): string | null {
+  if (!value) return null
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '')
+  const segments = normalized.split('/')
+  return segments.at(-1) || normalized
+}
+
+function extractResultOutputPath(block: MessageToolCallBlock): string | null {
+  if (!block.result || typeof block.result !== 'object' || !('details' in block.result)) return null
+  const details = (block.result as { details?: unknown }).details
+  if (!details || typeof details !== 'object' || !('outputPath' in details)) return null
+  const outputPath = (details as { outputPath?: unknown }).outputPath
+  return typeof outputPath === 'string' ? outputPath : null
+}
+
+function extractArgFilePath(block: MessageToolCallBlock): string | null {
+  if (!block.args || typeof block.args !== 'object' || !('file_path' in block.args)) return null
+  const filePath = (block.args as { file_path?: unknown }).file_path
+  return typeof filePath === 'string' ? filePath : null
+}
+
+function matchArtifactEntryToToolBlock(
+  block: MessageToolCallBlock,
+  entries: ArtifactOperationEntry[],
+  usedEntryKeys: Set<string>,
+): ArtifactOperationEntry | null {
+  if (block.name !== 'write_file' || block.status !== 'success') return null
+
+  const availableEntries = entries.filter((entry) => {
+    if (usedEntryKeys.has(entry.key)) return false
+    if (entry.trace) return entry.trace.toolName === 'write_file'
+    return Boolean(entry.artifact)
+  })
+  if (availableEntries.length === 0) return null
+
+  const candidateNames = new Set<string>()
+  const argFileName = basename(extractArgFilePath(block))
+  const outputFileName = basename(extractResultOutputPath(block))
+  if (argFileName) candidateNames.add(argFileName)
+  if (outputFileName) candidateNames.add(outputFileName)
+
+  if (candidateNames.size === 0) {
+    return availableEntries[0] ?? null
+  }
+
+  return availableEntries.find((entry) => {
+    const traceDetail = basename(entry.trace?.detail)
+    const artifactName = basename(entry.artifact?.name)
+    const artifactPath = basename(entry.artifact?.filePath)
+    return (
+      (traceDetail && candidateNames.has(traceDetail))
+      || (artifactName && candidateNames.has(artifactName))
+      || (artifactPath && candidateNames.has(artifactPath))
+    )
+  }) ?? availableEntries[0] ?? null
+}
+
 export function MessageItem({
   message,
   isLastAssistant: _isLastAssistant = false,
@@ -140,13 +254,21 @@ export function MessageItem({
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isEvent = message.role === 'event'
+  const groupedBlocks = groupMessageBlocks(message.blocks ?? [])
   const primaryTextContent = blocksToText(message.blocks).trim() || message.content.trim()
-  const hasToolBlocks = (message.blocks ?? []).some((block) => block.kind === 'tool_call')
+  const hasToolBlocks = groupedBlocks.some((group) => (
+    group.kind === 'tool_single'
+      ? shouldRenderToolCallCard(group.block)
+      : group.kind === 'tool_group'
+        ? group.blocks.some(shouldRenderToolCallCard)
+        : false
+  ))
   const hasThinkingBlocks = (message.blocks ?? []).some((block) => block.kind === 'thinking')
   const hasPrimaryContent = primaryTextContent.length > 0
   const thinkingContent = blocksToThinkingText(message.blocks).trim() || message.thinkingContent?.trim() || ''
   const hasThinkingContent = thinkingContent.length > 0
   const showThoughtsCard = Boolean((isAssistant || isEvent) && hasThinkingContent && !hasThinkingBlocks)
+  const hasRunningThinkingBlocks = (message.blocks ?? []).some((block) => block.kind === 'thinking' && block.status === 'running')
   const canCopyMessage = primaryTextContent.length > 0
   const todoItems = message.todoItems ?? []
   const planDetails = message.planDetails ?? {}
@@ -157,18 +279,20 @@ export function MessageItem({
   const [isActionBarHovered, setIsActionBarHovered] = useState(false)
   const [isActionBarFocused, setIsActionBarFocused] = useState(false)
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
+  const renderDebugSignatureRef = useRef<string>('')
   const isActionBarVisible = isActionBarHovered || isActionBarFocused
   const attachments = message.attachments ?? []
   const artifacts = message.artifacts ?? []
   const artifactTraceItems = message.artifactTraceItems ?? []
+  const fileOperationEntries = buildFileOperationEntries(artifactTraceItems, artifacts)
   const thoughtTiming = message.thoughtTiming
   const readyArtifacts = artifacts
     .map((artifact, index) => ({ artifact, index }))
-    .filter(({ artifact }) => artifact.status !== 'draft')
-  const hasArtifactOperations = artifactTraceItems.length > 0 || artifacts.some((artifact) => artifact.status === 'draft' || Boolean(artifact.content))
+    .filter(({ artifact }) => artifact.status !== 'draft' && !hasFileOperationTraceItem(artifactTraceItems, artifact))
+  const hasArtifactOperations = fileOperationEntries.length > 0
   const canRenderReadyArtifacts = readyArtifacts.length > 0 && message.stepStatus !== 'started'
   const hasArtifactContent = hasArtifactOperations || canRenderReadyArtifacts
-  const isMarkdownStreaming = message.stepStatus === 'started' || thoughtTiming?.status === 'running'
+  const isMarkdownStreaming = message.stepStatus === 'started' || hasRunningThinkingBlocks || thoughtTiming?.status === 'running'
 
   const renderMarkdownContent = (content: string, className?: string) => (
     <StreamdownMarkdown
@@ -179,7 +303,7 @@ export function MessageItem({
   )
 
   useEffect(() => {
-    if (thoughtTiming?.status !== 'running') return
+    if (!hasRunningThinkingBlocks) return
 
     setCurrentTimeMs(Date.now())
     const timerId = window.setInterval(() => {
@@ -187,20 +311,25 @@ export function MessageItem({
     }, THOUGHT_TIMER_INTERVAL_MS)
 
     return () => window.clearInterval(timerId)
-  }, [thoughtTiming?.startedAt, thoughtTiming?.status])
+  }, [hasRunningThinkingBlocks])
 
-  const thoughtDurationMs = thoughtTiming
-    ? thoughtTiming.status === 'running'
-      ? Math.max(0, currentTimeMs - thoughtTiming.startedAt)
-      : thoughtTiming.durationMs ?? (
-        typeof thoughtTiming.finishedAt === 'number'
-          ? Math.max(0, thoughtTiming.finishedAt - thoughtTiming.startedAt)
-          : undefined
-      )
-    : undefined
-  const thoughtDurationLabel = typeof thoughtDurationMs === 'number'
-    ? formatThoughtDuration(thoughtDurationMs)
-    : null
+  useEffect(() => {
+    if (!isAssistant || (message.blocks?.length ?? 0) === 0) return
+
+    const signature = createBlocksSignature(message.blocks)
+    if (renderDebugSignatureRef.current === signature) return
+    renderDebugSignatureRef.current = signature
+
+    logChatStream('render:assistant-message', {
+      messageId: message.id,
+      stepId: message.stepId,
+      stepStatus: message.stepStatus,
+      contentPreview: previewStreamContent(message.content),
+      thinkingPreview: previewStreamContent(message.thinkingContent),
+      blocks: summarizeBlocks(message.blocks),
+      groups: summarizeGroups(message.blocks),
+    })
+  }, [isAssistant, message.blocks, message.content, message.id, message.stepId, message.stepStatus, message.thinkingContent])
 
   if (isAssistant && !hasPrimaryContent && !hasToolBlocks && !hasThinkingBlocks && !showThoughtsCard && !hasArtifactContent) {
     return null
@@ -323,11 +452,11 @@ export function MessageItem({
     }
   }
 
-  const handleCopyThoughts = async () => {
-    if (!thinkingContent.trim()) return
+  const handleCopyThoughts = async (content: string) => {
+    if (!content.trim()) return
 
     try {
-      await navigator.clipboard.writeText(thinkingContent)
+      await navigator.clipboard.writeText(content)
       setThoughtCopied(true)
       window.setTimeout(() => setThoughtCopied(false), 1200)
     } catch {
@@ -403,20 +532,6 @@ export function MessageItem({
     )
   }
 
-  const renderArtifactOperations = () => {
-    if (!hasArtifactOperations) return null
-
-    return (
-      <div className="mt-3 mb-4">
-        <ArtifactTrace
-          items={artifactTraceItems}
-          artifacts={artifacts}
-          onOpenArtifact={handleOpenTraceArtifact}
-        />
-      </div>
-    )
-  }
-
   const renderReadyArtifactCards = () => {
     if (!canRenderReadyArtifacts) return null
 
@@ -435,33 +550,109 @@ export function MessageItem({
     )
   }
 
+  const renderInlineArtifactOperation = (entry: ArtifactOperationEntry, key: string) => (
+    <div key={key}>
+      <ArtifactOperationCard
+        entry={entry}
+        onOpenArtifact={handleOpenTraceArtifact}
+      />
+    </div>
+  )
+
+  const renderPendingToolBlocks = (
+    pendingBlocks: MessageToolCallBlock[],
+    keyPrefix: string,
+    startIndex: number,
+  ): ReactNode[] => {
+    if (pendingBlocks.length === 0) return []
+
+    if (pendingBlocks.length >= TOOL_GROUP_THRESHOLD) {
+      const groupKey = `${keyPrefix}:tool-group:${startIndex}:${pendingBlocks.length}`
+      const collapsed = message.collapsedToolGroupKeys?.includes(groupKey) ?? false
+      return [
+        <ToolGroupCard
+          key={groupKey}
+          blocks={pendingBlocks}
+          collapsed={collapsed}
+          onToggleGroup={() => onToggleToolGroup?.(message.id, groupKey)}
+          onToggleToolCall={(blockId) => onToggleToolCall?.(message.id, blockId)}
+        />,
+      ]
+    }
+
+    return pendingBlocks.map((block) => (
+      <ToolCallCard
+        key={`${keyPrefix}:${block.id}`}
+        block={block}
+        onToggle={() => onToggleToolCall?.(message.id, block.id)}
+      />
+    ))
+  }
+
+  const renderToolTimelineEntries = (
+    blocks: MessageToolCallBlock[],
+    keyPrefix: string,
+    usedEntryKeys: Set<string>,
+  ): ReactNode[] => {
+    const nodes: ReactNode[] = []
+    let pendingVisibleBlocks: MessageToolCallBlock[] = []
+    let pendingStartIndex = 0
+
+    const flushPending = () => {
+      if (pendingVisibleBlocks.length === 0) return
+      nodes.push(...renderPendingToolBlocks(pendingVisibleBlocks, keyPrefix, pendingStartIndex))
+      pendingVisibleBlocks = []
+    }
+
+    blocks.forEach((block, index) => {
+      const matchedEntry = matchArtifactEntryToToolBlock(block, fileOperationEntries, usedEntryKeys)
+      if (matchedEntry) {
+        flushPending()
+        usedEntryKeys.add(matchedEntry.key)
+        nodes.push(renderInlineArtifactOperation(matchedEntry, `${keyPrefix}:artifact:${matchedEntry.key}`))
+        pendingStartIndex = index + 1
+        return
+      }
+
+      if (shouldRenderToolCallCard(block)) {
+        if (pendingVisibleBlocks.length === 0) {
+          pendingStartIndex = index
+        }
+        pendingVisibleBlocks.push(block)
+      }
+    })
+
+    flushPending()
+    return nodes
+  }
+
   const renderThinkingGroup = (
     content: string,
     label: string,
-    options?: { showCopyButton?: boolean },
+    options?: { showCopyButton?: boolean; groupKey?: string; expanded?: boolean },
   ) => (
     <div className="group/thoughts mb-3 transition-all">
       <div className="flex items-center gap-1">
         <button
           type="button"
-          onClick={() => onToggleThinking?.(message.id)}
+          onClick={() => onToggleThinking?.(message.id, options?.groupKey)}
           className="inline-flex items-center gap-1.5 rounded-md py-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
-          aria-expanded={message.isThinkingExpanded}
-          aria-label={message.isThinkingExpanded ? '隐藏思考内容' : '展开查看模型思考'}
+          aria-expanded={options?.expanded ?? message.isThinkingExpanded}
+          aria-label={(options?.expanded ?? message.isThinkingExpanded) ? '隐藏思考内容' : '展开查看模型思考'}
         >
           <Sparkles className="size-3.5" />
           <span>{label}</span>
-          {message.isThinkingExpanded ? (
+          {(options?.expanded ?? message.isThinkingExpanded) ? (
             <ChevronUp className="size-3.5" />
           ) : (
             <ChevronDown className="size-3.5" />
           )}
         </button>
 
-        {options?.showCopyButton && message.isThinkingExpanded && (
+        {options?.showCopyButton && (options?.expanded ?? message.isThinkingExpanded) && (
           <button
             type="button"
-            onClick={handleCopyThoughts}
+            onClick={() => handleCopyThoughts(content)}
             className="ml-0.5 inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary group-hover/thoughts:opacity-100"
             aria-label="复制思考内容"
             title="复制思考内容"
@@ -471,7 +662,7 @@ export function MessageItem({
         )}
       </div>
 
-      {message.isThinkingExpanded && (
+      {(options?.expanded ?? message.isThinkingExpanded) && (
         <div className="mt-1.5 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
           {isPlainThoughtText(content) ? (
             <span className="whitespace-pre-wrap break-words select-text">
@@ -487,31 +678,13 @@ export function MessageItem({
     </div>
   )
 
-  const renderThinkingContinuation = (content: string) => {
-    if (!message.isThinkingExpanded) return null
-
-    return (
-      <div className="mb-3 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
-        {isPlainThoughtText(content) ? (
-          <span className="whitespace-pre-wrap break-words select-text">
-            {content}
-          </span>
-        ) : (
-          <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
-            {renderMarkdownContent(content)}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   const renderAssistantBlocks = () => {
     if (!isAssistant || (message.blocks?.length ?? 0) === 0) return null
 
-    let thoughtGroupIndex = 0
+    const usedEntryKeys = new Set<string>()
     return (
       <div className="space-y-2">
-        {groupMessageBlocks(message.blocks ?? []).map((group) => {
+        {groupedBlocks.map((group) => {
           if (group.kind === 'text') {
             const content = group.blocks.map((block) => block.content).join('')
             return <div key={group.key}>{renderMarkdownContent(content)}</div>
@@ -519,46 +692,36 @@ export function MessageItem({
 
           if (group.kind === 'thinking') {
             const content = group.blocks.map((block) => block.content).join('\n\n')
-            const isFirstGroup = thoughtGroupIndex === 0
-            thoughtGroupIndex += 1
-            if (!isFirstGroup) {
-              return <div key={group.key}>{renderThinkingContinuation(content)}</div>
-            }
+            const expanded = !(message.collapsedThinkingGroupKeys?.includes(group.key) ?? false)
+            const label = formatThinkingLabel(group.blocks, currentTimeMs)
 
             return (
               <div key={group.key}>
                 {renderThinkingGroup(
                   content,
-                  thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…',
-                  { showCopyButton: true },
+                  label,
+                  {
+                    showCopyButton: true,
+                    groupKey: group.key,
+                    expanded,
+                  },
                 )}
               </div>
             )
           }
 
           if (group.kind === 'tool_single') {
-            return (
-              <ToolCallCard
-                key={group.block.id}
-                block={group.block}
-                narration={group.narration}
-                onToggle={() => onToggleToolCall?.(message.id, group.block.id)}
-              />
-            )
+            const nodes = renderToolTimelineEntries([group.block], `tool-single:${group.block.id}`, usedEntryKeys)
+            return nodes.length > 0 ? <div key={group.block.id} className="space-y-2">{nodes}</div> : null
           }
 
-          const collapsed = message.collapsedToolGroupKeys?.includes(group.key) ?? false
-          return (
-            <ToolGroupCard
-              key={group.key}
-              blocks={group.blocks}
-              narration={group.narration}
-              collapsed={collapsed}
-              onToggleGroup={() => onToggleToolGroup?.(message.id, group.key)}
-              onToggleToolCall={(blockId) => onToggleToolCall?.(message.id, blockId)}
-            />
-          )
+          const nodes = renderToolTimelineEntries(group.blocks, group.key, usedEntryKeys)
+          return nodes.length > 0 ? <div key={group.key} className="space-y-2">{nodes}</div> : null
         })}
+
+        {fileOperationEntries
+          .filter((entry) => !usedEntryKeys.has(entry.key))
+          .map((entry) => renderInlineArtifactOperation(entry, `artifact-fallback:${entry.key}`))}
       </div>
     )
   }
@@ -601,11 +764,9 @@ export function MessageItem({
 
             {showThoughtsCard && renderThinkingGroup(
               thinkingContent,
-              thoughtDurationLabel ? `思考了 ${thoughtDurationLabel}` : '思考中…',
-              { showCopyButton: true },
+              formatThinkingLabel([], currentTimeMs, thoughtTiming),
+              { showCopyButton: true, expanded: message.isThinkingExpanded },
             )}
-
-            {isAssistant && renderArtifactOperations()}
 
             {isUser ? (
               hasPrimaryContent ? (
