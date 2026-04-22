@@ -17,7 +17,6 @@ interface MessageListProps {
   onToggleToolGroup?: (messageId: string, groupKey: string) => void
   onOpenAttachment?: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact?: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
-  onDownloadArtifact?: (artifact: ChatArtifact) => void
   activeAttachmentKey?: string | null
   scrollRequestVersion?: number
   wideLayout?: boolean
@@ -43,7 +42,6 @@ export function MessageList({
   onToggleToolGroup,
   onOpenAttachment,
   onOpenArtifact,
-  onDownloadArtifact,
   activeAttachmentKey = null,
   scrollRequestVersion = 0,
   wideLayout = false,
@@ -235,7 +233,6 @@ export function MessageList({
             onToggleToolGroup={onToggleToolGroup}
             onOpenAttachment={onOpenAttachment}
             onOpenArtifact={onOpenArtifact}
-            onDownloadArtifact={onDownloadArtifact}
             activeAttachmentKey={activeAttachmentKey}
           />
         ))}

@@ -21,6 +21,11 @@ function normalizeWorkspacePath(filePath: string): string {
   return filePath.trim().replace(/\\/g, '/').replace(/^\.\//, '')
 }
 
+function isSameArtifactLineage(left: ChatArtifact, right: ChatArtifact): boolean {
+  if (left.artifactId === right.artifactId) return true
+  return normalizeWorkspacePath(left.filePath) === normalizeWorkspacePath(right.filePath)
+}
+
 function inferFileName(filePath: string): string {
   const normalized = normalizeWorkspacePath(filePath)
   const parts = normalized.split('/')
@@ -198,11 +203,75 @@ export function doesArtifactMatchTraceItem(trace: ArtifactTraceItem, artifact: C
   return trace.detail === artifact.name || trace.detail === artifact.filePath
 }
 
+export function removeDraftArtifactsByStepId(
+  artifacts: ChatArtifact[] | undefined,
+  stepId: string,
+): ChatArtifact[] | undefined {
+  const next = (artifacts ?? []).filter((artifact) => !(artifact.status === 'draft' && artifact.stepId === stepId))
+  return next.length > 0 ? next : undefined
+}
+
 export function hasFileOperationTraceItem(
   items: ArtifactTraceItem[] | undefined,
   artifact: ChatArtifact,
 ): boolean {
   return (items ?? []).some((item) => isFileOperationTraceItem(item) && doesArtifactMatchTraceItem(item, artifact))
+}
+
+/**
+ * 单个 artifact 与其在消息中的定位信息。
+ * 用于把 messages 里的嵌套 artifacts 扁平化为一维列表，
+ * 同时保留触发 handleOpenArtifact(messageId, artifactIndex, artifact) 所需的定位。
+ */
+export interface ArtifactWithLocation {
+  artifact: ChatArtifact
+  messageId: string
+  artifactIndex: number
+}
+
+/**
+ * 从消息数组中扁平化提取所有 artifacts。
+ * ConversationArea 通过 onArtifactsChange 上抛给 HomePageLayout，
+ * 以便右侧面板订阅 draft 内容流式更新。
+ */
+export function extractArtifactLocations<M extends { id: string; artifacts?: ChatArtifact[] }>(
+  messages: M[],
+): ArtifactWithLocation[] {
+  const result: ArtifactWithLocation[] = []
+  for (const message of messages) {
+    const artifacts = message.artifacts
+    if (!artifacts || artifacts.length === 0) continue
+    artifacts.forEach((artifact, artifactIndex) => {
+      result.push({ artifact, messageId: message.id, artifactIndex })
+    })
+  }
+  return result
+}
+
+export function findLatestArtifact(
+  artifacts: ChatArtifact[] | undefined,
+  target: ChatArtifact,
+): { artifact: ChatArtifact; artifactIndex: number } | null {
+  const items = artifacts ?? []
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const artifact = items[index]
+    if (!isSameArtifactLineage(artifact, target)) continue
+    return { artifact, artifactIndex: index }
+  }
+  return null
+}
+
+export function findLatestArtifactLocation(
+  items: ArtifactWithLocation[] | undefined,
+  target: ChatArtifact,
+): ArtifactWithLocation | null {
+  const locations = items ?? []
+  for (let index = locations.length - 1; index >= 0; index -= 1) {
+    const item = locations[index]
+    if (!isSameArtifactLineage(item.artifact, target)) continue
+    return item
+  }
+  return null
 }
 
 export function createDraftArtifact(

@@ -21,7 +21,6 @@ import {
   type MessageThinkingBlock,
 } from '../../lib/message-blocks'
 import type { ChatAttachment } from '@lecquy/shared'
-import { ArtifactCard } from '../artifacts/ArtifactCard'
 import {
   ArtifactOperationCard,
   buildFileOperationEntries,
@@ -33,9 +32,10 @@ import {
   CHAT_ATTACHMENT_CARD_PREVIEW_CLASS,
   CHAT_ATTACHMENT_CARD_SIZE_CLASS,
 } from '../files/AttachmentFileCard'
-import { hasFileOperationTraceItem, type ChatArtifact } from '../../lib/artifacts'
+import { findLatestArtifact, type ChatArtifact } from '../../lib/artifacts'
 import { shouldRenderToolCallCard, ToolCallCard } from './ToolCallCard'
 import { ToolGroupCard } from './ToolGroupCard'
+import { TimelineEvent } from './TimelineEvent'
 
 interface MessageItemProps {
   message: ChatMessage
@@ -49,7 +49,6 @@ interface MessageItemProps {
   onToggleToolGroup?: (messageId: string, groupKey: string) => void
   onOpenAttachment?: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact?: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
-  onDownloadArtifact?: (artifact: ChatArtifact) => void
   activeAttachmentKey?: string | null
 }
 
@@ -170,13 +169,13 @@ function resolveThinkingDurationMs(
   return undefined
 }
 
-function formatThinkingLabel(
+function formatThinkingDurationLabel(
   blocks: MessageThinkingBlock[],
   currentTimeMs: number,
   fallback?: ChatMessage['thoughtTiming'],
-): string {
+): string | undefined {
   const durationMs = resolveThinkingDurationMs(blocks, currentTimeMs, fallback)
-  return typeof durationMs === 'number' ? `思考了 ${formatThoughtDuration(durationMs)}` : '思考'
+  return typeof durationMs === 'number' ? formatThoughtDuration(durationMs) : undefined
 }
 
 function basename(value: string | null | undefined): string | null {
@@ -248,7 +247,6 @@ export function MessageItem({
   onToggleToolGroup,
   onOpenAttachment,
   onOpenArtifact,
-  onDownloadArtifact,
   activeAttachmentKey = null,
 }: MessageItemProps) {
   const isUser = message.role === 'user'
@@ -286,12 +284,8 @@ export function MessageItem({
   const artifactTraceItems = message.artifactTraceItems ?? []
   const fileOperationEntries = buildFileOperationEntries(artifactTraceItems, artifacts)
   const thoughtTiming = message.thoughtTiming
-  const readyArtifacts = artifacts
-    .map((artifact, index) => ({ artifact, index }))
-    .filter(({ artifact }) => artifact.status !== 'draft' && !hasFileOperationTraceItem(artifactTraceItems, artifact))
   const hasArtifactOperations = fileOperationEntries.length > 0
-  const canRenderReadyArtifacts = readyArtifacts.length > 0 && message.stepStatus !== 'started'
-  const hasArtifactContent = hasArtifactOperations || canRenderReadyArtifacts
+  const hasArtifactContent = hasArtifactOperations
   const isMarkdownStreaming = message.stepStatus === 'started' || hasRunningThinkingBlocks || thoughtTiming?.status === 'running'
 
   const renderMarkdownContent = (content: string, className?: string) => (
@@ -473,16 +467,9 @@ export function MessageItem({
   }
 
   const handleOpenTraceArtifact = (artifact: ChatArtifact) => {
-    const artifactIndex = artifacts.findIndex((candidate) =>
-      candidate.artifactId === artifact.artifactId
-      || (
-        candidate.status !== 'draft'
-        && artifact.status !== 'draft'
-        && candidate.filePath === artifact.filePath
-      ),
-    )
-    if (artifactIndex < 0) return
-    onOpenArtifact?.(message.id, artifactIndex, artifact)
+    const latest = findLatestArtifact(artifacts, artifact)
+    if (!latest) return
+    onOpenArtifact?.(message.id, latest.artifactIndex, latest.artifact)
   }
 
   const renderAttachments = () => {
@@ -527,24 +514,6 @@ export function MessageItem({
               onOpen={() => onOpenAttachment?.(message.id, index, attachment)}
             />
           )
-        ))}
-      </div>
-    )
-  }
-
-  const renderReadyArtifactCards = () => {
-    if (!canRenderReadyArtifacts) return null
-
-    return (
-      <div className="mt-3 flex flex-col gap-3">
-        {readyArtifacts.map(({ artifact, index }) => (
-          <ArtifactCard
-            key={artifact.artifactId}
-            artifact={artifact}
-            active={activeAttachmentKey === `${message.id}:artifact:${index}`}
-            onOpen={() => onOpenArtifact?.(message.id, index, artifact)}
-            onDownload={() => onDownloadArtifact?.(artifact)}
-          />
         ))}
       </div>
     )
@@ -628,62 +597,56 @@ export function MessageItem({
 
   const renderThinkingGroup = (
     content: string,
-    label: string,
+    durationLabel: string | undefined,
     options?: { showCopyButton?: boolean; groupKey?: string; expanded?: boolean },
-  ) => (
-    <div className="group/thoughts mb-3 transition-all">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onToggleThinking?.(message.id, options?.groupKey)}
-          className="inline-flex items-center gap-1.5 rounded-md py-1 text-[13px] text-text-secondary transition-colors hover:text-text-primary"
-          aria-expanded={options?.expanded ?? message.isThinkingExpanded}
-          aria-label={(options?.expanded ?? message.isThinkingExpanded) ? '隐藏思考内容' : '展开查看模型思考'}
+  ) => {
+    const expanded = options?.expanded ?? message.isThinkingExpanded
+    const copyAction = options?.showCopyButton && expanded ? (
+      <button
+        type="button"
+        onClick={() => handleCopyThoughts(content)}
+        className="inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover/thoughts:opacity-100"
+        aria-label="复制思考内容"
+        title="复制思考内容"
+      >
+        {thoughtCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
+    ) : null
+
+    return (
+      <div className="group/thoughts transition-all">
+        <TimelineEvent
+          icon={<Sparkles />}
+          verb={durationLabel ? '思考了' : '思考'}
+          target={durationLabel}
+          expandable
+          expanded={expanded}
+          onToggleExpanded={() => onToggleThinking?.(message.id, options?.groupKey)}
+          actions={copyAction}
         >
-          <Sparkles className="size-3.5" />
-          <span>{label}</span>
-          {(options?.expanded ?? message.isThinkingExpanded) ? (
-            <ChevronUp className="size-3.5" />
-          ) : (
-            <ChevronDown className="size-3.5" />
-          )}
-        </button>
-
-        {options?.showCopyButton && (options?.expanded ?? message.isThinkingExpanded) && (
-          <button
-            type="button"
-            onClick={() => handleCopyThoughts(content)}
-            className="ml-0.5 inline-flex size-6 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:text-text-primary group-hover/thoughts:opacity-100"
-            aria-label="复制思考内容"
-            title="复制思考内容"
-          >
-            {thoughtCopied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          </button>
-        )}
+          <div className="select-text">
+            {isPlainThoughtText(content) ? (
+              <span className="whitespace-pre-wrap break-words select-text">
+                {content}
+              </span>
+            ) : (
+              <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
+                {renderMarkdownContent(content)}
+              </div>
+            )}
+          </div>
+        </TimelineEvent>
       </div>
-
-      {(options?.expanded ?? message.isThinkingExpanded) && (
-        <div className="mt-1.5 border-l-2 border-border pl-3 text-[14px] leading-[1.55] text-text-secondary select-text">
-          {isPlainThoughtText(content) ? (
-            <span className="whitespace-pre-wrap break-words select-text">
-              {content}
-            </span>
-          ) : (
-            <div className="[&_p]:text-text-secondary [&_li]:text-text-secondary [&_blockquote]:text-text-secondary [&_td]:text-text-secondary [&_code]:text-text-primary">
-              {renderMarkdownContent(content)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
 
   const renderAssistantBlocks = () => {
-    if (!isAssistant || (message.blocks?.length ?? 0) === 0) return null
+    if (!isAssistant) return null
+    if ((message.blocks?.length ?? 0) === 0 && fileOperationEntries.length === 0) return null
 
     const usedEntryKeys = new Set<string>()
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         {groupedBlocks.map((group) => {
           if (group.kind === 'text') {
             const content = group.blocks.map((block) => block.content).join('')
@@ -693,13 +656,13 @@ export function MessageItem({
           if (group.kind === 'thinking') {
             const content = group.blocks.map((block) => block.content).join('\n\n')
             const expanded = !(message.collapsedThinkingGroupKeys?.includes(group.key) ?? false)
-            const label = formatThinkingLabel(group.blocks, currentTimeMs)
+            const durationLabel = formatThinkingDurationLabel(group.blocks, currentTimeMs)
 
             return (
               <div key={group.key}>
                 {renderThinkingGroup(
                   content,
-                  label,
+                  durationLabel,
                   {
                     showCopyButton: true,
                     groupKey: group.key,
@@ -712,11 +675,11 @@ export function MessageItem({
 
           if (group.kind === 'tool_single') {
             const nodes = renderToolTimelineEntries([group.block], `tool-single:${group.block.id}`, usedEntryKeys)
-            return nodes.length > 0 ? <div key={group.block.id} className="space-y-2">{nodes}</div> : null
+            return nodes.length > 0 ? <div key={group.block.id} className="space-y-1">{nodes}</div> : null
           }
 
           const nodes = renderToolTimelineEntries(group.blocks, group.key, usedEntryKeys)
-          return nodes.length > 0 ? <div key={group.key} className="space-y-2">{nodes}</div> : null
+          return nodes.length > 0 ? <div key={group.key} className="space-y-1">{nodes}</div> : null
         })}
 
         {fileOperationEntries
@@ -764,7 +727,7 @@ export function MessageItem({
 
             {showThoughtsCard && renderThinkingGroup(
               thinkingContent,
-              formatThinkingLabel([], currentTimeMs, thoughtTiming),
+              formatThinkingDurationLabel([], currentTimeMs, thoughtTiming),
               { showCopyButton: true, expanded: message.isThinkingExpanded },
             )}
 
@@ -778,14 +741,17 @@ export function MessageItem({
                 />
               ) : null
             ) : isAssistant ? (
-              message.blocks?.length ? renderAssistantBlocks() : hasPrimaryContent ? renderMarkdownContent(primaryTextContent) : null
+              (message.blocks?.length || hasArtifactOperations) ? (
+                <div className="space-y-1">
+                  {!message.blocks?.length && hasPrimaryContent ? renderMarkdownContent(primaryTextContent) : null}
+                  {renderAssistantBlocks()}
+                </div>
+              ) : hasPrimaryContent ? renderMarkdownContent(primaryTextContent) : null
             ) : (
               hasPrimaryContent ? (
                 <div className="whitespace-pre-wrap break-words leading-relaxed">{primaryTextContent}</div>
               ) : null
             )}
-
-            {isAssistant && renderReadyArtifactCards()}
           </div>
         )}
         {isAssistant && canCopyMessage && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Moon, Settings, Square, Sun } from 'lucide-react'
 import type { ChatAttachment } from '@lecquy/shared'
 import { ChatInput, type ChatInputSubmitPayload } from '../../../components/ui/ChatInput'
@@ -13,7 +13,11 @@ import {
 import { USE_PI_WEB_UI_PARTIAL } from '../../../config/api'
 import { PiMessageListAdapter } from '../../../adapters/pi-web-ui/PiMessageListAdapter'
 import { PiChatInputAdapter } from '../../../adapters/pi-web-ui/PiChatInputAdapter'
-import type { ChatArtifact } from '../../../lib/artifacts'
+import {
+  extractArtifactLocations,
+  type ArtifactWithLocation,
+  type ChatArtifact,
+} from '../../../lib/artifacts'
 
 interface ConversationAreaProps {
   onSettingsToggle: () => void
@@ -33,7 +37,8 @@ interface ConversationAreaProps {
   onChatLifecycleEvent: (event: 'run_completed' | 'run_paused' | 'run_failed') => void
   onOpenAttachment: (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => void
   onOpenArtifact: (messageId: string, artifactIndex: number, artifact: ChatArtifact) => void
-  onDownloadArtifact: (artifact: ChatArtifact) => void
+  /** 上抛当前会话的扁平化 artifacts，用于右侧面板订阅 draft 流式更新与弱自动打开 */
+  onArtifactsChange?: (artifacts: ArtifactWithLocation[]) => void
   activeAttachmentKey?: string | null
   showHeader?: boolean
   workspaceMode?: 'default' | 'split'
@@ -57,7 +62,7 @@ export function ConversationArea({
   onChatLifecycleEvent,
   onOpenAttachment,
   onOpenArtifact,
-  onDownloadArtifact,
+  onArtifactsChange,
   activeAttachmentKey = null,
   showHeader = true,
   workspaceMode = 'default',
@@ -112,6 +117,14 @@ export function ConversationArea({
     replaceMessages(externalMessages)
     setScrollRequestVersion((prev) => prev + 1)
   }, [externalMessages, messageVersion, replaceMessages])
+
+  // 从消息派生扁平化 artifacts，按 messages 变化 memoize
+  const artifactLocations = useMemo(() => extractArtifactLocations(messages), [messages])
+
+  // 上抛给 HomePageLayout，驱动 openDocument.artifact 同步与 draft 弱自动打开
+  useEffect(() => {
+    onArtifactsChange?.(artifactLocations)
+  }, [artifactLocations, onArtifactsChange])
 
   const hasSent = messages.length > 0
   const showStopButton = isStreaming
@@ -283,7 +296,6 @@ export function ConversationArea({
                 onToggleToolGroup={toggleToolGroup}
                 onOpenAttachment={onOpenAttachment}
                 onOpenArtifact={onOpenArtifact}
-                onDownloadArtifact={onDownloadArtifact}
                 activeAttachmentKey={activeAttachmentKey}
                 scrollRequestVersion={scrollRequestVersion}
                 wideLayout={isSplitWorkspace}

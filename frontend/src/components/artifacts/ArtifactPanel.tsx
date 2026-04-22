@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type UIEvent } from 'react'
 import type { ArtifactDetail } from '@lecquy/shared'
 import { StreamdownMarkdown } from '../chat/StreamdownMarkdown'
 import { fetchArtifactDetail, buildArtifactDownloadUrl } from '../../lib/session-api'
@@ -67,6 +67,8 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
   const [copied, setCopied] = useState(false)
   const [previewRevision, setPreviewRevision] = useState(0)
   const previewRef = useRef<HTMLDivElement | null>(null)
+  // draft 流式跟随：默认锁底，用户手动上滚后解锁；draft 结束后重置
+  const [isScrollLocked, setIsScrollLocked] = useState(true)
 
   const loadArtifact = useCallback(async (options?: { allowFallback?: boolean }) => {
     const allowFallback = options?.allowFallback ?? false
@@ -118,6 +120,24 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
   const previewMode = inferArtifactPreviewMode(resolvedArtifact)
   const canPreview = true
   const isDraft = artifact.status === 'draft'
+
+  // draft 流式：内容增长时，若锁定状态则滚动到底部
+  useEffect(() => {
+    if (!isDraft || !isScrollLocked || !previewRef.current) return
+    previewRef.current.scrollTop = previewRef.current.scrollHeight
+  }, [isDraft, isScrollLocked, detail?.content, artifact.content])
+
+  // draft → ready 切换时，重置锁定状态，避免影响后续查看
+  useEffect(() => {
+    if (!isDraft) setIsScrollLocked(true)
+  }, [isDraft])
+
+  const handlePreviewScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!isDraft) return
+    const el = event.currentTarget
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+    setIsScrollLocked(atBottom)
+  }
 
   const copyRawContent = async () => {
     const content = detail?.content ?? artifact.content ?? ''
@@ -191,6 +211,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
       <div className="min-h-0 flex-1 overflow-hidden">
         <div
           ref={previewRef}
+          onScroll={handlePreviewScroll}
           className="h-full overflow-y-auto bg-surface"
         >
           {isLoading && !content ? (
@@ -232,7 +253,7 @@ export function ArtifactPanel({ sessionKey, artifact, width, onClose }: Artifact
                     正在生成文件内容
                   </div>
                 )}
-                <StreamdownMarkdown content={content} />
+                <StreamdownMarkdown content={content} isAnimating={isDraft} />
               </div>
             </div>
           ) : previewMode === 'text' ? (

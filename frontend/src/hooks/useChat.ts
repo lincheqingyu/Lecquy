@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ArtifactTraceItem, ChatAttachment, ClientEventPayloadMap, ServerEventPayloadMap, StepKind, ThinkingConfig } from '@lecquy/shared'
 import { WS_BASE } from '../config/api.ts'
-import { mergeArtifacts, mergeArtifactTraceItems, type ChatArtifact } from '../lib/artifacts.ts'
+import {
+  createDraftArtifact,
+  mergeArtifacts,
+  mergeArtifactTraceItems,
+  removeDraftArtifactsByStepId,
+  type ChatArtifact,
+} from '../lib/artifacts.ts'
 import {
   logChatStream,
   previewUnknown,
@@ -789,6 +795,15 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               }, nextMessage)
               return nextMessage
             })
+
+            const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
+            if (draftArtifact) {
+              pendingArtifactsRef.current.set(
+                tool.stepId,
+                mergeArtifacts(pendingArtifactsRef.current.get(tool.stepId), [draftArtifact]) ?? [],
+              )
+              flushPendingStepArtifacts(tool.stepId, stepKind, { force: true })
+            }
             onWsEvent?.(event, tool)
             return
           }
@@ -827,6 +842,15 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               }, nextMessage)
               return nextMessage
             })
+
+            const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
+            if (draftArtifact) {
+              pendingArtifactsRef.current.set(
+                tool.stepId,
+                mergeArtifacts(pendingArtifactsRef.current.get(tool.stepId), [draftArtifact]) ?? [],
+              )
+              flushPendingStepArtifacts(tool.stepId, stepKind, { force: true })
+            }
             onWsEvent?.(event, tool)
             return
           }
@@ -893,9 +917,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                 flushPendingStepArtifacts(tool.stepId, stepKind)
               }
             } else {
+              pendingArtifactsRef.current.delete(tool.stepId)
               updateMessage(setMessages, messageId, (message) => {
                 const nextMessage = {
                   ...message,
+                  artifacts: removeDraftArtifactsByStepId(message.artifacts, tool.stepId),
                   blocks: patchToolCall(
                     closeTrailingThinkingBlock(message.blocks ?? [], 'failed', Date.now()),
                     tool.toolCallId,

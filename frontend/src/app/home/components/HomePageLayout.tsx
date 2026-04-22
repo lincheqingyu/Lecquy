@@ -19,7 +19,6 @@ import {
   deleteSession as deleteSessionByKey,
   fetchSessionHistoryView,
   fetchSessions,
-  buildArtifactDownloadUrl,
   updateSessionTitle,
 } from '../../../lib/session-api'
 import {
@@ -28,7 +27,11 @@ import {
   type SessionListItemVm,
 } from '../../../lib/session-management'
 import { getPeerId, resetPeerId, setPeerId } from '../../../lib/session'
-import type { ChatArtifact } from '../../../lib/artifacts'
+import {
+  findLatestArtifactLocation,
+  type ArtifactWithLocation,
+  type ChatArtifact,
+} from '../../../lib/artifacts'
 
 const STORAGE_KEYS = {
   modelConfig: 'lecquy.modelConfig',
@@ -171,9 +174,12 @@ export function HomePageLayout() {
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig())
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed())
   const [openDocument, setOpenDocument] = useState<OpenDocument | null>(null)
+  // 从 ConversationArea 镜像的扁平化 artifacts，用于右侧面板订阅 draft 内容流式更新与弱自动打开
+  const [currentArtifacts, setCurrentArtifacts] = useState<ArtifactWithLocation[]>([])
   const [documentPanelWidth, setDocumentPanelWidth] = useState<number>(() => loadDocumentPanelWidth())
   const resizePointerIdRef = useRef<number | null>(null)
   const resizeBodyStateRef = useRef<{ cursor: string; userSelect: string } | null>(null)
+  const seenDraftArtifactKeysRef = useRef<Set<string>>(new Set())
   const [isDocumentDividerDragging, setIsDocumentDividerDragging] = useState(false)
 
   useEffect(() => {
@@ -293,6 +299,8 @@ export function HomePageLayout() {
     setCurrentSessionId(null)
     setChatDisabledReason(null)
     setOpenDocument(null)
+    setCurrentArtifacts([])
+    seenDraftArtifactKeysRef.current.clear()
     replaceMessageSeed([])
   }
 
@@ -304,6 +312,8 @@ export function HomePageLayout() {
     setCurrentSessionId(target?.sessionId ?? null)
     setChatDisabledReason(null)
     setOpenDocument(null)
+    setCurrentArtifacts([])
+    seenDraftArtifactKeysRef.current.clear()
     setIsHistoryLoading(true)
     setSessionError(null)
 
@@ -395,6 +405,33 @@ export function HomePageLayout() {
   const sessionMetaText = currentSessionId ? `会话 ID: ${currentSessionId}` : null
   const showDocumentWorkspace = Boolean(openDocument)
 
+  useEffect(() => {
+    if (currentArtifacts.length === 0) return
+
+    setOpenDocument((prev) => {
+      if (!prev || prev.kind !== 'artifact') return prev
+
+      const latestLocation = findLatestArtifactLocation(currentArtifacts, prev.artifact)
+      if (!latestLocation) return prev
+
+      if (
+        latestLocation.artifact === prev.artifact
+        && latestLocation.messageId === prev.messageId
+        && latestLocation.artifactIndex === prev.artifactIndex
+      ) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        key: `${latestLocation.messageId}:artifact:${latestLocation.artifactIndex}`,
+        messageId: latestLocation.messageId,
+        artifactIndex: latestLocation.artifactIndex,
+        artifact: latestLocation.artifact,
+      }
+    })
+  }, [currentArtifacts])
+
   const handleOpenAttachment = (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => {
     setIsSettingsOpen(false)
     setIsSidebarCollapsed(true)
@@ -415,7 +452,7 @@ export function HomePageLayout() {
     })
   }
 
-  const handleOpenArtifact = (messageId: string, artifactIndex: number, artifact: ChatArtifact) => {
+  const handleOpenArtifact = useCallback((messageId: string, artifactIndex: number, artifact: ChatArtifact) => {
     const sessionKey = selectedSessionKey ?? currentSessionKey
     if (!sessionKey) return
     setIsSettingsOpen(false)
@@ -436,18 +473,21 @@ export function HomePageLayout() {
       sessionKey,
       artifact,
     })
-  }
+  }, [currentSessionKey, openDocument, selectedSessionKey])
 
-  const handleDownloadArtifact = (artifact: ChatArtifact) => {
-    const sessionKey = selectedSessionKey ?? currentSessionKey
-    if (!sessionKey || artifact.status === 'draft') return
-    const link = document.createElement('a')
-    link.href = buildArtifactDownloadUrl(sessionKey, artifact.artifactId)
-    link.download = artifact.name
-    link.target = '_blank'
-    link.rel = 'noreferrer'
-    link.click()
-  }
+  useEffect(() => {
+    const nextDraft = currentArtifacts.find(({ artifact }) => {
+      if (artifact.status !== 'draft') return false
+      const draftKey = artifact.stepId ?? artifact.artifactId
+      if (seenDraftArtifactKeysRef.current.has(draftKey)) return false
+      seenDraftArtifactKeysRef.current.add(draftKey)
+      return true
+    })
+
+    if (activeView !== 'chat' || openDocument || !nextDraft) return
+
+    handleOpenArtifact(nextDraft.messageId, nextDraft.artifactIndex, nextDraft.artifact)
+  }, [activeView, currentArtifacts, handleOpenArtifact, openDocument])
 
   const handleCloseDocument = () => {
     setOpenDocument(null)
@@ -521,6 +561,8 @@ export function HomePageLayout() {
         onCreateConversation={handleStartNewConversation}
         onOpenSessions={() => {
           setOpenDocument(null)
+          setCurrentArtifacts([])
+          seenDraftArtifactKeysRef.current.clear()
           setActiveView('sessions')
         }}
         onSelectConversation={(conversationId) => {
@@ -570,7 +612,7 @@ export function HomePageLayout() {
                   onChatLifecycleEvent={handleChatLifecycleEvent}
                   onOpenAttachment={handleOpenAttachment}
                   onOpenArtifact={handleOpenArtifact}
-                  onDownloadArtifact={handleDownloadArtifact}
+                  onArtifactsChange={setCurrentArtifacts}
                   activeAttachmentKey={showDocumentWorkspace ? openDocument?.key ?? null : null}
                   showHeader={true}
                   workspaceMode={showDocumentWorkspace ? 'split' : 'default'}
