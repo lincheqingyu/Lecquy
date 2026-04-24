@@ -63,6 +63,26 @@ test('canEditFile 对系统保护路径 deny', async () => {
   }
 })
 
+test('canEditFile 允许 /var/folders 工作区内的普通相对路径', () => {
+  const ws = '/var/folders/xx/yy/workspace-root'
+  const d = canEditFile({ filePath: 'foo/bar.ts', workspaceDir: ws })
+
+  assert.equal(d.behavior, 'allow')
+  assert.notEqual(d.reason, '命中系统保护路径')
+})
+
+test('canEditFile 仍拒绝 /var/folders 工作区外的 /var 系统路径', () => {
+  const ws = '/var/folders/xx/yy/workspace-root'
+  const d = canEditFile({
+    filePath: '/var/log/syslog',
+    workspaceDir: ws,
+    allowOutsideWorkspace: true,
+  })
+
+  assert.equal(d.behavior, 'deny')
+  assert.equal(d.reason, '命中系统保护路径')
+})
+
 test('canEditFile 对 .bashrc 返回 ask', async () => {
   const ws = await mkWorkspace()
   try {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Moon, Settings, Square, Sun } from 'lucide-react'
 import type { ChatAttachment } from '@lecquy/shared'
 import { ChatInput, type ChatInputSubmitPayload } from '../../../components/ui/ChatInput'
+import { ApprovalCard } from '../../../components/chat/ApprovalCard'
 import { MessageList } from '../../../components/chat/MessageList'
 import {
   useChat,
@@ -81,6 +82,8 @@ export function ConversationArea({
     toggleToolGroup,
     isStreaming,
     isWaiting,
+    pendingRequest,
+    respondToPendingRequest,
     replaceMessages,
   } = useChat({
     modelConfig,
@@ -129,7 +132,7 @@ export function ConversationArea({
   const hasSent = messages.length > 0
   const showStopButton = isStreaming
   const canContinuePlan = isWaiting && mode === 'plan'
-  const effectiveCanSend = canSend && !isStreaming && (!isWaiting || canContinuePlan)
+  const effectiveCanSend = canSend && !isStreaming && !pendingRequest && (!isWaiting || canContinuePlan)
   const effectiveDisabledReason =
     disabledReason
       ?? (isWaiting && !canContinuePlan ? '当前计划正在等待补充信息，请切换到 plan 模式继续' : null)
@@ -306,15 +309,22 @@ export function ConversationArea({
             <div className="shrink-0 bg-gradient-to-t from-surface-alt via-surface-alt/95 to-transparent pt-4 pb-5">
               <div className={isSplitWorkspace ? 'w-full px-4 md:px-6' : 'mx-auto w-full max-w-3xl px-4 md:px-2'}>
                 <div className={isSplitWorkspace ? 'mr-auto max-w-[min(100%,56rem)]' : ''}>
-                  <ChatInputComp
-                    mode={mode}
-                    onModeChange={setMode}
-                    onSend={handleSend}
-                    showSuggestions={false}
-                    disabled={!effectiveCanSend}
-                    disabledReason={effectiveDisabledReason}
-                    rightSlot={stopButton}
-                  />
+                  {pendingRequest ? (
+                    <ApprovalCard
+                      request={pendingRequest}
+                      onDecision={respondToPendingRequest}
+                    />
+                  ) : (
+                    <ChatInputComp
+                      mode={mode}
+                      onModeChange={setMode}
+                      onSend={handleSend}
+                      showSuggestions={false}
+                      disabled={!effectiveCanSend}
+                      disabledReason={effectiveDisabledReason}
+                      rightSlot={stopButton}
+                    />
+                  )}
                 </div>
               </div>
             </div>

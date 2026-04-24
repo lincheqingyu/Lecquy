@@ -1,7 +1,14 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { AgentEvent, AgentTool } from '@mariozechner/pi-agent-core'
+import type {
+  PermissionMode,
+  RunId,
+  ToolCallErrorDetailPayload,
+  ToolApprovalOperation,
+} from '@lecquy/shared'
 import { PermissionTier, type AgentRole } from '../core/prompts/prompt-layer-types.js'
+import { type ConfirmationBroker } from '../runtime/confirmation-broker.js'
 import { bridgeResult, type BridgedTier, type PermissionManager } from '../runtime/permissions/index.js'
 
 const AUTO_TOOLS = new Set([
@@ -57,6 +64,15 @@ const PREAMBLE_PATTERNS = [
   /\bcurl\b.*-o/,
 ] as const
 
+const M1_AVAILABLE_DECISIONS = ['accept', 'decline'] as const
+
+export const PERMISSION_OBSERVATION_TEMPLATES = {
+  decline: '用户拒绝执行该操作：{toolName}。请询问用户下一步。',
+  expired: '权限审批超时，未执行 {toolName}。',
+  cancelled: '用户已取消本次运行，未执行 {toolName}。',
+  hardDeny: '工具 {toolName} 已被安全策略阻止。命中规则：{ruleContent}。请换一种不触发该规则的方案。',
+} as const
+
 export interface PreambleEvent {
   type: 'preamble'
   toolCallId: string
@@ -75,6 +91,46 @@ export interface ConfirmRequiredEvent {
 
 export type ToolPermissionEvent = PreambleEvent | ConfirmRequiredEvent
 export type AgentRuntimeEvent = AgentEvent | ToolPermissionEvent
+
+export class PermissionDeclinedError extends Error {
+  readonly status: 'declined' | 'expired' | 'cancelled'
+
+  constructor(status: 'declined' | 'expired' | 'cancelled', message: string) {
+    super(message)
+    this.name = 'PermissionDeclinedError'
+    this.status = status
+  }
+}
+
+export class HardDenyError extends Error {
+  readonly detail: ToolCallErrorDetailPayload
+
+  constructor(message: string, detail: ToolCallErrorDetailPayload) {
+    super(message)
+    this.name = 'HardDenyError'
+    this.detail = detail
+  }
+}
+
+export interface PermissionFailureMetadata {
+  readonly kind: 'declined' | 'expired' | 'cancelled' | 'hard_deny'
+  readonly message: string
+  readonly detail?: ToolCallErrorDetailPayload
+}
+
+const permissionFailureByToolCallId = new Map<string, PermissionFailureMetadata>()
+
+function rememberPermissionFailure(toolCallId: string, metadata: PermissionFailureMetadata): void {
+  permissionFailureByToolCallId.set(toolCallId, metadata)
+}
+
+export function consumePermissionFailureMetadata(toolCallId: string): PermissionFailureMetadata | undefined {
+  const metadata = permissionFailureByToolCallId.get(toolCallId)
+  if (metadata) {
+    permissionFailureByToolCallId.delete(toolCallId)
+  }
+  return metadata
+}
 
 function resolveTargetPath(filePath: string, workspaceDir: string): string {
   if (path.isAbsolute(filePath)) {
@@ -103,13 +159,79 @@ function getFilePathArg(args: Record<string, unknown>): string | null {
   return null
 }
 
+function fillTemplate(template: string, values: Record<string, string>): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, value),
+    template,
+  )
+}
+
+export function buildPermissionObservationMessage(
+  kind: 'decline' | 'expired' | 'cancelled' | 'hardDeny',
+  toolName: string,
+  ruleContent?: string,
+): string {
+  if (kind === 'hardDeny') {
+    return fillTemplate(PERMISSION_OBSERVATION_TEMPLATES.hardDeny, {
+      toolName,
+      ruleContent: ruleContent ?? '未知规则',
+    })
+  }
+
+  return fillTemplate(PERMISSION_OBSERVATION_TEMPLATES[kind], { toolName })
+}
+
+function summarizeArgs(args: Record<string, unknown>): string {
+  try {
+    const serializedArgs = JSON.stringify(args)
+    return serializedArgs ? `(${serializedArgs})` : ''
+  } catch {
+    return ''
+  }
+}
+
 function buildPermissionDescription(toolName: string, args: Record<string, unknown>, tier: PermissionTier): string {
   if (tier === PermissionTier.Preamble) {
     return `正在执行 ${toolName}...`
   }
 
-  const serializedArgs = JSON.stringify(args)
-  return `需要用户确认后才能执行 ${toolName}${serializedArgs ? `(${serializedArgs})` : ''}`
+  return `需要用户确认后才能执行 ${toolName}${summarizeArgs(args)}`
+}
+
+function buildToolApprovalOperation(toolName: string, args: Record<string, unknown>): ToolApprovalOperation {
+  const filePath = getFilePathArg(args)
+  if (toolName === 'bash') {
+    return {
+      toolName,
+      args,
+      displayCommand: typeof args.command === 'string' ? args.command : undefined,
+    }
+  }
+
+  return {
+    toolName,
+    args,
+    filePath: filePath ?? undefined,
+    displayCommand: filePath ?? undefined,
+  }
+}
+
+function resolvePermissionMode(manager?: PermissionManager): PermissionMode {
+  const mode = manager?.getMode()
+  if (
+    mode === 'default'
+    || mode === 'dontAsk'
+    || mode === 'plan'
+    || mode === 'acceptEdits'
+    || mode === 'bypassPermissions'
+  ) {
+    return mode
+  }
+  return 'default'
+}
+
+function buildHardDenyRuleContent(bridged: BridgedTier): string {
+  return bridged.matchedRule?.content?.trim() || bridged.reason || bridged.description
 }
 
 export function isCoreAgentEvent(event: AgentRuntimeEvent): event is AgentEvent {
@@ -185,10 +307,6 @@ export function isWorkerAllowed(toolName: string): boolean {
   return !WORKER_BLACKLIST.has(toolName)
 }
 
-/**
- * 取更严格的 `PermissionTier`（Confirm > Preamble > Auto）。
- * 用于双引擎并行时合并新旧决策。
- */
 function mostRestrictiveTier(a: PermissionTier, b: PermissionTier): PermissionTier {
   const rank = (t: PermissionTier): number => {
     switch (t) {
@@ -211,14 +329,11 @@ export function createPermissionAwareTools(
     role: AgentRole
     workspaceDir: string
     enabled: boolean
+    sessionKey?: string
+    sessionId?: string
+    runId?: RunId
+    broker?: ConfirmationBroker
     onEvent?: (event: ToolPermissionEvent) => void
-    /**
-     * 新权限引擎实例（可选）。
-     *
-     * 若提供，则与现有 `classifyToolPermission` 双引擎并行决策，取更严格一方。
-     * 新引擎的硬拒绝（hardDeny）会直接短路，不走 Confirm 的等待确认流程。
-     * 新引擎抛错时优雅降级到旧引擎。
-     */
     manager?: PermissionManager
   },
 ): AgentTool<any>[] {
@@ -231,7 +346,6 @@ export function createPermissionAwareTools(
     execute: async (toolCallId, params, signal, onUpdate) => {
       const args = (params && typeof params === 'object' ? params : {}) as Record<string, unknown>
 
-      // 1. 新引擎决策（若注入）
       let bridged: BridgedTier | null = null
       if (options.manager) {
         try {
@@ -243,28 +357,30 @@ export function createPermissionAwareTools(
           })
           bridged = bridgeResult(result)
         } catch {
-          // 新引擎失败降级到旧引擎，保持主路径可用
           bridged = null
         }
       }
 
-      // 2. 硬拒绝短路：不走 Confirm，直接抛错
       if (bridged?.hardDeny) {
-        const description = bridged.description
-        options.onEvent?.({
-          type: 'confirm_required',
-          toolCallId,
-          toolName: tool.name,
-          args,
-          description,
+        const ruleContent = buildHardDenyRuleContent(bridged)
+        const message = buildPermissionObservationMessage('hardDeny', tool.name, ruleContent)
+        rememberPermissionFailure(toolCallId, {
+          kind: 'hard_deny',
+          message,
+          detail: {
+            code: 'permission_denied',
+            ruleContent,
+            message,
+          },
         })
-        throw new Error(description)
+        throw new HardDenyError(message, {
+          code: 'permission_denied',
+          ruleContent,
+          message,
+        })
       }
 
-      // 3. 旧引擎决策
       const legacyTier = classifyToolPermission(tool.name, args, options.role, options.workspaceDir)
-
-      // 4. 双引擎取更严格
       const tier = bridged ? mostRestrictiveTier(bridged.tier, legacyTier) : legacyTier
 
       if (tier === PermissionTier.Preamble) {
@@ -279,6 +395,57 @@ export function createPermissionAwareTools(
 
       if (tier === PermissionTier.Confirm) {
         const description = bridged?.description ?? buildPermissionDescription(tool.name, args, tier)
+
+        if (options.broker && options.sessionKey && options.runId) {
+          const outcome = await options.broker.create({
+            sessionKey: options.sessionKey,
+            sessionId: options.sessionId,
+            runId: options.runId,
+            itemId: toolCallId,
+            title: `需要批准：${tool.name}`,
+            description,
+            approval: {
+              mode: resolvePermissionMode(options.manager),
+              operation: buildToolApprovalOperation(tool.name, args),
+              availableDecisions: [...M1_AVAILABLE_DECISIONS],
+            },
+          })
+
+          if (
+            outcome.status === 'accepted'
+            || outcome.status === 'accepted_for_session'
+            || outcome.status === 'accepted_for_project'
+          ) {
+            return await tool.execute(toolCallId, params, signal, onUpdate)
+          }
+
+          const message =
+            outcome.status === 'expired'
+              ? buildPermissionObservationMessage('expired', tool.name)
+              : outcome.status === 'cancelled'
+                ? buildPermissionObservationMessage('cancelled', tool.name)
+                : buildPermissionObservationMessage('decline', tool.name)
+
+          rememberPermissionFailure(toolCallId, {
+            kind:
+              outcome.status === 'expired'
+                ? 'expired'
+                : outcome.status === 'cancelled'
+                  ? 'cancelled'
+                  : 'declined',
+            message,
+          })
+
+          throw new PermissionDeclinedError(
+            outcome.status === 'expired'
+              ? 'expired'
+              : outcome.status === 'cancelled'
+                ? 'cancelled'
+                : 'declined',
+            message,
+          )
+        }
+
         options.onEvent?.({
           type: 'confirm_required',
           toolCallId,

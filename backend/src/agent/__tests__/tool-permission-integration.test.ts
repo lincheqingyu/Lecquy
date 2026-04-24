@@ -3,7 +3,7 @@
  *
  * 覆盖策略 B 的关键路径：
  *   1. 未注入 manager 时保持旧行为（legacy 通路）
- *   2. 新引擎 deny 时短路发出 confirm_required 并抛错
+ *   2. 新引擎 deny 时短路抛 hard deny，不执行
  *   3. 新引擎 allow + 旧引擎 Confirm 时取更严格（Confirm）
  *   4. 新引擎 ask 翻译为 Confirm，描述来自新引擎
  *   5. 新引擎抛错时优雅降级到旧引擎
@@ -85,7 +85,7 @@ test('未注入 manager：保持旧引擎行为（ls -la → Auto 执行）', as
   }
 })
 
-test('新引擎 deny：短路发出 confirm_required 并抛错，不执行', async () => {
+test('新引擎 deny：短路抛 hard deny，不执行', async () => {
   const ws = await mkWorkspace()
   try {
     const manager = await PermissionManager.create({
@@ -109,11 +109,10 @@ test('新引擎 deny：短路发出 confirm_required 并抛错，不执行', asy
 
     await assert.rejects(
       async () => wrapped.execute('call-2', { command: 'anything' }, undefined as any, undefined as any),
-      /操作已被拒绝/,
+      /已被安全策略阻止/,
     )
     assert.equal(wasExecuted(), false)
-    assert.equal(events.length, 1)
-    assert.equal(events[0].type, 'confirm_required')
+    assert.equal(events.length, 0)
   } finally {
     await rm(ws, { recursive: true, force: true })
   }
@@ -210,10 +209,10 @@ test('路径遍历：file-operations 前置 deny，短路不执行', async () =>
           undefined as any,
           undefined as any,
         ),
-      /操作已被拒绝/,
+      /已被安全策略阻止/,
     )
     assert.equal(wasExecuted(), false)
-    assert.equal(events[0].type, 'confirm_required')
+    assert.equal(events.length, 0)
   } finally {
     await rm(ws, { recursive: true, force: true })
   }

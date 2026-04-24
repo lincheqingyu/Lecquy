@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "pnpm -F @lecquy/shared build && cross-env NODE_OPTIONS=--openssl-legacy-provider tsx --watch src/server.ts",
     "build": "pnpm -F @lecquy/shared build && tsc",
+    "typecheck": "pnpm -F @lecquy/shared build && tsc --noEmit",
     "test": "pnpm -F @lecquy/shared build && tsc && find dist -name '*.test.js' -print0 | xargs -0 node --test",
     "start": "node dist/server.js",
     "db:migrate": "tsx src/db/migrate.ts",

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { AlertCircle, ChevronDown, LoaderCircle, Wrench } from 'lucide-react'
+import { AlertCircle, ChevronDown, LoaderCircle, ShieldAlert, Wrench } from 'lucide-react'
 import type { MessageToolCallBlock } from '../../lib/message-blocks'
 
 interface ToolCallCardProps {
@@ -19,6 +19,26 @@ export function getEffectiveToolCallExpanded(block: MessageToolCallBlock): boole
 
 function hasExpandableDetail(block: MessageToolCallBlock): boolean {
   return block.status === 'error' && Boolean(block.errorMessage || block.errorDetail)
+}
+
+function formatErrorDetail(errorDetail: MessageToolCallBlock['errorDetail']): string | null {
+  if (!errorDetail) return null
+  if (typeof errorDetail === 'string') return errorDetail
+  return errorDetail.message ?? errorDetail.ruleContent ?? JSON.stringify(errorDetail, null, 2)
+}
+
+function extractPermissionDeniedDetail(block: MessageToolCallBlock): { ruleContent?: string; message?: string } | null {
+  if (!block.errorDetail || typeof block.errorDetail !== 'object') return null
+  if (!('code' in block.errorDetail) || block.errorDetail.code !== 'permission_denied') return null
+
+  return {
+    ruleContent: 'ruleContent' in block.errorDetail && typeof block.errorDetail.ruleContent === 'string'
+      ? block.errorDetail.ruleContent
+      : undefined,
+    message: 'message' in block.errorDetail && typeof block.errorDetail.message === 'string'
+      ? block.errorDetail.message
+      : undefined,
+  }
 }
 
 function formatDuration(durationMs: number): string {
@@ -104,6 +124,9 @@ export function shouldRenderToolCallCard(block: MessageToolCallBlock): boolean {
 }
 
 function ToolStatusIcon({ block }: { block: MessageToolCallBlock }) {
+  if (extractPermissionDeniedDetail(block)) {
+    return <ShieldAlert className="size-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
+  }
   if (block.status === 'running') {
     return <LoaderCircle className="size-3.5 shrink-0 animate-spin text-text-muted" />
   }
@@ -118,14 +141,40 @@ export function ToolCallCard({ block, onToggle, compact = false }: ToolCallCardP
   const presentation = resolveToolPresentation(block)
   if (presentation.hidden) return null
 
+  const permissionDenied = extractPermissionDeniedDetail(block)
+  const errorDetailText = formatErrorDetail(block.errorDetail)
   const expanded = getEffectiveToolCallExpanded(block)
   const isError = block.status === 'error'
-  const expandable = hasExpandableDetail(block)
+  const expandable = !permissionDenied && hasExpandableDetail(block)
   const durationLabel = block.status === 'success'
     && typeof block.startedAt === 'number'
     && typeof block.endedAt === 'number'
     ? formatDuration(Math.max(0, block.endedAt - block.startedAt))
     : null
+
+  if (permissionDenied) {
+    return (
+      <div
+        className={clsx(
+          compact ? 'my-0.5' : 'my-1',
+          'rounded-xl border border-amber-500/35 bg-amber-500/8 px-3 py-2.5',
+        )}
+      >
+        <div className="flex items-center gap-2 text-[13px] font-medium text-amber-700 dark:text-amber-200">
+          <ShieldAlert className="size-3.5 shrink-0" />
+          <span>已被安全策略阻止</span>
+        </div>
+        {permissionDenied.ruleContent && (
+          <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] text-text-secondary">
+            {permissionDenied.ruleContent}
+          </pre>
+        )}
+        <div className="mt-2 text-[12px] leading-relaxed text-text-secondary">
+          如需放行，请修改 .claude/settings.json 中的权限规则。
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -168,9 +217,9 @@ export function ToolCallCard({ block, onToggle, compact = false }: ToolCallCardP
           {block.errorMessage && (
             <div className="text-[#8e3d3d] dark:text-[#f2b8b8]">{block.errorMessage}</div>
           )}
-          {block.errorDetail && (
+          {errorDetailText && (
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11.5px] text-text-muted">
-              {block.errorDetail}
+              {errorDetailText}
             </pre>
           )}
         </div>

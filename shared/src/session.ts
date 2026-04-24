@@ -2,6 +2,8 @@
  * 会话与工作流共享类型定义
  */
 
+import type { ToolCallErrorDetail } from './ws-events.js'
+
 /** 会话 ID（品牌类型，增强类型安全） */
 export type SessionId = string & { readonly __brand: 'SessionId' }
 export type SessionKey = string & { readonly __brand: 'SessionKey' }
@@ -129,7 +131,7 @@ export interface SessionToolCallContentBlock {
   // - startedAt / endedAt：毫秒级时间戳，便于前端计算耗时
   readonly status?: 'success' | 'error'
   readonly errorMessage?: string
-  readonly errorDetail?: string
+  readonly errorDetail?: ToolCallErrorDetail
   readonly startedAt?: number
   readonly endedAt?: number
 }
@@ -339,6 +341,16 @@ export function normalizeSessionAssistantContent(content: unknown): SessionAssis
         name: part.name,
         arguments: isObject(part.arguments) ? part.arguments : {},
         thoughtSignature: typeof part.thoughtSignature === 'string' ? part.thoughtSignature : undefined,
+        status: part.status === 'success' || part.status === 'error' ? part.status : undefined,
+        errorMessage: typeof part.errorMessage === 'string' ? part.errorMessage : undefined,
+        errorDetail:
+          typeof part.errorDetail === 'string'
+            ? part.errorDetail
+            : isObject(part.errorDetail)
+              ? (part.errorDetail as ToolCallErrorDetail)
+              : undefined,
+        startedAt: typeof part.startedAt === 'number' ? part.startedAt : undefined,
+        endedAt: typeof part.endedAt === 'number' ? part.endedAt : undefined,
       })
       continue
     }

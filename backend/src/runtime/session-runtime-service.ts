@@ -15,6 +15,9 @@ import type {
   RunId,
   SerializedTodoItem,
   ServerEventPayloadMap,
+  ServerRequestPayload,
+  ServerRequestResolvedPayload,
+  ServerRequestResponsePayload,
   SessionEntry,
   SessionEventEntry,
   SessionMessageRecord,
@@ -25,6 +28,7 @@ import type {
   StepId,
   StepKind,
   WorkflowStatus,
+  ToolCallErrorDetail,
 } from '@lecquy/shared'
 import {
   createPauseId,
@@ -49,7 +53,10 @@ import {
   runSimpleAgent,
   runWorkerAgent,
 } from '../agent/index.js'
-import type { AgentRuntimeEvent } from '../agent/tool-permission.js'
+import {
+  consumePermissionFailureMetadata,
+  type AgentRuntimeEvent,
+} from '../agent/tool-permission.js'
 import { loadStartupSlices } from '../core/prompts/context-files.js'
 import { buildLayeredSystemPrompt } from '../core/prompts/prompt-serializer.js'
 import type { AgentRole, BuildLayeredPromptOptions, CapabilityBlock } from '../core/prompts/prompt-layer-types.js'
@@ -72,6 +79,8 @@ import { getMemoryCoordinator } from '../memory/coordinator.js'
 import { syncTodosToForesight } from '../memory/foresight-sync.js'
 import { buildMemoryRecallBlockLegacy, buildMemoryRecallMessages } from '../memory/prompt-injector.js'
 import { buildAugmentedContext } from './context/augmented-context-builder.js'
+import { appendAuditEntry, type ApprovalAuditEntry } from './approval-audit.js'
+import { ConfirmationBroker } from './confirmation-broker.js'
 import { resolveSessionKey } from './session-key.js'
 import { SessionManager } from './pi-session-core/session-manager.js'
 import { createSessionProjectionBase, rebuildSessionProjection } from './projections.js'
@@ -114,6 +123,8 @@ interface StepLifecycle {
   readonly finishedAt?: number
   readonly durationMs?: number
 }
+
+type NotifierFn = (event: keyof ServerEventPayloadMap, payload: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => void
 
 interface PromptBuildRequest {
   readonly sessionId: string
@@ -334,7 +345,7 @@ interface ToolResultState {
   endedAt?: number
   status?: 'success' | 'error'
   errorMessage?: string
-  errorDetail?: string
+  errorDetail?: ToolCallErrorDetail
 }
 
 function enrichAssistantContent(
@@ -537,7 +548,7 @@ export class SessionRuntimeService {
   private readonly projections = new Map<string, SessionProjection>()
   private readonly pgSyncState = new Map<string, { eventCount: number; updatedAt: number; title: string | null; mode: string | null }>()
   private readonly managers = new Map<string, SessionManager>()
-  private readonly notifiers = new Map<string, (event: keyof ServerEventPayloadMap, payload: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => void>()
+  private readonly notifiers = new Map<string, Set<NotifierFn>>()
   private readonly activeRuns = new Map<string, ActiveRunHandle>()
   private readonly locks = new Map<string, Promise<void>>()
   private readonly toolArgsByCallId = new Map<string, unknown>()
@@ -545,11 +556,21 @@ export class SessionRuntimeService {
   private readonly toolResultsByCallId = new Map<string, ToolResultState>()
   private readonly skillSessions = new Map<string, SkillSession>()
   private readonly sessionModes = new Map<string, SessionMode>()
+  private readonly broker: ConfirmationBroker
 
   constructor(config = getConfig()) {
     this.cfg = config
     this.runtimePaths = resolveRuntimePaths(undefined, this.cfg.SESSION_STORE_DIR)
     this.paths = createSessionStorePaths(this.runtimePaths.sessionStoreDir)
+    this.broker = new ConfirmationBroker({
+      onRequest: (request) => {
+        this.notify(request.sessionKey, 'server_request', request)
+      },
+      onResolved: (resolved, request) => {
+        this.notify(request.sessionKey, 'server_request_resolved', resolved)
+        void this.appendApprovalAuditFromResolved(resolved, request)
+      },
+    })
   }
 
   async init(): Promise<void> {
@@ -572,17 +593,85 @@ export class SessionRuntimeService {
 
   setNotifier(
     sessionKey: string,
-    notify: (event: keyof ServerEventPayloadMap, payload: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => void,
+    notify: NotifierFn,
   ): void {
-    this.notifiers.set(sessionKey, notify)
+    const existing = this.notifiers.get(sessionKey)
+    if (existing) {
+      existing.add(notify)
+      return
+    }
+    this.notifiers.set(sessionKey, new Set([notify]))
   }
 
-  clearNotifier(sessionKey: string): void {
-    this.notifiers.delete(sessionKey)
+  clearNotifier(sessionKey: string, notify?: NotifierFn): void {
+    if (!notify) {
+      this.notifiers.delete(sessionKey)
+      return
+    }
+
+    const listeners = this.notifiers.get(sessionKey)
+    if (!listeners) return
+    listeners.delete(notify)
+    if (listeners.size === 0) {
+      this.notifiers.delete(sessionKey)
+    }
   }
 
   private notify<T extends keyof ServerEventPayloadMap>(sessionKey: string, event: T, payload: ServerEventPayloadMap[T]): void {
-    this.notifiers.get(sessionKey)?.(event, payload)
+    const listeners = this.notifiers.get(sessionKey)
+    if (!listeners || listeners.size === 0) return
+    for (const listener of listeners) {
+      try {
+        listener(event, payload)
+      } catch (error) {
+        logger.warn('WS notifier 执行失败', {
+          sessionKey,
+          event,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  }
+
+  resolveServerRequest(payload: ServerRequestResponsePayload): {
+    ok: boolean
+    reason?: 'not_found' | 'already_resolved' | 'sessionKey_mismatch' | 'runId_mismatch' | 'itemId_mismatch'
+  } {
+    return this.broker.resolve(payload)
+  }
+
+  getPendingServerRequests(sessionKey: string): ServerRequestPayload[] {
+    return this.broker.getPending(sessionKey)
+  }
+
+  private async appendApprovalAuditFromResolved(
+    resolved: ServerRequestResolvedPayload,
+    request: ServerRequestPayload,
+  ): Promise<void> {
+    const decision: ApprovalAuditEntry['decision'] =
+      resolved.status === 'accepted'
+        ? 'accept'
+        : resolved.status === 'accepted_for_session'
+          ? 'accept_for_session'
+          : resolved.status === 'accepted_for_project'
+            ? 'accept_for_project'
+            : resolved.status === 'declined'
+              ? 'decline'
+              : resolved.status === 'expired'
+                ? 'expired'
+                : resolved.source === 'run_cancel'
+                  ? 'run_cancel'
+                  : 'cancel'
+
+    await appendAuditEntry(this.runtimePaths.workspaceDir, {
+      ts: resolved.resolvedAt,
+      runId: resolved.runId,
+      itemId: resolved.itemId,
+      toolName: request.approval.operation.toolName,
+      displayCommand: request.approval.operation.displayCommand,
+      decision,
+      ruleContent: request.approval.ruleSuggestion?.content,
+    })
   }
 
   private getToolCallKey(sessionKey: string, runId: RunId, toolCallId: string): string {
@@ -896,6 +985,7 @@ export class SessionRuntimeService {
     const active = this.activeRuns.get(sessionKey)
     if (!active) return false
     if (runId && active.runId !== runId) return false
+    this.broker.cancelByRun(sessionKey, active.runId, 'run_cancel')
     active.abortController.abort()
     return true
   }
@@ -1502,6 +1592,10 @@ export class SessionRuntimeService {
         enableTools: toolsEnabled,
         route: bound.projection.route,
         mode,
+        sessionKey,
+        sessionId: bound.projection.sessionId,
+        runId,
+        confirmationBroker: this.broker,
         onEvent: (event) => {
           this.handleAgentEvent(bound.manager, sessionKey, runId, step, event)
         },
@@ -1607,6 +1701,10 @@ export class SessionRuntimeService {
         signal,
         todoManager,
         route: bound.projection.route,
+        sessionKey,
+        sessionId: bound.projection.sessionId,
+        runId,
+        confirmationBroker: this.broker,
         onEvent: (event) => {
           this.handleAgentEvent(bound.manager, sessionKey, runId, plannerStep, event)
         },
@@ -1690,6 +1788,10 @@ export class SessionRuntimeService {
         apiKey,
         workspaceDir: this.runtimePaths.workspaceDir,
         signal,
+        sessionKey,
+        sessionId: bound.projection.sessionId,
+        runId,
+        confirmationBroker: this.broker,
         onEvent: (event) => {
           this.handleAgentEvent(bound.manager, sessionKey, runId, step, event)
         },
@@ -1924,8 +2026,9 @@ export class SessionRuntimeService {
         })
       }
       if (event.isError) {
-        const errorMessage = extractToolErrorMessage(event.result) ?? detail ?? 'Tool execution failed'
-        const errorDetail = detail && detail !== errorMessage ? detail : undefined
+        const permissionFailure = consumePermissionFailureMetadata(event.toolCallId)
+        const errorMessage = permissionFailure?.message ?? extractToolErrorMessage(event.result) ?? detail ?? 'Tool execution failed'
+        const errorDetail = permissionFailure?.detail ?? (detail && detail !== errorMessage ? detail : undefined)
         // 回填 tool 结果缓存，后续 assistant message 落库时可还原成功/失败状态与错误文案
         this.toolResultsByCallId.set(execKey, {
           ...(this.toolResultsByCallId.get(execKey) ?? {}),
@@ -1934,6 +2037,26 @@ export class SessionRuntimeService {
           errorMessage,
           errorDetail,
         })
+        if (permissionFailure?.kind === 'hard_deny') {
+          void appendAuditEntry(this.runtimePaths.workspaceDir, {
+            ts: Date.now(),
+            runId,
+            itemId: event.toolCallId,
+            toolName: event.toolName,
+            displayCommand:
+              typeof toolArgs === 'object'
+              && toolArgs
+              && 'command' in toolArgs
+              && typeof (toolArgs as { command?: unknown }).command === 'string'
+                ? (toolArgs as { command: string }).command
+                : undefined,
+            decision: 'hard_deny',
+            ruleContent:
+              typeof errorDetail === 'object' && errorDetail && 'ruleContent' in errorDetail
+                ? (errorDetail as { ruleContent?: string }).ruleContent
+                : undefined,
+          })
+        }
         this.emitToolCallEnd(sessionKey, {
           sessionKey,
           runId,

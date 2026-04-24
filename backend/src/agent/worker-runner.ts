@@ -4,7 +4,7 @@
 
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-agent-core'
-import type { SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
+import type { RunId, SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
 import type { WorkerReceipt } from '../core/prompts/prompt-layer-types.js'
 import { resolveWorkspaceRoot } from '../core/runtime-paths.js'
 import { buildWorkerPrompt } from '../core/prompts/system-prompts.js'
@@ -12,7 +12,6 @@ import { createWorkerTools } from './tools/index.js'
 import {
   createPermissionAwareTools,
   type AgentRuntimeEvent,
-  type ConfirmRequiredEvent,
 } from './tool-permission.js'
 import { getPermissionManager } from './permission-manager-registry.js'
 import { mutateProviderPayload } from './provider-payload.js'
@@ -25,6 +24,7 @@ import {
   MAX_SUB_ITERATIONS,
   MAX_SUB_TOOL_FAILURES,
 } from './types.js'
+import type { ConfirmationBroker } from '../runtime/confirmation-broker.js'
 
 const MAX_CONSECUTIVE_FAILURES = 2
 
@@ -38,6 +38,10 @@ export interface WorkerRunOptions {
   workspaceDir: string
   onEvent?: (event: AgentRuntimeEvent) => void
   signal?: AbortSignal
+  sessionKey?: string
+  sessionId?: string
+  runId?: RunId
+  confirmationBroker?: ConfirmationBroker
 }
 
 interface LegacyWorkerRunOptions {
@@ -51,6 +55,10 @@ interface LegacyWorkerRunOptions {
   signal?: AbortSignal
   onEvent?: (event: AgentRuntimeEvent) => void
   route?: SessionRouteContext
+  sessionKey?: string
+  sessionId?: string
+  runId?: RunId
+  confirmationBroker?: ConfirmationBroker
 }
 
 interface NormalizedWorkerRunOptions {
@@ -65,6 +73,10 @@ interface NormalizedWorkerRunOptions {
   signal?: AbortSignal
   thinkingLevel?: ThinkingLevel
   temperature?: number
+  sessionKey?: string
+  sessionId?: string
+  runId?: RunId
+  confirmationBroker?: ConfirmationBroker
 }
 
 export interface WorkerResult {
@@ -147,6 +159,10 @@ async function normalizeWorkerRunOptions(options: WorkerAgentOptions): Promise<N
     signal: options.signal,
     thinkingLevel: options.thinkingLevel,
     temperature: options.temperature,
+    sessionKey: options.sessionKey,
+    sessionId: options.sessionId,
+    runId: options.runId,
+    confirmationBroker: options.confirmationBroker,
   }
 }
 
@@ -163,7 +179,6 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
   let pausePrompt: string | undefined
   let consecutiveFailures = 0
   let failureBlocked = false
-  let pendingConfirmEvent: ConfirmRequiredEvent | undefined
 
   const abortController = new AbortController()
   const combinedSignal = normalized.signal
@@ -175,13 +190,12 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
     role: 'worker',
     workspaceDir: normalized.workspaceDir,
     enabled: layeredPermissionEnabled,
+    sessionKey: normalized.sessionKey,
+    sessionId: normalized.sessionId,
+    runId: normalized.runId,
+    broker: normalized.confirmationBroker,
     manager: permissionManager,
-    onEvent: (event) => {
-      if (event.type === 'confirm_required') {
-        pendingConfirmEvent = event
-      }
-      normalized.onEvent?.(event)
-    },
+    onEvent: normalized.onEvent,
   })
 
   const promptMessages: AgentMessage[] = [
@@ -206,25 +220,6 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
             message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult',
         ),
       getSteeringMessages: async () => {
-        if (pendingConfirmEvent) {
-          forcedStopReason = pendingConfirmEvent.description
-          if (stopInstructionIssued) {
-            abortController.abort()
-            return []
-          }
-          stopInstructionIssued = true
-          return [
-            {
-              role: 'user' as const,
-              content: [{
-                type: 'text' as const,
-                text: `刚才的操作需要用户确认：${pendingConfirmEvent.toolName}。请立即停止继续调用工具，只输出无法继续的原因。`,
-              }],
-              timestamp: Date.now(),
-            },
-          ]
-        }
-
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           failureBlocked = true
           forcedStopReason = `连续失败 ${MAX_CONSECUTIVE_FAILURES} 次`
@@ -321,17 +316,6 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
 
     logProviderStreamEvent(normalized.model, event)
     normalized.onEvent?.(event as AgentEvent)
-  }
-
-  if (pendingConfirmEvent) {
-    return {
-      receipt: buildBlockedReceipt(
-        `需要用户确认操作: ${pendingConfirmEvent.toolName}(${JSON.stringify(pendingConfirmEvent.args)})`,
-        '请回交 manager 由其向用户求证',
-      ),
-      messages,
-      pause: pausePrompt ? { prompt: pausePrompt } : undefined,
-    }
   }
 
   if (failureBlocked) {

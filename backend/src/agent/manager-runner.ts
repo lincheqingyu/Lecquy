@@ -4,12 +4,12 @@
 
 import type { Model, Message } from '@mariozechner/pi-ai'
 import { agentLoop, type AgentEvent, type AgentMessage } from '@mariozechner/pi-agent-core'
-import type { SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
+import type { RunId, SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
 import { resolveWorkspaceRoot } from '../core/runtime-paths.js'
 import { buildManagerPrompt } from '../core/prompts/system-prompts.js'
 import type { WorkerReceipt } from '../core/prompts/prompt-layer-types.js'
 import { createManagerTools } from './tools/index.js'
-import { createPermissionAwareTools, type AgentRuntimeEvent, type ConfirmRequiredEvent } from './tool-permission.js'
+import { createPermissionAwareTools, type AgentRuntimeEvent } from './tool-permission.js'
 import { getPermissionManager } from './permission-manager-registry.js'
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
@@ -23,6 +23,7 @@ import {
 } from './types.js'
 import type { TodoManager } from '../core/todo/todo-manager.js'
 import { logger } from '../utils/logger.js'
+import type { ConfirmationBroker } from '../runtime/confirmation-broker.js'
 
 export interface ManagerAgentOptions {
   messages: AgentMessage[]
@@ -37,6 +38,10 @@ export interface ManagerAgentOptions {
   contextMessages?: AgentMessage[]
   todoManager: TodoManager
   route?: SessionRouteContext
+  sessionKey?: string
+  sessionId?: string
+  runId?: RunId
+  confirmationBroker?: ConfirmationBroker
 }
 
 export interface ManagerAgentResult {
@@ -102,24 +107,26 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
     onEvent,
     contextMessages = [],
     todoManager,
+    sessionKey,
+    sessionId,
+    runId,
+    confirmationBroker,
   } = options
 
   const workspaceDir = resolveWorkspaceRoot()
   const rawTools = createManagerTools(todoManager)
   const layeredPermissionEnabled = process.env.LAYERED_PROMPT === 'true'
-  let pendingConfirmEvent: ConfirmRequiredEvent | undefined
   const permissionManager = await getPermissionManager(workspaceDir)
   const tools = createPermissionAwareTools(rawTools, {
     role: 'manager',
     workspaceDir,
     enabled: layeredPermissionEnabled,
+    sessionKey,
+    sessionId,
+    runId,
+    broker: confirmationBroker,
     manager: permissionManager,
-    onEvent: (event) => {
-      if (event.type === 'confirm_required') {
-        pendingConfirmEvent = event
-      }
-      onEvent?.(event)
-    },
+    onEvent,
   })
   const systemPrompt = systemPromptOverride ?? await buildManagerPrompt({
     mode: 'plan',
@@ -154,28 +161,6 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
         ),
       getSteeringMessages: async () => {
-        if (pendingConfirmEvent) {
-          logger.warn('Manager 命中 confirm 档工具，已停止继续执行', {
-            toolName: pendingConfirmEvent.toolName,
-          })
-          if (stopInstructionIssued) {
-            abortController.abort()
-            return []
-          }
-          stopInstructionIssued = true
-          forcedStopReason = pendingConfirmEvent.description
-          return [
-            {
-              role: 'user' as const,
-              content: [{
-                type: 'text' as const,
-                text: `刚才的操作需要用户确认：${pendingConfirmEvent.toolName}。请停止继续调用工具，只输出规划结论或待确认事项。`,
-              }],
-              timestamp: Date.now(),
-            },
-          ]
-        }
-
         if (
           tracker.iteration >= MAX_ITERATIONS ||
           tracker.toolFailCount >= MAX_TOOL_FAILURES

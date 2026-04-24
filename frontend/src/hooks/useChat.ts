@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import type { ArtifactTraceItem, ChatAttachment, ClientEventPayloadMap, ServerEventPayloadMap, StepKind, ThinkingConfig } from '@lecquy/shared'
+import type {
+  ArtifactTraceItem,
+  ChatAttachment,
+  ClientEventPayloadMap,
+  ServerEventPayloadMap,
+  ServerRequestPayload,
+  StepKind,
+  ThinkingConfig,
+} from '@lecquy/shared'
 import { WS_BASE } from '../config/api.ts'
 import {
   createDraftArtifact,
@@ -205,6 +213,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
   const [boundSessionKey, setBoundSessionKey] = useState<string | null>(currentSessionKey ?? null)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [pendingRequest, setPendingRequest] = useState<ServerRequestPayload | null>(null)
 
   const reconnectWsRef = useRef<ReconnectableWs | null>(null)
   const currentRunIdRef = useRef<string | null>(null)
@@ -239,6 +248,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     locallyCancelledRunIdsRef.current.clear()
     setIsStreaming(false)
     setIsWaiting(false)
+    setPendingRequest(null)
   }, [])
 
   const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
@@ -467,6 +477,12 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     const ws = new ReconnectableWs({
       url: `${WS_BASE}/api/v1/chat/ws`,
+      onOpen: () => {
+        const sessionKey = allowedSessionKeyRef.current ?? currentSessionKeyRef.current
+        if (!sessionKey) return
+        const payload: ClientEventPayloadMap['session_subscribe'] = { sessionKey }
+        reconnectWsRef.current?.send(JSON.stringify({ event: 'session_subscribe', payload }))
+      },
       onMessage: (data) => {
         try {
           const parsed = JSON.parse(data) as { event?: keyof ServerEventPayloadMap; payload?: Record<string, unknown> }
@@ -514,7 +530,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
           }
 
           if (event === 'session_restored') {
-            onWsEvent?.(event, payload as ServerEventPayloadMap['session_restored'])
+            const restored = payload as ServerEventPayloadMap['session_restored']
+            currentRunIdRef.current = restored.runId ?? null
+            setIsStreaming(restored.status === 'running')
+            setIsWaiting(restored.status === 'paused')
+            onWsEvent?.(event, restored)
             return
           }
 
@@ -532,6 +552,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             setIsStreaming(run.status === 'running')
             setIsWaiting(run.status === 'paused')
             if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+              setPendingRequest(null)
               currentPauseIdRef.current = null
               pendingUserIdRef.current = null
               if (wasLocallyCancelled && run.status !== 'completed') {
@@ -753,6 +774,30 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               eventType: 'pause',
             })
             onWsEvent?.(event, pause)
+            return
+          }
+
+          if (event === 'server_request') {
+            const request = payload as ServerEventPayloadMap['server_request']
+            setPendingRequest((current) => {
+              if (current?.requestId === request.requestId) {
+                return {
+                  ...current,
+                  expiresAt: request.expiresAt,
+                }
+              }
+              return request
+            })
+            onWsEvent?.(event, request)
+            return
+          }
+
+          if (event === 'server_request_resolved') {
+            const resolved = payload as ServerEventPayloadMap['server_request_resolved']
+            setPendingRequest((current) => (
+              current?.requestId === resolved.requestId ? null : current
+            ))
+            onWsEvent?.(event, resolved)
             return
           }
 
@@ -1026,6 +1071,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     const attachments = payloadInput.attachments ?? []
     if (!input && attachments.length === 0) return false
     if (isStreaming) return false
+    if (pendingRequest) return false
     if (isWaiting && mode !== 'plan') return false
 
     const ws = ensureWs()
@@ -1085,7 +1131,21 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }
     ws.send(JSON.stringify({ event: 'run_start', payload }))
     return true
-  }, [boundSessionKey, buildModelOptions, ensureWs, isStreaming, isWaiting, mode, peerId])
+  }, [boundSessionKey, buildModelOptions, ensureWs, isStreaming, isWaiting, mode, peerId, pendingRequest])
+
+  const respondToPendingRequest = useCallback((decision: 'accept' | 'decline') => {
+    if (!pendingRequest) return false
+    const ws = ensureWs()
+    const payload: ClientEventPayloadMap['server_request_response'] = {
+      sessionKey: pendingRequest.sessionKey,
+      runId: pendingRequest.runId,
+      requestId: pendingRequest.requestId,
+      itemId: pendingRequest.itemId,
+      decision,
+    }
+    ws.send(JSON.stringify({ event: 'server_request_response', payload }))
+    return true
+  }, [ensureWs, pendingRequest])
 
   const stop = useCallback(() => {
     if (!boundSessionKey) return
@@ -1124,6 +1184,8 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     toggleToolGroup,
     send,
     stop,
+    pendingRequest,
+    respondToPendingRequest,
     isStreaming,
     isWaiting,
     connectionStatus,

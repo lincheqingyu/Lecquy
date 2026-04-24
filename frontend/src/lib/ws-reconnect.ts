@@ -10,6 +10,8 @@ interface ReconnectableWsOptions {
   readonly url: string
   /** 收到消息回调 */
   readonly onMessage: (data: string) => void
+  /** 建连成功回调 */
+  readonly onOpen?: () => void
   /** 连接状态变化回调 */
   readonly onStatusChange: (status: ConnectionStatus) => void
   /** 最大重试次数 */
@@ -37,6 +39,7 @@ export class ReconnectableWs {
 
   private readonly url: string
   private readonly onMessage: (data: string) => void
+  private readonly onOpen?: () => void
   private readonly onStatusChange: (status: ConnectionStatus) => void
   private readonly maxRetries: number
   private readonly initialDelay: number
@@ -44,6 +47,7 @@ export class ReconnectableWs {
   constructor(options: ReconnectableWsOptions) {
     this.url = options.url
     this.onMessage = options.onMessage
+    this.onOpen = options.onOpen
     this.onStatusChange = options.onStatusChange
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
     this.initialDelay = options.initialDelay ?? DEFAULT_INITIAL_DELAY
@@ -84,6 +88,7 @@ export class ReconnectableWs {
     this.ws.onopen = () => {
       this.retryCount = 0
       this.updateStatus('connected')
+      this.onOpen?.()
       this.flushQueue()
     }
 

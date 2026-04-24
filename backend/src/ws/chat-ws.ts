@@ -6,7 +6,11 @@
 import type http from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { z } from 'zod'
-import type { ServerEventPayloadMap } from '@lecquy/shared'
+import {
+  serverRequestResponseSchema,
+  sessionSubscribeSchema,
+  type ServerEventPayloadMap,
+} from '@lecquy/shared'
 import type { SessionRuntimeService } from '../runtime/index.js'
 import { logger } from '../utils/logger.js'
 import { runCancelSchema, runResumeSchema, runStartSchema } from '../types/api.js'
@@ -17,6 +21,7 @@ const HEARTBEAT_TIMEOUT = 60_000
 
 interface ConnectionMeta {
   sessionKey?: string
+  notifier?: (event: keyof ServerEventPayloadMap, payload: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => void
   lastPongAt: number
   heartbeatTimer: ReturnType<typeof setInterval> | null
 }
@@ -54,12 +59,32 @@ function emitBoundSession(ws: WebSocket, bound: { sessionKey: string; sessionId:
   })
 }
 
+function replayPendingServerRequests(ws: WebSocket, runtime: SessionRuntimeService, sessionKey: string): void {
+  for (const request of runtime.getPendingServerRequests(sessionKey)) {
+    sendEvent(ws, 'server_request', request as unknown as Record<string, unknown>)
+  }
+}
+
+function bindNotifier(ws: WebSocket, meta: ConnectionMeta, runtime: SessionRuntimeService, sessionKey: string): void {
+  if (meta.sessionKey && meta.notifier) {
+    runtime.clearNotifier(meta.sessionKey, meta.notifier)
+  }
+
+  const notifier = (evt: keyof ServerEventPayloadMap, body: ServerEventPayloadMap[keyof ServerEventPayloadMap]) => {
+    sendEvent(ws, evt, body as Record<string, unknown>)
+  }
+  meta.sessionKey = sessionKey
+  meta.notifier = notifier
+  runtime.setNotifier(sessionKey, notifier)
+}
+
 export function initChatWebSocketServer(server: http.Server, runtime: SessionRuntimeService): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/api/v1/chat/ws' })
 
   wss.on('connection', (ws) => {
     const meta: ConnectionMeta = {
       sessionKey: undefined,
+      notifier: undefined,
       lastPongAt: Date.now(),
       heartbeatTimer: null,
     }
@@ -94,6 +119,50 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
           return
         }
 
+        if (event === 'session_subscribe') {
+          const subscribeParsed = sessionSubscribeSchema.safeParse(payload ?? {})
+          if (!subscribeParsed.success) {
+            sendEvent(ws, 'error', { message: subscribeParsed.error.issues.map((issue) => issue.message).join('; '), code: 'BAD_SESSION_SUBSCRIBE' })
+            return
+          }
+
+          const projection = runtime.getProjection(subscribeParsed.data.sessionKey)
+          if (!projection) {
+            sendEvent(ws, 'error', { message: `会话不存在: ${subscribeParsed.data.sessionKey}`, code: 'SESSION_NOT_FOUND' })
+            return
+          }
+
+          bindNotifier(ws, meta, runtime, projection.key)
+
+          emitBoundSession(ws, {
+            sessionKey: projection.key,
+            sessionId: projection.sessionId,
+            kind: projection.kind,
+            channel: projection.channel,
+            created: false,
+          })
+
+          sendEvent(ws, 'session_restored', {
+            sessionKey: projection.key,
+            sessionId: projection.sessionId,
+            status: projection.workflow?.status,
+            runId: projection.workflow?.runId,
+            messageCount: 0,
+          })
+          replayPendingServerRequests(ws, runtime, projection.key)
+          return
+        }
+
+        if (event === 'server_request_response') {
+          const responseParsed = serverRequestResponseSchema.safeParse(payload ?? {})
+          if (!responseParsed.success) {
+            sendEvent(ws, 'error', { message: responseParsed.error.issues.map((issue) => issue.message).join('; '), code: 'BAD_SERVER_REQUEST_RESPONSE' })
+            return
+          }
+          runtime.resolveServerRequest(responseParsed.data)
+          return
+        }
+
         if (event === 'run_start') {
           const startParsed = runStartSchema.safeParse(payload ?? {})
           if (!startParsed.success) {
@@ -102,10 +171,7 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
           }
 
           const bound = await runtime.resolveSession(startParsed.data.route, startParsed.data.sessionKey)
-          meta.sessionKey = bound.projection.key
-          runtime.setNotifier(bound.projection.key, (evt, body) => {
-            sendEvent(ws, evt, body as Record<string, unknown>)
-          })
+          bindNotifier(ws, meta, runtime, bound.projection.key)
 
           emitBoundSession(ws, {
             sessionKey: bound.projection.key,
@@ -123,6 +189,7 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
               runId: bound.projection.workflow?.runId,
               messageCount: bound.messageCount,
             })
+            replayPendingServerRequests(ws, runtime, bound.projection.key)
           }
 
           await runtime.startRun(startParsed.data)
@@ -142,10 +209,7 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
             return
           }
 
-          meta.sessionKey = projection.key
-          runtime.setNotifier(projection.key, (evt, body) => {
-            sendEvent(ws, evt, body as Record<string, unknown>)
-          })
+          bindNotifier(ws, meta, runtime, projection.key)
 
           emitBoundSession(ws, {
             sessionKey: projection.key,
@@ -162,6 +226,7 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
             runId: projection.workflow?.runId,
             messageCount: 0,
           })
+          replayPendingServerRequests(ws, runtime, projection.key)
 
           await runtime.resumeRun(resumeParsed.data)
           return
@@ -176,8 +241,8 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
 
     ws.on('close', () => {
       stopHeartbeat(meta)
-      if (meta.sessionKey) {
-        runtime.clearNotifier(meta.sessionKey)
+      if (meta.sessionKey && meta.notifier) {
+        runtime.clearNotifier(meta.sessionKey, meta.notifier)
       }
       logger.info(`WS 连接关闭: ${meta.sessionKey ?? 'unknown'}`)
     })

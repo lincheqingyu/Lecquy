@@ -79,6 +79,7 @@ export interface BridgedTier {
   /** 面向 UI 的描述文本。 */
   description: string
   reason: string
+  matchedRule?: PermissionResult['matchedRule']
 }
 
 export function bridgeResult(result: PermissionResult): BridgedTier {
@@ -103,5 +104,6 @@ export function bridgeResult(result: PermissionResult): BridgedTier {
     hardDeny,
     description,
     reason: decision.reason,
+    matchedRule: result.matchedRule,
   }
 }

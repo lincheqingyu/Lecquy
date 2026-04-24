@@ -20,7 +20,6 @@ import path from 'node:path'
 
 import {
   isDangerousFile,
-  isDangerousPath,
   isInDangerousDirectory,
   isProtectedSystemPath,
 } from './dangerous-paths.js'
@@ -88,7 +87,9 @@ function baseValidate(input: FileOpCheckInput):
     }
   }
 
-  if (isProtectedSystemPath(resolved)) {
+  const workspace = path.resolve(workspaceDir)
+  const insideWorkspace = resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`)
+  if (!insideWorkspace && isProtectedSystemPath(resolved)) {
     return {
       ok: false,
       decision: { behavior: 'deny', reason: '命中系统保护路径' },
@@ -96,6 +97,16 @@ function baseValidate(input: FileOpCheckInput):
   }
 
   return { ok: true, resolved }
+}
+
+function inspectDangerousWorkspacePath(filePath: string): { dangerous: boolean; reason?: string } {
+  if (isDangerousFile(filePath)) {
+    return { dangerous: true, reason: '命中危险文件黑名单' }
+  }
+  if (isInDangerousDirectory(filePath)) {
+    return { dangerous: true, reason: '位于危险目录' }
+  }
+  return { dangerous: false }
 }
 
 /**
@@ -109,7 +120,7 @@ function checkSymlinkEscape(resolved: string, workspaceDir: string): PermissionD
     if (!lstat.isSymbolicLink()) return null
     const target = fs.realpathSync(resolved)
     const targetNormalized = target.replace(/\\/g, '/')
-    const workspaceNormalized = path.resolve(workspaceDir).replace(/\\/g, '/')
+    const workspaceNormalized = fs.realpathSync(workspaceDir).replace(/\\/g, '/')
     if (
       !targetNormalized.startsWith(`${workspaceNormalized}/`) &&
       targetNormalized !== workspaceNormalized
@@ -179,7 +190,7 @@ export function canEditFile(input: FileOpCheckInput): PermissionDecision {
     if (symlinkIssue) return symlinkIssue
   }
 
-  const danger = isDangerousPath(base.resolved)
+  const danger = inspectDangerousWorkspacePath(base.resolved)
   if (danger.dangerous) {
     return { behavior: 'ask', reason: `编辑受保护文件：${danger.reason}` }
   }
@@ -201,7 +212,7 @@ export function canDeleteFile(input: FileOpCheckInput): PermissionDecision {
     if (symlinkIssue) return symlinkIssue
   }
 
-  const danger = isDangerousPath(base.resolved)
+  const danger = inspectDangerousWorkspacePath(base.resolved)
   if (danger.dangerous) {
     return { behavior: 'deny', reason: `禁止删除受保护文件：${danger.reason}` }
   }

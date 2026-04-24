@@ -6,10 +6,28 @@ export type {
   ServerEventType,
   ClientEventType,
   ClientModelOptions,
+  PermissionMode,
+  ServerRequestKind,
+  PermissionDecisionOption,
+  PermissionRuleSuggestion,
+  ToolApprovalOperation,
+  ServerRequestPayload,
+  ServerRequestResponsePayload,
+  ServerRequestResolvedPayload,
+  ToolCallErrorDetailPayload,
+  ToolCallErrorDetail,
   ServerEventPayloadMap,
   ClientEventPayloadMap,
   ServerEvent,
   ClientEvent,
+} from './ws-events.js'
+
+export {
+  PERMISSION_MODES,
+  serverRequestSchema,
+  serverRequestResponseSchema,
+  serverRequestResolvedSchema,
+  sessionSubscribeSchema,
 } from './ws-events.js'
 
 export type {

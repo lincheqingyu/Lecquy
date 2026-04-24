@@ -1,4 +1,4 @@
-import { normalizeSessionAssistantContent } from '@lecquy/shared'
+import { normalizeSessionAssistantContent, type ToolCallErrorDetail } from '@lecquy/shared'
 
 export type ToolCallStatus = 'running' | 'success' | 'error' | 'unknown'
 
@@ -26,7 +26,7 @@ export interface MessageToolCallBlock {
   status: ToolCallStatus
   result?: unknown
   errorMessage?: string
-  errorDetail?: string
+  errorDetail?: ToolCallErrorDetail
   startedAt?: number
   endedAt?: number
   manualExpanded?: boolean
