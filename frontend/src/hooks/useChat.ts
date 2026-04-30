@@ -228,6 +228,8 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
   const allowedSessionKeyRef = useRef<string | null>(currentSessionKey ?? null)
   const pendingSessionBindingRef = useRef(false)
   const locallyCancelledRunIdsRef = useRef<Set<string>>(new Set())
+  const pendingStepDeltasRef = useRef<ServerEventPayloadMap['step_delta'][]>([])
+  const stepDeltaFrameRef = useRef<number | null>(null)
 
   useEffect(() => {
     currentSessionKeyRef.current = currentSessionKey ?? null
@@ -236,6 +238,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
   }, [currentSessionKey])
 
   const clearDerivedState = useCallback(() => {
+    if (stepDeltaFrameRef.current !== null) {
+      window.cancelAnimationFrame(stepDeltaFrameRef.current)
+      stepDeltaFrameRef.current = null
+    }
+    pendingStepDeltasRef.current = []
     currentRunIdRef.current = null
     currentPauseIdRef.current = null
     stepMessageIdsRef.current.clear()
@@ -472,6 +479,115 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }
   }, [ensureStepMessage])
 
+  const applyStepDelta = useCallback((delta: ServerEventPayloadMap['step_delta']) => {
+    if (delta.kind === 'task') {
+      const todoIndex = stepMetaRef.current.get(delta.stepId)?.todoIndex
+      if (typeof todoIndex === 'number') {
+        const planMessageId = ensurePlanMessage()
+        const stream = delta.stream ?? 'text'
+        if (stream === 'thinking') {
+          return
+        }
+        updateMessage(setMessages, planMessageId, (message) => {
+          const existing = message.planDetails?.[todoIndex] ?? {
+            todoIndex,
+            stepId: delta.stepId,
+            content: '',
+          }
+          const nextDetail = {
+            ...existing,
+            content: existing.content + delta.content,
+          }
+
+          return {
+            ...message,
+            expandedPlanTaskIndexes: message.expandedPlanTaskIndexes?.includes(todoIndex)
+              ? message.expandedPlanTaskIndexes
+              : [...(message.expandedPlanTaskIndexes ?? []), todoIndex].sort((a, b) => a - b),
+            planDetails: {
+              ...(message.planDetails ?? {}),
+              [todoIndex]: nextDetail,
+            },
+          }
+        })
+      }
+      return
+    }
+
+    const messageId = ensureStepMessage(delta.stepId, delta.kind)
+    if (!messageId) return
+    const stream = delta.stream ?? 'text'
+    updateMessage(setMessages, messageId, (message) => {
+      if (stream === 'thinking') {
+        const nextMessage = {
+          ...message,
+          hasThinking: true,
+          blocks: appendThinkingDelta(message.blocks ?? [], delta.content, { startedAt: Date.now() }),
+          thinkingContent: (message.thinkingContent ?? '') + delta.content,
+        }
+        logAssistantSnapshot('message:update:step_delta:thinking', {
+          sessionKey: delta.sessionKey,
+          runId: delta.runId,
+          stream,
+          contentPreview: previewStreamContent(delta.content),
+        }, nextMessage)
+        return nextMessage
+      }
+
+      const nextMessage = {
+        ...message,
+        content: message.content + delta.content,
+        blocks: appendTextDelta(
+          closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
+          delta.content,
+        ),
+      }
+      logAssistantSnapshot('message:update:step_delta:text', {
+        sessionKey: delta.sessionKey,
+        runId: delta.runId,
+        stream,
+        contentPreview: previewStreamContent(delta.content),
+      }, nextMessage)
+      return nextMessage
+    })
+    flushPendingStepArtifacts(delta.stepId, delta.kind)
+  }, [ensurePlanMessage, ensureStepMessage, flushPendingStepArtifacts, logAssistantSnapshot])
+
+  const flushPendingStepDeltas = useCallback(() => {
+    if (stepDeltaFrameRef.current !== null) {
+      window.cancelAnimationFrame(stepDeltaFrameRef.current)
+      stepDeltaFrameRef.current = null
+    }
+
+    const pending = pendingStepDeltasRef.current
+    if (pending.length === 0) return
+
+    pendingStepDeltasRef.current = []
+    pending.forEach(applyStepDelta)
+  }, [applyStepDelta])
+
+  const enqueueStepDelta = useCallback((delta: ServerEventPayloadMap['step_delta']) => {
+    const stream = delta.stream ?? 'text'
+    if (delta.kind === 'task' && stream === 'thinking') return
+
+    const lastIndex = pendingStepDeltasRef.current.length - 1
+    const last = pendingStepDeltasRef.current[lastIndex]
+    if (last && last.stepId === delta.stepId && last.kind === delta.kind && (last.stream ?? 'text') === stream) {
+      pendingStepDeltasRef.current[lastIndex] = {
+        ...delta,
+        content: last.content + delta.content,
+      }
+    } else {
+      pendingStepDeltasRef.current.push(delta)
+    }
+
+    if (stepDeltaFrameRef.current !== null) return
+
+    stepDeltaFrameRef.current = window.requestAnimationFrame(() => {
+      flushPendingStepDeltas()
+    })
+  }, [flushPendingStepDeltas])
+
   const ensureWs = useCallback(() => {
     if (reconnectWsRef.current) return reconnectWsRef.current
 
@@ -517,6 +633,10 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (isLocallyCancelledRun && event !== 'run_state') {
             return
+          }
+
+          if (event !== 'step_delta') {
+            flushPendingStepDeltas()
           }
 
           if (event === 'session_bound') {
@@ -675,77 +795,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               contentPreview: previewStreamContent(delta.content),
               contentLength: delta.content.length,
             })
-            if (delta.kind === 'task') {
-              const todoIndex = stepMetaRef.current.get(delta.stepId)?.todoIndex
-              if (typeof todoIndex === 'number') {
-                const planMessageId = ensurePlanMessage()
-                const stream = delta.stream ?? 'text'
-                if (stream === 'thinking') {
-                  return
-                }
-                updateMessage(setMessages, planMessageId, (message) => {
-                  const existing = message.planDetails?.[todoIndex] ?? {
-                    todoIndex,
-                    stepId: delta.stepId,
-                    content: '',
-                  }
-                  const nextDetail = {
-                    ...existing,
-                    content: existing.content + delta.content,
-                  }
-
-                  return {
-                    ...message,
-                    expandedPlanTaskIndexes: message.expandedPlanTaskIndexes?.includes(todoIndex)
-                      ? message.expandedPlanTaskIndexes
-                      : [...(message.expandedPlanTaskIndexes ?? []), todoIndex].sort((a, b) => a - b),
-                    planDetails: {
-                      ...(message.planDetails ?? {}),
-                      [todoIndex]: nextDetail,
-                    },
-                  }
-                })
-              }
-              return
-            }
-
-            const messageId = ensureStepMessage(delta.stepId, delta.kind)
-            if (!messageId) return
-            const stream = delta.stream ?? 'text'
-            updateMessage(setMessages, messageId, (message) => {
-              if (stream === 'thinking') {
-                const nextMessage = {
-                  ...message,
-                  hasThinking: true,
-                  blocks: appendThinkingDelta(message.blocks ?? [], delta.content, { startedAt: Date.now() }),
-                  thinkingContent: (message.thinkingContent ?? '') + delta.content,
-                }
-                logAssistantSnapshot('message:update:step_delta:thinking', {
-                  sessionKey: delta.sessionKey,
-                  runId: delta.runId,
-                  stream,
-                  contentPreview: previewStreamContent(delta.content),
-                }, nextMessage)
-                return nextMessage
-              }
-
-              const nextMessage = {
-                ...message,
-                content: message.content + delta.content,
-                blocks: appendTextDelta(
-                  closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
-                  delta.content,
-                ),
-              }
-              logAssistantSnapshot('message:update:step_delta:text', {
-                sessionKey: delta.sessionKey,
-                runId: delta.runId,
-                stream,
-                contentPreview: previewStreamContent(delta.content),
-              }, nextMessage)
-              return nextMessage
-            })
-            flushPendingStepArtifacts(delta.stepId, delta.kind)
+            enqueueStepDelta(delta)
             return
           }
 
@@ -1052,7 +1102,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     reconnectWsRef.current = ws
     return ws
-  }, [WS_BASE, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, logAssistantSnapshot, onWsEvent])
+  }, [cleanupCancelledRunMessages, enqueueStepDelta, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, flushPendingStepDeltas, logAssistantSnapshot, onWsEvent])
 
   const buildModelOptions = useCallback(() => ({
     model: modelConfig.model,
@@ -1131,7 +1181,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     }
     ws.send(JSON.stringify({ event: 'run_start', payload }))
     return true
-  }, [boundSessionKey, buildModelOptions, ensureWs, isStreaming, isWaiting, mode, peerId, pendingRequest])
+  }, [boundSessionKey, buildModelOptions, ensurePlanMessage, ensureWs, isStreaming, isWaiting, mode, peerId, pendingRequest])
 
   const respondToPendingRequest = useCallback((decision: 'accept' | 'decline') => {
     if (!pendingRequest) return false
@@ -1166,6 +1216,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
   useEffect(() => {
     return () => {
+      if (stepDeltaFrameRef.current !== null) {
+        window.cancelAnimationFrame(stepDeltaFrameRef.current)
+        stepDeltaFrameRef.current = null
+      }
+      pendingStepDeltasRef.current = []
       reconnectWsRef.current?.close()
       reconnectWsRef.current = null
     }

@@ -15,10 +15,13 @@
 - [项目级 / 20260408-2-个人强 Agent 路线 开发规划.md](./项目级/20260408-2-个人强%20Agent%20路线%20开发规划.md)：记录 Lecquy 从 AI Web 向“个人强 Agent”演进的方向
 - [环境与配置 / 20260408-8-环境参数配置 技术规范.md](./环境与配置/20260408-8-环境参数配置%20技术规范.md)：统一本地环境变量与配置入口
 - [后端 / 记忆与检索 / 20260408-3-Runtime Memory Compact 决策沉淀 技术规范.md](./backend/记忆与检索/20260408-3-Runtime%20Memory%20Compact%20决策沉淀%20技术规范.md)：后端记忆 / compact 决策基线
+- [后端 / Claude 上下文压缩复刻 / 20260430-14-Phase 1 codex 审查报告.md](./backend/Claude%20上下文压缩复刻/20260430-14-Phase%201%20codex%20审查报告.md)：Phase 1 LLM 摘要升级的 codex 审查与分诊结论
+- [后端 / Claude 上下文压缩复刻 / 20260430-15-Phase 2 token-aware 触发策略 技术规范.md](./backend/Claude%20上下文压缩复刻/20260430-15-Phase%202%20token-aware%20触发策略%20技术规范.md)：Phase 2 token-aware 压缩触发策略、recent tail token budget 与验收口径
 - [后端 / 沙箱权限与命令拦截 / 20260424-1-Codex 风格权限审批协议 技术规范.md](./backend/沙箱权限与命令拦截/20260424-1-Codex%20风格权限审批协议%20技术规范.md)：确认权限审批采用 WS 传输 + Codex-style server request 协议
 - [前端 / 20260417-1-Markdown 渲染排障 技术规范.md](./frontend/20260417-1-Markdown%20渲染排障%20技术规范.md)：前端 Markdown 渲染问题排障入口
 - [前端 / 20260422-1-消息时间线与工具动作呈现 技术规范.md](./frontend/20260422-1-消息时间线与工具动作呈现%20技术规范.md)：统一思考、tool 与文件动作在消息时间线中的展示口径
 - [前端 / 20260423-1-消息时间线视觉收敛 技术规范.md](./frontend/20260423-1-消息时间线视觉收敛%20技术规范.md)：时间线事件原语 `TimelineEvent` 收敛 + `ArtifactPanel` 流式跟随（替代 20260422-2，后者已归档）
+- [前端 / 20260429-1-上下文占比圆圈指示器 技术规范.md](./frontend/20260429-1-上下文占比圆圈指示器%20技术规范.md)：ProgressCircle SVG 实现、token 计算链路、本地/API 模型有效性分析
 
 ## 归档说明
 

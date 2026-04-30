@@ -24,10 +24,10 @@ export function isChatStreamDebugEnabled(): boolean {
 
   try {
     const raw = window.localStorage.getItem(CHAT_STREAM_DEBUG_STORAGE_KEY)
-    if (raw === null) return true
+    if (raw === null) return false
     return raw === '1' || raw === 'true'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -95,7 +95,6 @@ export function createBlocksSignature(blocks: MessageBlock[] | undefined): strin
 
 export function logChatStream(scope: string, payload: Record<string, unknown>): void {
   if (!isChatStreamDebugEnabled()) return
-  // eslint-disable-next-line no-console
   console.debug(`[chat-stream] ${scope}`, payload)
 }
 

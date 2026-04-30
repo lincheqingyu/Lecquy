@@ -23,7 +23,11 @@ function extractMessageText(entry: SessionEventEntry): string {
   return normalizeWhitespace(extractSessionText(entry.message.content))
 }
 
-export function formatCompactSummary(input: {
+/**
+ * 降级摘要生成（Phase 1 之前的模板方式）
+ * LLM 调用失败时作为兜底，保留原有行为。
+ */
+export function formatCompactSummaryFallback(input: {
   readonly previousSummary?: string
   readonly compactedMessages: SessionEventEntry[]
   readonly recentTailCount: number

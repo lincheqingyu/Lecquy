@@ -38,6 +38,9 @@ const envSchema = z.object({
   /** LLM 请求超时（毫秒） */
   LLM_TIMEOUT: z.coerce.number().int().default(120000),
 
+  /** 压缩摘要 LLM 调用硬超时（毫秒）；起步 60s，根据 p99 耗时调整 */
+  COMPACTION_TIMEOUT_MS: z.coerce.number().int().default(60_000),
+
   /** 日志级别 */
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 

@@ -57,6 +57,7 @@ function createTestConfig(): Env {
     SESSION_PRUNING_SOFT_RATIO: 0.3,
     SESSION_PRUNING_HARD_RATIO: 0.5,
     SESSION_PRUNING_MIN_TOOL_CHARS: 50_000,
+    COMPACTION_TIMEOUT_MS: 60_000,
     PG_ENABLED: false,
     PG_HOST: 'localhost',
     PG_PORT: 5432,

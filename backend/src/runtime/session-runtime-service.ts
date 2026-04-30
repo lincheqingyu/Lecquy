@@ -165,6 +165,13 @@ function summarizeToolResultDetail(result: unknown): string | undefined {
   return summary.length > 0 ? summary : undefined
 }
 
+function extractToolOutputText(result: unknown): string | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const content = 'content' in result ? (result as { content?: unknown }).content : undefined
+  const text = extractSessionText(content).trim()
+  return text ? text : undefined
+}
+
 function extractToolErrorMessage(result: unknown): string | undefined {
   if (!result || typeof result !== 'object' || !('content' in result)) return undefined
   const content = (result as { content?: unknown }).content
@@ -346,6 +353,7 @@ interface ToolResultState {
   status?: 'success' | 'error'
   errorMessage?: string
   errorDetail?: ToolCallErrorDetail
+  output?: string
 }
 
 function enrichAssistantContent(
@@ -362,6 +370,7 @@ function enrichAssistantContent(
       status: part.status ?? cached.status,
       errorMessage: part.errorMessage ?? cached.errorMessage,
       errorDetail: part.errorDetail ?? cached.errorDetail,
+      output: part.output ?? cached.output,
       startedAt: part.startedAt ?? cached.startedAt,
       endedAt: part.endedAt ?? cached.endedAt,
     }
@@ -1519,8 +1528,21 @@ export class SessionRuntimeService {
         await this.refreshProjection(sessionKey)
       }
 
-      if (await applyCompactionIfNeeded(manager)) {
-        await this.refreshProjection(sessionKey)
+      try {
+        const compactionModel = bound.projection.model ?? this.cfg.LLM_MODEL
+        if (await applyCompactionIfNeeded(manager, {
+          model: compactionModel,
+          apiKey,
+          timeoutMs: this.cfg.COMPACTION_TIMEOUT_MS,
+        })) {
+          await this.refreshProjection(sessionKey)
+        }
+      } catch (error) {
+        logger.warn('[compact] 自动压缩失败，跳过本轮压缩', {
+          sessionKey,
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
 
       this.activeRuns.delete(sessionKey)
@@ -1987,6 +2009,7 @@ export class SessionRuntimeService {
 
     if (event.type === 'tool_execution_end') {
       const detail = summarizeToolResultDetail(event.result)
+      const output = extractToolOutputText(event.result)
       const execKey = this.getToolCallKey(sessionKey, runId, event.toolCallId)
       const toolArgs = this.toolArgsByCallId.get(execKey)
       this.toolArgsByCallId.delete(execKey)
@@ -2036,6 +2059,7 @@ export class SessionRuntimeService {
           status: 'error',
           errorMessage,
           errorDetail,
+          output,
         })
         if (permissionFailure?.kind === 'hard_deny') {
           void appendAuditEntry(this.runtimePaths.workspaceDir, {
@@ -2074,6 +2098,7 @@ export class SessionRuntimeService {
         ...(this.toolResultsByCallId.get(execKey) ?? {}),
         endedAt: Date.now(),
         status: 'success',
+        output,
       })
       this.emitToolCallEnd(sessionKey, {
         sessionKey,
