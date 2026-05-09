@@ -35,8 +35,8 @@ export interface RuntimePaths {
   readonly legacyBackendRuntimeRootDirs: readonly string[]
 }
 
-const LEGACY_ROOT_RUNTIME_DIR_NAMES = ['.ZxhClaw', '.webclaw'] as const
-const LEGACY_BACKEND_RUNTIME_DIR_NAMES = ['.lecquy', '.ZxhClaw', '.webclaw'] as const
+const LEGACY_ROOT_RUNTIME_DIR_NAMES = ['.webclaw'] as const
+const LEGACY_BACKEND_RUNTIME_DIR_NAMES = ['.lecquy', '.webclaw'] as const
 
 function looksLikeWorkspaceRoot(candidateDir: string): boolean {
   return (

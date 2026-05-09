@@ -34,6 +34,19 @@ test('formatMemoryRecallBlock emits stable template with relevant memory header'
   assert.match(block, /source: session memory/)
 })
 
+test('formatMemoryRecallBlock includes event type, project and relative time', () => {
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  const block = formatMemoryRecallBlock([
+    createRecallItem({
+      eventType: 'decision',
+      projectId: 'github.com/lincheqingyu/Lecquy',
+      occurredAt: twoDaysAgo,
+    }),
+  ])
+
+  assert.match(block, /decision · Lecquy · 2 天前/)
+})
+
 test('formatMemoryRecallBlock trims low-priority tail when char budget is exceeded', () => {
   const block = formatMemoryRecallBlock([
     createRecallItem({ id: 'mem_1' }),
@@ -42,7 +55,7 @@ test('formatMemoryRecallBlock trims low-priority tail when char budget is exceed
       summary: '这条应该被预算裁掉',
       content: '这是一条很长的测试内容，用来验证在预算超限时后面的条目会被直接丢弃。',
     }),
-  ], 220)
+  ], 360)
 
   assert.match(block, /summary: 后续先做记忆系统/)
   assert.doesNotMatch(block, /这条应该被预算裁掉/)

@@ -13,6 +13,7 @@ release/
 .env.*.local
 
 # 会话数据
+.lecquy/
 .lecquy/sessions/
 .lecquy/pg/
 .lecquy/dev-postgres/

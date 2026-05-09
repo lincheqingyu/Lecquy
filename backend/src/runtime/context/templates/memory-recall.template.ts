@@ -16,6 +16,42 @@ function truncate(text: string, maxLength: number): string {
   return `${normalized.slice(0, maxLength - 3)}...`
 }
 
+function formatProjectName(projectId: string | undefined): string {
+  const normalized = normalizeWhitespace(projectId ?? '').replace(/\\/g, '/')
+  if (!normalized) return 'global'
+
+  const parts = normalized.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? normalized
+}
+
+function formatRelativeTime(occurredAt: string | undefined): string {
+  if (!occurredAt) return '时间未知'
+
+  const timestamp = new Date(occurredAt).getTime()
+  if (!Number.isFinite(timestamp)) return '时间未知'
+
+  const diffMs = Math.max(Date.now() - timestamp, 0)
+  const minuteMs = 60 * 1000
+  const hourMs = 60 * minuteMs
+  const dayMs = 24 * hourMs
+
+  if (diffMs < hourMs) {
+    const minutes = Math.max(Math.floor(diffMs / minuteMs), 1)
+    return `${minutes} 分钟前`
+  }
+
+  if (diffMs < dayMs) {
+    return `${Math.floor(diffMs / hourMs)} 小时前`
+  }
+
+  return `${Math.floor(diffMs / dayMs)} 天前`
+}
+
+function formatMemoryLabel(item: MemoryRecallResult): string {
+  const type = item.eventType ?? item.kind
+  return `${type} · ${formatProjectName(item.projectId)} · ${formatRelativeTime(item.occurredAt)}`
+}
+
 export function formatMemoryRecallBlock(
   items: MemoryRecallResult[],
   charBudget = MEMORY_RECALL_BUDGET_CHARS,
@@ -33,7 +69,7 @@ export function formatMemoryRecallBlock(
 
   for (const [index, item] of items.entries()) {
     const block = [
-      `${index + 1}. summary: ${truncate(item.summary, MEMORY_RECALL_SUMMARY_CHARS)}`,
+      `${index + 1}. [${formatMemoryLabel(item)}] summary: ${truncate(item.summary, MEMORY_RECALL_SUMMARY_CHARS)}`,
       `   content: ${truncate(item.content, MEMORY_RECALL_CONTENT_CHARS)}`,
       `   tags: ${item.tags.join(', ') || 'n/a'}`,
       '   source: session memory',

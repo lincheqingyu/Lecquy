@@ -98,6 +98,8 @@ export interface MemoryRecallQuery {
 export interface MemoryRecallResult {
   readonly id: string
   readonly kind: 'event'
+  readonly eventType?: ExtractedEventType
+  readonly projectId?: string
   readonly summary: string
   readonly content: string
   readonly tags: string[]

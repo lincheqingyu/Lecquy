@@ -18,10 +18,11 @@
     "pg:live-extraction": "tsx src/dev/live-event-extraction-smoke.ts"
   },
   "dependencies": {
+    "@lecquy/shared": "workspace:*",
     "@mariozechner/pi-agent-core": "^0.55.0",
     "@mariozechner/pi-ai": "^0.55.0",
     "@sinclair/typebox": "^0.34.48",
-    "@lecquy/shared": "workspace:*",
+    "better-sqlite3": "^12.9.0",
     "cors": "^2.8.5",
     "dmdb": "^1.0.46190",
     "dotenv": "^16.4.0",
@@ -31,6 +32,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",

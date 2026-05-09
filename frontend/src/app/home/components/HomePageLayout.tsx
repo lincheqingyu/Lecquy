@@ -612,8 +612,6 @@ export function HomePageLayout() {
                 <ConversationArea
                   isDark={isDark}
                   modelConfig={modelConfig}
-                  conversationTitle={conversationTitle}
-                  sessionMetaText={sessionMetaText}
                   peerId={activePeerId}
                   currentSessionKey={selectedSessionKey ?? currentSessionKey}
                   externalMessages={messageSeed}

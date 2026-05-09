@@ -1,5 +1,7 @@
 import { Type } from '@sinclair/typebox'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
+import { TOOL_OUTPUT_LIMIT } from '../../types.js'
+import { stringifySessionToolOutput } from './output.js'
 import { getBoundSessionService } from './runtime.js'
 
 const parameters = Type.Object({
@@ -12,7 +14,7 @@ export function createSessionsSendTool(): AgentTool<typeof parameters> {
   return {
     name: 'sessions_send',
     label: '跨会话发送消息',
-    description: '向另一个会话发送消息。',
+    description: `向另一个会话发送消息。单次输出会被截断到 ${TOOL_OUTPUT_LIMIT} 字符以内。`,
     parameters,
     execute: async (_id, params): Promise<AgentToolResult<Record<string, never>>> => {
       const service = getBoundSessionService()
@@ -21,32 +23,36 @@ export function createSessionsSendTool(): AgentTool<typeof parameters> {
       if (timeoutSeconds === 0) {
         void promise
         return {
-          content: [{ type: 'text', text: JSON.stringify({ status: 'accepted' }) }],
+          content: [{ type: 'text', text: stringifySessionToolOutput({ status: 'accepted' }) }],
           details: {},
         }
       }
 
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
       const timeout = new Promise<{ timeout: true }>((resolve) => {
-        setTimeout(() => resolve({ timeout: true }), timeoutSeconds * 1000)
+        timeoutHandle = setTimeout(() => resolve({ timeout: true }), timeoutSeconds * 1000)
       })
 
       const race = await Promise.race([promise, timeout])
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+      }
       if ('timeout' in race) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ status: 'timeout', error: `waited ${timeoutSeconds}s` }) }],
+          content: [{ type: 'text', text: stringifySessionToolOutput({ status: 'timeout', error: `waited ${timeoutSeconds}s` }) }],
           details: {},
         }
       }
 
       if (race.status === 'error') {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ runId: race.runId, status: race.status, error: race.error }) }],
+          content: [{ type: 'text', text: stringifySessionToolOutput({ runId: race.runId, status: race.status, error: race.error }) }],
           details: {},
         }
       }
 
       return {
-        content: [{ type: 'text', text: JSON.stringify({ runId: race.runId, status: race.status, reply: race.reply }) }],
+        content: [{ type: 'text', text: stringifySessionToolOutput({ runId: race.runId, status: race.status, reply: race.reply }) }],
         details: {},
       }
     },

@@ -10,8 +10,33 @@ export {
   readMemoryFile,
 } from './store.js'
 export { recordMemoryTurnAndMaybeFlush, resetMemoryTurnCounter } from './flush.js'
-export { createMemoryCoordinator, getMemoryCoordinator, MemoryCoordinator } from './coordinator.js'
+export {
+  buildEventExtractionInput,
+  createMemoryCoordinator,
+  extractAndPersistOnTurnComplete,
+  getMemoryCoordinator,
+  MemoryCoordinator,
+} from './coordinator.js'
 export { extractEventMemoryItems } from './extraction-runner.js'
+export { deriveProjectId } from './project-id.js'
+export {
+  closeDb,
+  countMemoryItems,
+  getDb,
+  getLastExtractedSeq,
+  insertItemsAndAdvanceWatermark,
+  insertMemoryItems,
+  MEMORY_RECALL_TOP_K,
+  searchForRecall,
+  searchMemoryItems,
+  setLastExtractedSeq,
+} from './sqlite-store.js'
+export type {
+  MemoryItemRow,
+  RecallOptions,
+  MemorySearchOptions,
+  SQLiteMemoryItemInsert,
+} from './sqlite-store.js'
 export type {
   EventExtractionInput,
   EventExtractionJobPayload,

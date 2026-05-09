@@ -4,10 +4,10 @@ import { getPool } from '../db/client.js'
 import { searchEventMemories } from '../db/memory-search-repository.js'
 import { formatMemoryRecallBlock } from '../runtime/context/templates/memory-recall.template.js'
 import { logger } from '../utils/logger.js'
+import { deriveProjectId } from './project-id.js'
+import { MEMORY_RECALL_TOP_K, searchForRecall, type MemoryItemRow } from './sqlite-store.js'
 import { loadMemoryInjectionText } from './store.js'
-import type { MemoryRecallQuery } from './types.js'
-
-const MEMORY_RECALL_TOP_K = 5
+import type { MemoryRecallQuery, MemoryRecallResult } from './types.js'
 
 interface BuildMemoryRecallBlockArgs {
   readonly pgEnabled: boolean
@@ -31,6 +31,8 @@ interface BuildMemoryRecallMessagesArgs {
 export const promptInjectorDeps = {
   getPool,
   searchEventMemories,
+  searchForRecall,
+  deriveProjectId,
   formatMemoryRecallBlock,
   loadMemoryInjectionText,
   logger,
@@ -86,12 +88,55 @@ function createMemoryRecallMessage(text: string): AgentMessage {
   }
 }
 
+function toRecallResult(item: MemoryItemRow): MemoryRecallResult {
+  return {
+    id: item.id,
+    kind: 'event',
+    eventType: item.eventType,
+    projectId: item.projectId,
+    summary: item.summary,
+    content: item.content,
+    tags: item.tags,
+    importance: item.importance,
+    confidence: item.confidence,
+    occurredAt: item.occurredAt,
+    sourceEventIds: item.sourceEventIds,
+    score: item.score ?? 0,
+  }
+}
+
+function buildSQLiteMemoryRecallText(args: BuildMemoryRecallMessagesArgs): string {
+  if (process.env.LECQUY_MEMORY_DISABLED === 'true') {
+    return ''
+  }
+
+  try {
+    const projectId = promptInjectorDeps.deriveProjectId(args.workspaceDir)
+    const recallItems = promptInjectorDeps.searchForRecall({
+      currentProjectId: projectId,
+      userQuery: args.userQuery,
+      limit: MEMORY_RECALL_TOP_K,
+    })
+
+    return promptInjectorDeps.formatMemoryRecallBlock(recallItems.map(toRecallResult))
+  } catch (error) {
+    promptInjectorDeps.logger.warn('SQLite memory recall 失败，已回退为文件系统 recall', {
+      sessionId: args.sessionId,
+      sessionKey: args.sessionKey ?? args.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return ''
+  }
+}
+
 export async function buildMemoryRecallMessages(
   args: BuildMemoryRecallMessagesArgs,
 ): Promise<AgentMessage[]> {
-  let recallText = ''
+  let recallText = buildSQLiteMemoryRecallText(args)
 
-  if (args.pgEnabled && normalizeWhitespace(args.userQuery).length >= 2) {
+  if (!recallText.trim()
+    && process.env.MEMORY_PG_LEGACY === 'true'
+    && normalizeWhitespace(args.userQuery).length >= 2) {
     try {
       const recallItems = await promptInjectorDeps.searchEventMemories(
         promptInjectorDeps.getPool(),
@@ -106,7 +151,7 @@ export async function buildMemoryRecallMessages(
       )
       recallText = promptInjectorDeps.formatMemoryRecallBlock(recallItems)
     } catch (error) {
-      promptInjectorDeps.logger.warn('memory recall 查询失败，已回退为文件系统 recall', {
+      promptInjectorDeps.logger.warn('PG legacy memory recall 查询失败，已回退为文件系统 recall', {
         sessionId: args.sessionId,
         sessionKey: args.sessionKey ?? args.sessionId,
         error: error instanceof Error ? error.message : String(error),

@@ -1,11 +1,11 @@
-import type { SessionProjection } from '@lecquy/shared'
+import { extractSessionText, type SessionProjection } from '@lecquy/shared'
 import { getConfig, type Env } from '../config/index.js'
 import { getPool } from '../db/client.js'
 import {
   claimNextPendingMemoryJob,
   enqueueEventExtractionJob,
   getLatestTriggerEventSeq,
-  insertMemoryItems,
+  insertMemoryItems as insertPgMemoryItems,
   loadEventExtractionInput,
   markMemoryJobDone,
   markMemoryJobFailure,
@@ -13,11 +13,21 @@ import {
 import type { SessionManager } from '../runtime/pi-session-core/session-manager.js'
 import { logger } from '../utils/logger.js'
 import { extractEventMemoryItems } from './extraction-runner.js'
+import { deriveProjectId } from './project-id.js'
+import {
+  getLastExtractedSeq,
+  insertItemsAndAdvanceWatermark,
+} from './sqlite-store.js'
+import type { EventExtractionInput, MemoryItemInsert } from './types.js'
 
 const EVENT_EXTRACTION_MESSAGE_THRESHOLD = 4
 const EVENT_EXTRACTION_MAX_MESSAGES = 8
 const MEMORY_JOB_POLL_INTERVAL_MS = 5_000
 const MEMORY_JOB_MAX_RETRY = 3
+
+function isLegacyPgMemoryEnabled(config: Env): boolean {
+  return config.PG_ENABLED && process.env.MEMORY_PG_LEGACY === 'true'
+}
 
 function countDurableCandidateMessages(manager: SessionManager, fromEventSeq: number): number {
   return manager.getEntries()
@@ -30,17 +40,95 @@ function countDurableCandidateMessages(manager: SessionManager, fromEventSeq: nu
     .length
 }
 
+interface ExtractAndPersistOptions {
+  readonly extractItems?: (input: EventExtractionInput) => Promise<MemoryItemInsert[]>
+}
+
+export function buildEventExtractionInput(
+  projection: SessionProjection,
+  manager: SessionManager,
+  fromSeq = 0,
+): EventExtractionInput {
+  const messages = manager.getEntries()
+    .map((entry, index) => ({ entry, seq: index + 1 }))
+    .filter(({ seq }) => seq > fromSeq)
+    .filter(({ entry }) => {
+      if (entry.type !== 'message') return false
+      if (entry.message.role !== 'user' && entry.message.role !== 'assistant') return false
+      return Boolean(extractSessionText(entry.message.content).trim())
+    })
+    .slice(-EVENT_EXTRACTION_MAX_MESSAGES)
+    .map(({ entry, seq }) => {
+      if (entry.type !== 'message') {
+        throw new Error('unexpected non-message entry in memory extraction input')
+      }
+
+      return {
+        seq,
+        eventId: entry.id,
+        role: entry.message.role === 'assistant' ? 'assistant' as const : 'user' as const,
+        text: extractSessionText(entry.message.content).trim(),
+        timestamp: entry.timestamp,
+      }
+    })
+
+  return {
+    sessionContext: {
+      sessionId: projection.sessionId,
+      sessionKey: projection.key,
+      title: projection.title,
+      mode: projection.workflow?.mode === 'plan' ? 'plan' : 'simple',
+    },
+    messages,
+  }
+}
+
+export async function extractAndPersistOnTurnComplete(
+  projection: SessionProjection,
+  manager: SessionManager,
+  cwd: string,
+  options: ExtractAndPersistOptions = {},
+): Promise<void> {
+  const sessionId = projection.sessionId
+  const lastSeq = getLastExtractedSeq(sessionId)
+  const currentSeq = manager.getEntries().length
+  const newMessageCount = countDurableCandidateMessages(manager, lastSeq)
+  if (newMessageCount < EVENT_EXTRACTION_MESSAGE_THRESHOLD) return
+
+  const input = buildEventExtractionInput(projection, manager, lastSeq)
+  if (input.messages.length < EVENT_EXTRACTION_MESSAGE_THRESHOLD) return
+
+  const projectId = deriveProjectId(cwd)
+  const extractItems = options.extractItems ?? extractEventMemoryItems
+  const items = (await extractItems(input)).map((item) => ({
+    ...item,
+    projectId,
+  }))
+
+  insertItemsAndAdvanceWatermark(items, sessionId, currentSeq)
+  logger.info('SQLite event memory 已落库', {
+    sessionKey: projection.key,
+    sessionId,
+    projectId,
+    count: items.length,
+    fromSeq: lastSeq,
+    toSeq: currentSeq,
+  })
+}
+
 export class MemoryCoordinator {
   private readonly cfg: Env
+  readonly enabled: boolean = false
   private pollTimer: NodeJS.Timeout | null = null
   private inFlightPoll: Promise<void> | null = null
 
   constructor(config = getConfig()) {
     this.cfg = config
+    this.enabled = isLegacyPgMemoryEnabled(config)
   }
 
   start(): void {
-    if (!this.cfg.PG_ENABLED || this.pollTimer) return
+    if (!this.enabled || this.pollTimer) return
 
     this.pollTimer = setInterval(() => {
       void this.pollOnce()
@@ -63,7 +151,7 @@ export class MemoryCoordinator {
   }
 
   async onTurnCompleted(projection: SessionProjection, manager: SessionManager): Promise<void> {
-    if (!this.cfg.PG_ENABLED) return
+    if (!this.enabled) return
 
     try {
       const pool = getPool()
@@ -124,7 +212,7 @@ export class MemoryCoordinator {
         const input = await loadEventExtractionInput(pool, job)
         const items = await extractEventMemoryItems(input)
         if (items.length > 0) {
-          await insertMemoryItems(pool, items)
+          await insertPgMemoryItems(pool, items)
         }
       }
 
