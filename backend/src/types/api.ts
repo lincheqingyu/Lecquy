@@ -4,6 +4,10 @@
 
 import { z } from 'zod'
 
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+export const MAX_FILE_TEXT_CHARS = 200_000
+export const MAX_TOTAL_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
 /** 错误响应体 */
 export interface ErrorResponse {
   readonly success: false
@@ -75,10 +79,48 @@ const attachmentSchema = z.discriminatedUnion('kind', [
   }),
 ])
 
+const attachmentsSchema = z.array(attachmentSchema).superRefine((attachments, ctx) => {
+  let totalBytes = 0
+
+  attachments.forEach((attachment, index) => {
+    if (attachment.kind === 'image') {
+      totalBytes += attachment.data.length
+      if (attachment.data.length > MAX_IMAGE_BYTES) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `图片附件 ${attachment.name} 超过上限：上限 ${MAX_IMAGE_BYTES}B，实际 ${attachment.data.length}B`,
+          path: [index, 'data'],
+          params: { code: 'ATTACHMENT_TOO_LARGE' },
+        })
+      }
+      return
+    }
+
+    totalBytes += attachment.text.length
+    if (attachment.text.length > MAX_FILE_TEXT_CHARS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `文件附件 ${attachment.name} 超过上限：上限 ${MAX_FILE_TEXT_CHARS} 字符，实际 ${attachment.text.length} 字符`,
+        path: [index, 'text'],
+        params: { code: 'ATTACHMENT_TOO_LARGE' },
+      })
+    }
+  })
+
+  if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `附件总大小超过上限：上限 ${MAX_TOTAL_ATTACHMENT_BYTES}B，实际 ${totalBytes}B`,
+      path: [],
+      params: { code: 'ATTACHMENT_TOO_LARGE' },
+    })
+  }
+})
+
 export const runStartSchema = sessionRouteSchema.extend({
   route: sessionRouteSchema.shape.route,
   input: z.string(),
-  attachments: z.array(attachmentSchema).optional(),
+  attachments: attachmentsSchema.optional(),
   mode: z.enum(['simple', 'plan']).default('simple'),
   sessionKey: z.string().optional(),
 }).merge(modelOptionsSchema).refine(
@@ -91,7 +133,7 @@ export const runResumeSchema = z.object({
   runId: z.string().min(1, 'runId 不能为空'),
   pauseId: z.string().min(1, 'pauseId 不能为空'),
   input: z.string(),
-  attachments: z.array(attachmentSchema).optional(),
+  attachments: attachmentsSchema.optional(),
 }).merge(modelOptionsSchema).refine(
   (value) => value.input.trim().length > 0 || (value.attachments?.length ?? 0) > 0,
   { message: '消息内容或附件至少提供一项' },

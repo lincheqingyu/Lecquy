@@ -6,6 +6,7 @@
 import type { Model } from '@mariozechner/pi-ai'
 import type { ThinkingProtocol } from '@lecquy/shared'
 import { getConfig } from '../config/index.js'
+import { lookupModelSpec } from './model-registry.js'
 
 /** vLLM Model 创建参数 */
 export interface VllmModelOptions {
@@ -86,6 +87,7 @@ export function createVllmModel(options?: VllmModelOptions): Model<'openai-compl
   const baseUrl = options?.baseUrl ?? config.LLM_BASE_URL
   const maxTokens = options?.maxTokens ?? config.LLM_MAX_TOKENS
   const thinkingProtocol = options?.thinkingProtocol ?? 'off'
+  const registrySpec = lookupModelSpec(modelId)
 
   return {
     id: modelId,
@@ -96,7 +98,7 @@ export function createVllmModel(options?: VllmModelOptions): Model<'openai-compl
     reasoning: thinkingProtocol !== 'off',
     input: supportsVisionInput(modelId) ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: options?.contextWindow ?? 128_000,
+    contextWindow: options?.contextWindow ?? registrySpec?.contextWindow ?? 128_000,
     maxTokens,
     compat: createCompat(thinkingProtocol),
   }

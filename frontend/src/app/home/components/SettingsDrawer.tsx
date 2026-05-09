@@ -1,9 +1,14 @@
 import {ChevronDown, Trash2, X} from 'lucide-react'
 import {clsx} from 'clsx'
-import {useCallback, useEffect, useRef, useState} from 'react'
+import {useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction} from 'react'
 import {createDefaultThinkingConfig, type ThinkingConfig, type ThinkingProtocol} from '@lecquy/shared'
 import type {ModelConfig} from '../../../hooks/useChat'
 import {API_V1} from '../../../config/api.ts'
+import {
+    getModelPresetLabel,
+    NEW_MODEL_PRESET_VALUE,
+    type ModelPresetItem,
+} from '../../../lib/model-presets.ts'
 import {
     fetchContextFiles,
     fetchMemoryFileContent,
@@ -17,14 +22,6 @@ import {
     type MemoryRuntimeConfig,
 } from '../../../lib/context-api.ts'
 
-interface ModelPresetItem {
-    id: string
-    model: string
-    baseUrl: string
-    apiKey: string
-    title?: string
-}
-
 /**
  * SettingsDrawer 的 Props
  *
@@ -34,14 +31,16 @@ interface SettingsDrawerProps {
     onClose: () => void
     modelConfig: ModelConfig
     onModelConfigChange: (config: ModelConfig) => void
+    modelPresets: ModelPresetItem[]
+    selectedModelPresetId: string
+    onModelPresetsChange: Dispatch<SetStateAction<ModelPresetItem[]>>
+    onSelectedModelPresetIdChange: Dispatch<SetStateAction<string>>
 }
 
 type InlineDropdownId = 'maxTokens' | 'thinkingProtocol' | 'thinkingLevel'
 type EditableContextFileName = Extract<ContextFileName, 'SOUL.md' | 'IDENTITY.md' | 'USER.md' | 'MEMORY.md'>
 type ManagedContextFileName = Extract<ContextFileName, 'AGENTS.md' | 'TOOLS.md'>
 
-const MODEL_PRESET_STORAGE_KEY = 'lecquy.modelPresets'
-const ACTIVE_MODEL_PRESET_STORAGE_KEY = 'lecquy.activeModelPresetId'
 const EDITABLE_CONTEXT_FILES: ReadonlyArray<{
     name: EditableContextFileName
     title: string
@@ -56,34 +55,6 @@ const MANAGED_CONTEXT_FILES: ReadonlyArray<{name: ManagedContextFileName; title:
     {name: 'AGENTS.md', title: 'AGENTS.md'},
     {name: 'TOOLS.md', title: 'TOOLS.md'},
 ] as const
-
-function loadModelPresetsFromStorage(): ModelPresetItem[] {
-    try {
-        const raw = localStorage.getItem(MODEL_PRESET_STORAGE_KEY)
-        if (!raw) return []
-        const parsed = JSON.parse(raw)
-        return Array.isArray(parsed) ? parsed : []
-    } catch {
-        return []
-    }
-}
-
-function loadActiveModelPresetIdFromStorage(): string | null {
-    try {
-        return localStorage.getItem(ACTIVE_MODEL_PRESET_STORAGE_KEY)
-    } catch {
-        return null
-    }
-}
-
-function getModelPresetLabel(item: ModelPresetItem | null | undefined): string {
-    if (!item) return ''
-    const modelLabel = item?.model?.trim()
-    if (modelLabel) return modelLabel
-    const legacyTitle = item?.title?.trim()
-    if (legacyTitle) return legacyTitle
-    return 'Untitled model'
-}
 
 /**
  * 设置抽屉
@@ -100,9 +71,11 @@ export function SettingsDrawer({
                                    onClose,
                                    modelConfig,
                                    onModelConfigChange,
+                                   modelPresets,
+                                   selectedModelPresetId,
+                                   onModelPresetsChange: setModelPresets,
+                                   onSelectedModelPresetIdChange: setSelectedModelPresetId,
                                }: SettingsDrawerProps) {
-    const NEW_MODEL_PRESET_VALUE = '__new_model__'
-
     const [isContextPanelOpen, setIsContextPanelOpen] = useState(false)
     const [isModelOptionsOpen, setIsModelOptionsOpen] = useState(false)
     const [activeInlineDropdown, setActiveInlineDropdown] = useState<InlineDropdownId | null>(null)
@@ -126,10 +99,6 @@ export function SettingsDrawer({
     const [contextSaveStatus, setContextSaveStatus] = useState<'Saved' | 'Editing'>('Saved')
     const [contextLoading, setContextLoading] = useState(false)
     const [contextError, setContextError] = useState<string | null>(null)
-    const [modelPresets, setModelPresets] = useState<ModelPresetItem[]>(() => loadModelPresetsFromStorage())
-    const [selectedModelPresetId, setSelectedModelPresetId] = useState<string>(() => {
-        return loadActiveModelPresetIdFromStorage() ?? NEW_MODEL_PRESET_VALUE
-    })
     const [draftModel, setDraftModel] = useState('')
     const [draftBaseUrl, setDraftBaseUrl] = useState('')
     const [draftApiKey, setDraftApiKey] = useState('')
@@ -270,33 +239,6 @@ export function SettingsDrawer({
     }
 
     useEffect(() => {
-        // 首次没有模型预设时，按当前模型配置创建一个默认预设，便于后续编辑/切换。
-        if (modelPresets.length > 0) return
-        const id = `model_${Date.now()}`
-        const initial: ModelPresetItem = {
-            id,
-            model: modelConfig.model || '',
-            baseUrl: modelConfig.baseUrl || '',
-            apiKey: modelConfig.apiKey || '',
-            title: modelConfig.model || 'Default model',
-        }
-        setModelPresets([initial])
-        setSelectedModelPresetId(id)
-    }, [modelConfig.apiKey, modelConfig.baseUrl, modelConfig.model, modelPresets.length])
-
-    useEffect(() => {
-        localStorage.setItem(MODEL_PRESET_STORAGE_KEY, JSON.stringify(modelPresets))
-    }, [modelPresets])
-
-    useEffect(() => {
-        if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE) {
-            localStorage.removeItem(ACTIVE_MODEL_PRESET_STORAGE_KEY)
-            return
-        }
-        localStorage.setItem(ACTIVE_MODEL_PRESET_STORAGE_KEY, selectedModelPresetId)
-    }, [selectedModelPresetId])
-
-    useEffect(() => {
         if (!isModelPanelOpen) return
         const initialId = selectedModelPresetId ?? NEW_MODEL_PRESET_VALUE
         setSelectedModelPresetId(initialId)
@@ -312,7 +254,7 @@ export function SettingsDrawer({
         }
         setModelSaveStatus('Saved')
         setModelsError(null)
-    }, [isModelPanelOpen, modelPresets, selectedModelPresetId])
+    }, [isModelPanelOpen, modelPresets, selectedModelPresetId, setSelectedModelPresetId])
 
     useEffect(() => {
         if (!isContextPanelOpen) return
@@ -427,6 +369,8 @@ export function SettingsDrawer({
         modelSaveStatus,
         onModelConfigChange,
         selectedModelPresetId,
+        setModelPresets,
+        setSelectedModelPresetId,
     ])
 
     useEffect(() => {
@@ -605,13 +549,22 @@ export function SettingsDrawer({
         }
     }
 
-    const handleDrawerClose = () => {
+    const handleDrawerClose = useCallback(() => {
         if (isContextPanelOpen && contextSaveStatus === 'Editing' && !selectedManagedFile) {
             void persistContextFile(selectedContextFile, contextDrafts[selectedContextFile])
         }
         resetDrawerPanels()
         onClose()
-    }
+    }, [
+        contextDrafts,
+        contextSaveStatus,
+        isContextPanelOpen,
+        onClose,
+        persistContextFile,
+        resetDrawerPanels,
+        selectedContextFile,
+        selectedManagedFile,
+    ])
 
     useEffect(() => {
         if (!isOpen) return

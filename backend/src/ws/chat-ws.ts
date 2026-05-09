@@ -6,6 +6,7 @@
 import type http from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { z } from 'zod'
+import type { ZodError } from 'zod'
 import {
   serverRequestResponseSchema,
   sessionSubscribeSchema,
@@ -30,6 +31,19 @@ const wsEnvelopeSchema = z.object({
   event: z.string(),
   payload: z.record(z.unknown()).optional(),
 })
+
+function formatValidationMessage(error: ZodError): string {
+  return error.issues.map((issue) => issue.message).join('; ')
+}
+
+function getValidationErrorCode(error: ZodError, fallback: string): string {
+  return error.issues.some((issue) =>
+    'params' in issue
+    && (issue.params as Record<string, unknown> | undefined)?.code === 'ATTACHMENT_TOO_LARGE',
+  )
+    ? 'ATTACHMENT_TOO_LARGE'
+    : fallback
+}
 
 function startHeartbeat(ws: WebSocket, meta: ConnectionMeta): void {
   meta.heartbeatTimer = setInterval(() => {
@@ -166,7 +180,10 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
         if (event === 'run_start') {
           const startParsed = runStartSchema.safeParse(payload ?? {})
           if (!startParsed.success) {
-            sendEvent(ws, 'error', { message: startParsed.error.issues.map((issue) => issue.message).join('; '), code: 'BAD_RUN_START' })
+            sendEvent(ws, 'error', {
+              message: formatValidationMessage(startParsed.error),
+              code: getValidationErrorCode(startParsed.error, 'BAD_RUN_START'),
+            })
             return
           }
 
@@ -199,7 +216,10 @@ export function initChatWebSocketServer(server: http.Server, runtime: SessionRun
         if (event === 'run_resume') {
           const resumeParsed = runResumeSchema.safeParse(payload ?? {})
           if (!resumeParsed.success) {
-            sendEvent(ws, 'error', { message: resumeParsed.error.issues.map((issue) => issue.message).join('; '), code: 'BAD_RUN_RESUME' })
+            sendEvent(ws, 'error', {
+              message: formatValidationMessage(resumeParsed.error),
+              code: getValidationErrorCode(resumeParsed.error, 'BAD_RUN_RESUME'),
+            })
             return
           }
 

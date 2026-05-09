@@ -24,6 +24,7 @@ import {
 import type { TodoManager } from '../core/todo/todo-manager.js'
 import { logger } from '../utils/logger.js'
 import type { ConfirmationBroker } from '../runtime/confirmation-broker.js'
+import { compactInLoop } from '../runtime/context/in-loop-compactor.js'
 
 export interface ManagerAgentOptions {
   messages: AgentMessage[]
@@ -160,6 +161,7 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
         agentMessages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
         ),
+      transformContext: async (agentMessages) => compactInLoop(agentMessages),
       getSteeringMessages: async () => {
         if (
           tracker.iteration >= MAX_ITERATIONS ||

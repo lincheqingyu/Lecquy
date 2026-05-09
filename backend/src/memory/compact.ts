@@ -11,6 +11,7 @@ import {
 } from '@mariozechner/pi-ai'
 import { type SessionContentBlock, type SessionEventEntry, extractSessionText } from '@lecquy/shared'
 import { createVllmModel } from '../agent/vllm-model.js'
+import { resolveModelSpec, type ModelContextWindowSource } from '../agent/model-registry.js'
 import { resolvePromptContextPaths } from '../core/prompts/context-files.js'
 import { formatCompactSummaryFallback } from '../runtime/context/templates/compact-summary.template.js'
 import { logger } from '../utils/logger.js'
@@ -18,8 +19,9 @@ import type { SessionManager } from '../runtime/pi-session-core/session-manager.
 
 // ─── 触发常量 ──────────────────────────────────────────────────────────────────
 
-const COMPACT_TRIGGER_MESSAGE_EVENTS = 50
-const COMPACT_RECENT_TAIL = 10
+const COMPACTION_PROMPT_OVERHEAD_TOKENS = 4_000
+const COMPACTION_NEXT_INPUT_BUFFER_TOKENS = 2_000
+const COMPACTION_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
 
 // ─── LLM 摘要相关常量（见文档 9 第 9 节配置项与默认值）──────────────────────────
 
@@ -44,6 +46,20 @@ interface CompactSource {
   readonly previousSummary?: string
   readonly compactedMessages: SessionEventEntry[]
   readonly firstKeptEntryId: string
+  readonly estimatedTokens?: number
+  readonly modelContextWindow?: number
+  readonly thresholdUsed?: number
+  readonly recentTailBudgetTokens?: number
+  readonly recentTailEstimatedTokens?: number
+  readonly keptMessageCount?: number
+  readonly contextWindowSource?: ModelContextWindowSource
+  readonly reservedBreakdown?: {
+    readonly output: number
+    readonly prompt_overhead: number
+    readonly next_input: number
+  }
+  readonly tailSplitInToolChain?: boolean
+  readonly largestSinglePartTokens?: number
 }
 
 /** buildCompactSummary 的入参 */
@@ -284,7 +300,7 @@ export async function buildCompactSummary(input: CompactSummaryInput): Promise<C
       summary: formatCompactSummaryFallback({
         previousSummary: input.source.previousSummary,
         compactedMessages: input.source.compactedMessages,
-        recentTailCount: COMPACT_RECENT_TAIL,
+        recentTailCount: input.source.keptMessageCount ?? 0,
       }),
       method: 'template',
       llmError: { name: 'ConfigError', message: 'model 或 apiKey 缺失' },
@@ -308,7 +324,7 @@ export async function buildCompactSummary(input: CompactSummaryInput): Promise<C
     const summary = formatCompactSummaryFallback({
       previousSummary: input.source.previousSummary,
       compactedMessages: input.source.compactedMessages,
-      recentTailCount: COMPACT_RECENT_TAIL,
+      recentTailCount: input.source.keptMessageCount ?? 0,
     })
     return {
       summary,
@@ -321,15 +337,219 @@ export async function buildCompactSummary(input: CompactSummaryInput): Promise<C
   }
 }
 
-// ─── 辅助函数（保持原有逻辑）─────────────────────────────────────────────────
+// ─── 辅助函数 ────────────────────────────────────────────────────────────────
+
+interface TokenStats {
+  readonly tokens: number
+  readonly largestSinglePartTokens: number
+}
+
+interface ResolvedCompactionPolicy {
+  readonly modelContextWindow: number
+  readonly contextWindowSource: ModelContextWindowSource
+  readonly outputReserved: number
+  readonly promptOverhead: number
+  readonly nextInputBuffer: number
+  readonly threshold: number
+}
+
+interface TailSelection {
+  readonly compactedMessages: SessionEventEntry[]
+  readonly keptMessages: SessionEventEntry[]
+  readonly recentTailEstimatedTokens: number
+}
 
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object'
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+export function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+function safeJsonTokens(value: unknown): number {
+  try {
+    return estimateTextTokens(JSON.stringify(value))
+  } catch (error) {
+    logger.debug('[compact] token estimate skipped non-serializable value', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return 0
+  }
+}
+
+function maxStats(stats: TokenStats[]): TokenStats {
+  return stats.reduce<TokenStats>(
+    (acc, item) => ({
+      tokens: acc.tokens + item.tokens,
+      largestSinglePartTokens: Math.max(acc.largestSinglePartTokens, item.largestSinglePartTokens),
+    }),
+    { tokens: 0, largestSinglePartTokens: 0 },
+  )
+}
+
+function estimatePartTokenStats(part: unknown): TokenStats {
+  if (typeof part === 'string') {
+    const tokens = estimateTextTokens(part)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+  if (!isRecord(part)) {
+    return { tokens: 0, largestSinglePartTokens: 0 }
+  }
+
+  if (part.type === 'thinking' || part.type === 'image') {
+    return { tokens: 0, largestSinglePartTokens: 0 }
+  }
+
+  if (part.type === 'text' && typeof part.text === 'string') {
+    const tokens = estimateTextTokens(part.text)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+
+  if (part.type === 'file' && typeof part.text === 'string') {
+    const tokens = estimateTextTokens(part.text)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+
+  if (part.type === 'toolCall') {
+    const nameTokens = typeof part.name === 'string' ? estimateTextTokens(part.name) : 0
+    const argumentTokens = safeJsonTokens(part.arguments ?? {})
+    const outputTokens = typeof part.output === 'string' ? estimateTextTokens(part.output) : 0
+    const errorTokens = typeof part.errorMessage === 'string' ? estimateTextTokens(part.errorMessage) : 0
+    return {
+      tokens: nameTokens + argumentTokens + outputTokens + errorTokens,
+      largestSinglePartTokens: Math.max(nameTokens, argumentTokens, outputTokens, errorTokens),
+    }
+  }
+
+  if (typeof part.text === 'string') {
+    const tokens = estimateTextTokens(part.text)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+
+  const tokens = safeJsonTokens(part)
+  return { tokens, largestSinglePartTokens: tokens }
+}
+
 function extractMessageText(entry: SessionEventEntry): string {
   if (entry.type !== 'message') return ''
-  return normalizeWhitespace(extractSessionText(entry.message.content))
+  const content = entry.message.content
+  if (typeof content === 'string') return normalizeWhitespace(content)
+  if (!Array.isArray(content)) return normalizeWhitespace(extractSessionText(content))
+
+  const parts = content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (!isRecord(part)) return ''
+      if (part.type === 'text' && typeof part.text === 'string') return part.text
+      if (part.type === 'file' && typeof part.text === 'string') return part.text
+      if (part.type === 'toolCall') {
+        const chunks = [
+          typeof part.name === 'string' ? part.name : '',
+          JSON.stringify(part.arguments ?? {}),
+          typeof part.output === 'string' ? part.output : '',
+          typeof part.errorMessage === 'string' ? part.errorMessage : '',
+        ]
+        return chunks.filter(Boolean).join('\n')
+      }
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+
+  return normalizeWhitespace(parts)
+}
+
+function estimateMessageTokenStats(entry: SessionEventEntry): TokenStats {
+  if (entry.type !== 'message') return { tokens: 0, largestSinglePartTokens: 0 }
+
+  const content = entry.message.content
+  if (typeof content === 'string') {
+    const tokens = estimateTextTokens(content)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+  if (!Array.isArray(content)) {
+    const tokens = safeJsonTokens(content)
+    return { tokens, largestSinglePartTokens: tokens }
+  }
+  return maxStats(content.map((part) => estimatePartTokenStats(part)))
+}
+
+export function estimateMessageTokens(entry: SessionEventEntry): number {
+  return estimateMessageTokenStats(entry).tokens
+}
+
+function estimateSessionTokenStats(
+  candidateMessages: SessionEventEntry[],
+  previousSummary?: string,
+): TokenStats {
+  const previousTokens = previousSummary ? estimateTextTokens(previousSummary) : 0
+  const messageStats = maxStats(candidateMessages.map((entry) => estimateMessageTokenStats(entry)))
+  return {
+    tokens: previousTokens + messageStats.tokens,
+    largestSinglePartTokens: Math.max(previousTokens, messageStats.largestSinglePartTokens),
+  }
+}
+
+export function estimateSessionTokens(
+  candidateMessages: SessionEventEntry[],
+  previousSummary?: string,
+): number {
+  return estimateSessionTokenStats(candidateMessages, previousSummary).tokens
+}
+
+export function getCompactionThreshold(input: {
+  readonly modelContextWindow: number
+  readonly outputReserved: number
+  readonly promptOverhead: number
+  readonly nextInputBuffer: number
+}): number {
+  return Math.max(
+    1,
+    input.modelContextWindow - input.outputReserved - input.promptOverhead - input.nextInputBuffer,
+  )
+}
+
+function getRecentTailBudget(usableTokens: number): number {
+  return clamp(Math.floor(usableTokens * 0.25), 2_000, 8_000)
+}
+
+function resolveCompactionPolicy(options: CompactionOptions): ResolvedCompactionPolicy {
+  const spec = resolveModelSpec({
+    modelId: options.model,
+    explicitContextWindow: options.modelContextWindow,
+    explicitMaxTokens: options.maxOutputTokens,
+    contextWindowSource: options.contextWindowSource,
+    warnOnFallback: true,
+  })
+  const outputReserved = clamp(
+    options.maxOutputTokens ?? spec.maxTokens ?? COMPACTION_DEFAULT_MAX_OUTPUT_TOKENS,
+    2_000,
+    20_000,
+  )
+  const promptOverhead = COMPACTION_PROMPT_OVERHEAD_TOKENS
+  const nextInputBuffer = COMPACTION_NEXT_INPUT_BUFFER_TOKENS
+  return {
+    modelContextWindow: spec.contextWindow,
+    contextWindowSource: spec.contextWindowSource,
+    outputReserved,
+    promptOverhead,
+    nextInputBuffer,
+    threshold: getCompactionThreshold({
+      modelContextWindow: spec.contextWindow,
+      outputReserved,
+      promptOverhead,
+      nextInputBuffer,
+    }),
+  }
 }
 
 function getDurableMessageEntries(entries: SessionEventEntry[]): SessionEventEntry[] {
@@ -350,9 +570,87 @@ function findLatestCompaction(entries: SessionEventEntry[]): SessionEventEntry |
   return null
 }
 
-function resolveCompactSource(entries: SessionEventEntry[]): CompactSource | null {
+function selectRecentTail(
+  candidateMessages: SessionEventEntry[],
+  tailBudgetTokens: number,
+): TailSelection | null {
+  if (candidateMessages.length === 0) return null
+
+  let tokens = 0
+  let firstKeptIndex = candidateMessages.length
+  for (let index = candidateMessages.length - 1; index >= 0; index -= 1) {
+    const messageTokens = estimateMessageTokens(candidateMessages[index])
+    if (firstKeptIndex < candidateMessages.length && tokens + messageTokens > tailBudgetTokens) {
+      break
+    }
+    firstKeptIndex = index
+    tokens += messageTokens
+  }
+
+  const compactedMessages = candidateMessages.slice(0, firstKeptIndex)
+  const keptMessages = candidateMessages.slice(firstKeptIndex)
+  if (compactedMessages.length === 0 || keptMessages.length === 0) {
+    return null
+  }
+
+  return {
+    compactedMessages,
+    keptMessages,
+    recentTailEstimatedTokens: keptMessages.reduce((sum, entry) => sum + estimateMessageTokens(entry), 0),
+  }
+}
+
+function getToolCallIds(entry: SessionEventEntry | undefined): string[] {
+  if (!entry || entry.type !== 'message' || !Array.isArray(entry.message.content)) return []
+
+  return entry.message.content
+    .map((part) => {
+      if (!isRecord(part) || part.type !== 'toolCall') return undefined
+      return typeof part.id === 'string' ? part.id : undefined
+    })
+    .filter((id): id is string => Boolean(id))
+}
+
+function getToolResultId(entry: SessionEventEntry | undefined): string | undefined {
+  if (!entry || entry.type !== 'message') return undefined
+  const message = entry.message as { toolCallId?: unknown }
+  return typeof message.toolCallId === 'string' ? message.toolCallId : undefined
+}
+
+function hasPendingToolCall(entry: SessionEventEntry | undefined): boolean {
+  if (!entry || entry.type !== 'message' || !Array.isArray(entry.message.content)) return false
+
+  return entry.message.content.some((part) =>
+    isRecord(part)
+    && part.type === 'toolCall'
+    && typeof part.output !== 'string'
+    && part.status !== 'success'
+    && part.status !== 'error',
+  )
+}
+
+function detectTailSplitInToolChain(
+  compactedMessages: SessionEventEntry[],
+  keptMessages: SessionEventEntry[],
+): boolean {
+  const lastCompacted = compactedMessages.at(-1)
+  const firstKept = keptMessages[0]
+  const toolCallIds = getToolCallIds(lastCompacted)
+  const toolResultId = getToolResultId(firstKept)
+
+  if (toolResultId && toolCallIds.includes(toolResultId)) {
+    return true
+  }
+
+  return hasPendingToolCall(lastCompacted)
+}
+
+function resolveCompactSource(
+  entries: SessionEventEntry[],
+  policy: ResolvedCompactionPolicy,
+): CompactSource | null {
   const messageEntries = getDurableMessageEntries(entries)
-  if (messageEntries.length < COMPACT_TRIGGER_MESSAGE_EVENTS) {
+  if (messageEntries.length === 0) {
     return null
   }
 
@@ -368,30 +666,39 @@ function resolveCompactSource(entries: SessionEventEntry[]): CompactSource | nul
     }
   }
 
-  if (candidateMessages.length < COMPACT_TRIGGER_MESSAGE_EVENTS) {
+  if (candidateMessages.length === 0) {
     return null
   }
 
-  const firstKeptEntry = candidateMessages[candidateMessages.length - COMPACT_RECENT_TAIL]
-  if (!firstKeptEntry) {
+  const sessionTokenStats = estimateSessionTokenStats(candidateMessages, previousSummary)
+  if (sessionTokenStats.tokens < policy.threshold) {
     return null
   }
+
+  const recentTailBudgetTokens = getRecentTailBudget(policy.threshold)
+  const tail = selectRecentTail(candidateMessages, recentTailBudgetTokens)
+  const firstKeptEntry = tail?.keptMessages[0]
+  if (!tail || !firstKeptEntry) return null
 
   return {
     previousSummary,
-    compactedMessages: candidateMessages.slice(0, candidateMessages.length - COMPACT_RECENT_TAIL),
+    compactedMessages: tail.compactedMessages,
     firstKeptEntryId: firstKeptEntry.id,
+    estimatedTokens: sessionTokenStats.tokens,
+    modelContextWindow: policy.modelContextWindow,
+    thresholdUsed: policy.threshold,
+    recentTailBudgetTokens,
+    recentTailEstimatedTokens: tail.recentTailEstimatedTokens,
+    keptMessageCount: tail.keptMessages.length,
+    contextWindowSource: policy.contextWindowSource,
+    reservedBreakdown: {
+      output: policy.outputReserved,
+      prompt_overhead: policy.promptOverhead,
+      next_input: policy.nextInputBuffer,
+    },
+    tailSplitInToolChain: detectTailSplitInToolChain(tail.compactedMessages, tail.keptMessages),
+    largestSinglePartTokens: sessionTokenStats.largestSinglePartTokens,
   }
-}
-
-function estimateTokensBefore(source: CompactSource): number {
-  const previous = source.previousSummary ?? ''
-  const messageText = source.compactedMessages
-    .map((entry) => extractMessageText(entry))
-    .filter(Boolean)
-    .join('\n')
-
-  return Math.max(1, Math.ceil((previous.length + messageText.length) / 4))
 }
 
 async function writeMemorySummary(workspaceDir: string, summary: string): Promise<void> {
@@ -410,17 +717,20 @@ export interface CompactionOptions {
   readonly model: string      // model ID（bound.projection.model，见文档 11 事实 2）
   readonly apiKey: string     // cfg.LLM_API_KEY（见文档 11 事实 3）
   readonly timeoutMs: number  // cfg.COMPACTION_TIMEOUT_MS
-  // Phase 2 预留字段：
+  /** 当前 run 模型规格；传入时视为显式 spec，除非 contextWindowSource 另行指定 */
   readonly estimatedTokens?: number
   readonly modelContextWindow?: number
+  readonly maxOutputTokens?: number
   readonly thresholdUsed?: number
+  readonly contextWindowSource?: ModelContextWindowSource
 }
 
 export async function applyCompactionIfNeeded(
   manager: SessionManager,
   options: CompactionOptions,
 ): Promise<boolean> {
-  const source = resolveCompactSource(manager.getEntries())
+  const policy = resolveCompactionPolicy(options)
+  const source = resolveCompactSource(manager.getEntries(), policy)
   if (!source) {
     return false
   }
@@ -437,17 +747,23 @@ export async function applyCompactionIfNeeded(
   manager.appendCompaction(
     result.summary,
     source.firstKeptEntryId,
-    estimateTokensBefore(source),
+    source.estimatedTokens ?? options.estimatedTokens ?? 0,
     {
-      trigger: 'message_threshold',
+      trigger: 'token_overflow',
       compaction_method: result.method,
       ...(result.llmError ? { llm_error: result.llmError } : {}),
-      kept_message_count: COMPACT_RECENT_TAIL,
+      kept_message_count: source.keptMessageCount,
       compacted_message_count: source.compactedMessages.length,
       compacted_through_entry_id: source.compactedMessages[source.compactedMessages.length - 1]?.id,
-      estimated_tokens_before: options.estimatedTokens,
-      model_context_window: options.modelContextWindow,
-      threshold_used: options.thresholdUsed,
+      estimated_tokens_before: source.estimatedTokens ?? options.estimatedTokens,
+      model_context_window: source.modelContextWindow ?? options.modelContextWindow,
+      threshold_used: source.thresholdUsed ?? options.thresholdUsed,
+      recent_tail_budget_tokens: source.recentTailBudgetTokens,
+      recent_tail_estimated_tokens: source.recentTailEstimatedTokens,
+      context_window_source: source.contextWindowSource,
+      reserved_breakdown: source.reservedBreakdown,
+      tail_split_in_tool_chain: source.tailSplitInToolChain,
+      largest_single_part_tokens: source.largestSinglePartTokens,
     },
   )
 

@@ -33,6 +33,14 @@ import {
   type ArtifactWithLocation,
   type ChatArtifact,
 } from '../../../lib/artifacts'
+import {
+  ACTIVE_MODEL_PRESET_STORAGE_KEY,
+  loadActiveModelPresetIdFromStorage,
+  loadModelPresetsFromStorage,
+  MODEL_PRESET_STORAGE_KEY,
+  NEW_MODEL_PRESET_VALUE,
+  type ModelPresetItem,
+} from '../../../lib/model-presets'
 
 const STORAGE_KEYS = {
   modelConfig: 'lecquy.modelConfig',
@@ -173,6 +181,10 @@ export function HomePageLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isDark, setIsDark] = useState<boolean>(() => loadThemeMode())
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig())
+  const [modelPresets, setModelPresets] = useState<ModelPresetItem[]>(() => loadModelPresetsFromStorage())
+  const [selectedModelPresetId, setSelectedModelPresetId] = useState<string>(() => {
+    return loadActiveModelPresetIdFromStorage() ?? NEW_MODEL_PRESET_VALUE
+  })
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed())
   const [openDocument, setOpenDocument] = useState<OpenDocument | null>(null)
   // 从 ConversationArea 镜像的扁平化 artifacts，用于右侧面板订阅 draft 内容流式更新与弱自动打开
@@ -209,6 +221,48 @@ export function HomePageLayout() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.modelConfig, JSON.stringify(modelConfig))
   }, [modelConfig])
+
+  useEffect(() => {
+    // 首次没有模型预设时，按当前模型配置创建一个默认预设，供输入框只读选择器复用。
+    if (modelPresets.length > 0) return
+    const id = `model_${Date.now()}`
+    const initial: ModelPresetItem = {
+      id,
+      model: modelConfig.model || '',
+      baseUrl: modelConfig.baseUrl || '',
+      apiKey: modelConfig.apiKey || '',
+      title: modelConfig.model || 'Default model',
+    }
+    setModelPresets([initial])
+    setSelectedModelPresetId(id)
+  }, [modelConfig.apiKey, modelConfig.baseUrl, modelConfig.model, modelPresets.length])
+
+  useEffect(() => {
+    localStorage.setItem(MODEL_PRESET_STORAGE_KEY, JSON.stringify(modelPresets))
+  }, [modelPresets])
+
+  useEffect(() => {
+    if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE) {
+      localStorage.removeItem(ACTIVE_MODEL_PRESET_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(ACTIVE_MODEL_PRESET_STORAGE_KEY, selectedModelPresetId)
+  }, [selectedModelPresetId])
+
+  useEffect(() => {
+    if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE || modelPresets.length === 0) return
+    const activePreset = modelPresets.find((item) => item.id === selectedModelPresetId)
+    if (activePreset) return
+
+    const fallback = modelPresets[0]
+    setSelectedModelPresetId(fallback.id)
+    setModelConfig((prev) => ({
+      ...prev,
+      model: fallback.model,
+      baseUrl: fallback.baseUrl,
+      apiKey: fallback.apiKey,
+    }))
+  }, [modelPresets, selectedModelPresetId])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, isSidebarCollapsed ? '1' : '0')
@@ -504,6 +558,19 @@ export function HomePageLayout() {
     })
   }
 
+  const handleModelPresetSelect = useCallback((presetId: string) => {
+    const preset = modelPresets.find((item) => item.id === presetId)
+    if (!preset) return
+
+    setSelectedModelPresetId(presetId)
+    setModelConfig((prev) => ({
+      ...prev,
+      model: preset.model,
+      baseUrl: preset.baseUrl,
+      apiKey: preset.apiKey,
+    }))
+  }, [modelPresets])
+
   const updateDocumentPanelWidth = useCallback((clientX: number) => {
     setDocumentPanelWidth(clampDocumentPanelWidth(window.innerWidth - clientX, isSidebarCollapsed))
   }, [isSidebarCollapsed])
@@ -612,6 +679,9 @@ export function HomePageLayout() {
                 <ConversationArea
                   isDark={isDark}
                   modelConfig={modelConfig}
+                  modelPresets={modelPresets}
+                  selectedModelPresetId={selectedModelPresetId}
+                  onModelPresetSelect={handleModelPresetSelect}
                   peerId={activePeerId}
                   currentSessionKey={selectedSessionKey ?? currentSessionKey}
                   externalMessages={messageSeed}
@@ -689,6 +759,10 @@ export function HomePageLayout() {
           onClose={() => setIsSettingsOpen(false)}
           modelConfig={modelConfig}
           onModelConfigChange={setModelConfig}
+          modelPresets={modelPresets}
+          selectedModelPresetId={selectedModelPresetId}
+          onModelPresetsChange={setModelPresets}
+          onSelectedModelPresetIdChange={setSelectedModelPresetId}
         />
       </div>
     </div>

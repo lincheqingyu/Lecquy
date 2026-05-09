@@ -1,11 +1,16 @@
 import { ChatInput, type ChatInputSubmitPayload } from '../../components/ui/ChatInput'
-import type { ChatMode } from '../../hooks/useChat'
+import type { ChatMode, ModelConfig } from '../../hooks/useChat'
+import type { ModelPresetItem } from '../../lib/model-presets'
 import type { ReactNode } from 'react'
 
 interface PiChatInputAdapterProps {
   mode: ChatMode
   onModeChange: (mode: ChatMode) => void
   onSend: (payload: ChatInputSubmitPayload) => void
+  modelConfig: ModelConfig
+  modelPresets: ModelPresetItem[]
+  selectedModelPresetId: string
+  onModelPresetSelect: (presetId: string) => void
   showSuggestions?: boolean
   disabled?: boolean
   disabledReason?: string | null

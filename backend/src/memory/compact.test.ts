@@ -35,12 +35,24 @@ function createManager(workspaceDir: string): SessionManager {
   })
 }
 
-/** 构造 50 条简单文本消息触发阈值 */
+/** 构造短文本消息，验证 token-aware 策略不会按条数过早触发 */
 function fillMessages(manager: SessionManager, count = 50): void {
   for (let index = 0; index < count; index += 1) {
     manager.appendMessage({
       role: index % 2 === 0 ? 'user' : 'assistant',
       content: `message ${index + 1}`,
+      timestamp: Date.now() + index,
+      provider: 'openai',
+      model: 'glm-4.7',
+    })
+  }
+}
+
+function fillLargeMessages(manager: SessionManager, count = 12, charsPerMessage = 48_000): void {
+  for (let index = 0; index < count; index += 1) {
+    manager.appendMessage({
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `large message ${index + 1}\n${'x'.repeat(charsPerMessage)}`,
       timestamp: Date.now() + index,
       provider: 'openai',
       model: 'glm-4.7',
@@ -55,6 +67,9 @@ const FALLBACK_OPTIONS = {
   model: 'test-model',
   apiKey: 'test-key',
   timeoutMs: 3_000,
+  modelContextWindow: 128_000,
+  maxOutputTokens: 4_096,
+  contextWindowSource: 'spec' as const,
 }
 
 function createAssistantText(text: string): AssistantMessage {
@@ -109,19 +124,12 @@ function createValidSummary(lines: string[] = ['- 测试任务']): string {
 
 // ─── 原有集成测试（适配新签名）──────────────────────────────────────────────────
 
-test('applyCompactionIfNeeded does nothing below message threshold', async () => {
+test('applyCompactionIfNeeded does not compact short-message long conversations below token threshold', async () => {
   const workspaceDir = await createWorkspace()
 
   try {
     const manager = createManager(workspaceDir)
-
-    for (let index = 0; index < 49; index += 1) {
-      manager.appendMessage({
-        role: index % 2 === 0 ? 'user' : 'assistant',
-        content: `message ${index + 1}`,
-        timestamp: Date.now() + index,
-      })
-    }
+    fillMessages(manager, 100)
 
     assert.equal(await applyCompactionIfNeeded(manager, FALLBACK_OPTIONS), false)
     assert.equal(manager.getEntries().some((entry) => entry.type === 'compaction'), false)
@@ -135,7 +143,7 @@ test('applyCompactionIfNeeded appends compaction and keeps recent tail in contex
 
   try {
     const manager = createManager(workspaceDir)
-    fillMessages(manager)
+    fillLargeMessages(manager, 12, 48_000)
 
     const completeImpl: CompleteSimpleMock = async () => {
       throw new Error('mock compaction failure')
@@ -157,7 +165,7 @@ test('applyCompactionIfNeeded appends compaction and keeps recent tail in contex
     const persistedSummary = await readFile(summaryPath, 'utf8')
     assert.equal(persistedSummary, compaction?.type === 'compaction' ? compaction.summary : '')
 
-    // 上下文验证：10 条 recent tail + 1 条摘要消息
+    // 上下文验证：token budget 约保留 1 条超长 recent tail + 1 条摘要消息
     const context = manager.buildSessionContext()
     const texts = context.messages.map((message) => {
       if (typeof message.content === 'string') return message.content
@@ -167,9 +175,8 @@ test('applyCompactionIfNeeded appends compaction and keeps recent tail in contex
     })
 
     assert.equal(texts[0] ?? '', formatCompactionContextMessage(compaction?.type === 'compaction' ? compaction.summary : ''))
-    assert.equal(texts.length, 11)
-    assert.match(texts[1] ?? '', /message 41/)
-    assert.match(texts[10] ?? '', /message 50/)
+    assert.equal(texts.length, 2)
+    assert.match(texts[1] ?? '', /large message 12/)
   } finally {
     await rm(workspaceDir, { recursive: true, force: true })
   }
@@ -180,7 +187,7 @@ test('applyCompactionIfNeeded writes compaction_method to details', async () => 
 
   try {
     const manager = createManager(workspaceDir)
-    fillMessages(manager)
+    fillLargeMessages(manager, 12, 48_000)
 
     const completeImpl: CompleteSimpleMock = async () => {
       throw new Error('mock compaction failure')
@@ -191,9 +198,8 @@ test('applyCompactionIfNeeded writes compaction_method to details', async () => 
     try {
       await applyCompactionIfNeeded(manager, {
         ...FALLBACK_OPTIONS,
-        estimatedTokens: 12_345,
         modelContextWindow: 128_000,
-        thresholdUsed: 96_000,
+        maxOutputTokens: 4_096,
       })
     } finally {
       restore()
@@ -203,9 +209,124 @@ test('applyCompactionIfNeeded writes compaction_method to details', async () => 
     assert.ok(compaction?.type === 'compaction', '应存在 compaction entry')
     const details = compaction.details as Record<string, unknown>
     assert.equal(details.compaction_method, 'template')
-    assert.equal(details.estimated_tokens_before, 12_345)
+    assert.equal(details.trigger, 'token_overflow')
+    assert.equal(typeof details.estimated_tokens_before, 'number')
     assert.equal(details.model_context_window, 128_000)
-    assert.equal(details.threshold_used, 96_000)
+    assert.equal(details.threshold_used, 117_904)
+    assert.equal(details.context_window_source, 'spec')
+    assert.deepEqual(details.reserved_breakdown, {
+      output: 4_096,
+      prompt_overhead: 4_000,
+      next_input: 2_000,
+    })
+  } finally {
+    await rm(workspaceDir, { recursive: true, force: true })
+  }
+})
+
+test('applyCompactionIfNeeded threshold follows model context window', async () => {
+  const workspace32k = await createWorkspace()
+  const workspace200k = await createWorkspace()
+
+  const completeImpl: CompleteSimpleMock = async () => {
+    throw new Error('mock compaction failure')
+  }
+  const completeMock = mock.fn(completeImpl)
+  const restore = setCompactionCompleteSimpleForTest(completeMock)
+
+  try {
+    const manager32k = createManager(workspace32k)
+    fillLargeMessages(manager32k, 6, 30_000)
+    assert.equal(await applyCompactionIfNeeded(manager32k, {
+      ...FALLBACK_OPTIONS,
+      modelContextWindow: 32_000,
+      maxOutputTokens: 4_096,
+    }), true)
+
+    const manager200k = createManager(workspace200k)
+    fillLargeMessages(manager200k, 6, 30_000)
+    assert.equal(await applyCompactionIfNeeded(manager200k, {
+      ...FALLBACK_OPTIONS,
+      modelContextWindow: 200_000,
+      maxOutputTokens: 8_192,
+    }), false)
+  } finally {
+    restore()
+    await rm(workspace32k, { recursive: true, force: true })
+    await rm(workspace200k, { recursive: true, force: true })
+  }
+})
+
+test('applyCompactionIfNeeded does not immediately repeat after latest compaction', async () => {
+  const workspaceDir = await createWorkspace()
+
+  try {
+    const manager = createManager(workspaceDir)
+    fillLargeMessages(manager, 12, 48_000)
+
+    const completeImpl: CompleteSimpleMock = async () => {
+      throw new Error('mock compaction failure')
+    }
+    const completeMock = mock.fn(completeImpl)
+    const restore = setCompactionCompleteSimpleForTest(completeMock)
+
+    try {
+      assert.equal(await applyCompactionIfNeeded(manager, FALLBACK_OPTIONS), true)
+      assert.equal(await applyCompactionIfNeeded(manager, FALLBACK_OPTIONS), false)
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(workspaceDir, { recursive: true, force: true })
+  }
+})
+
+test('applyCompactionIfNeeded records largest tool output tokens and tail split detection', async () => {
+  const workspaceDir = await createWorkspace()
+
+  try {
+    const manager = createManager(workspaceDir)
+    manager.appendMessage({
+      role: 'user',
+      content: 'x'.repeat(120_000),
+      timestamp: 1,
+    })
+    manager.appendMessage({
+      role: 'assistant',
+      content: [{
+        type: 'toolCall',
+        id: 'call-pending',
+        name: 'read_file',
+        arguments: { path: 'large.txt' },
+      }],
+      timestamp: 2,
+    })
+    manager.appendMessage({
+      role: 'user',
+      content: 'z'.repeat(48_000),
+      timestamp: 3,
+    })
+
+    const completeImpl: CompleteSimpleMock = async () => {
+      throw new Error('mock compaction failure')
+    }
+    const completeMock = mock.fn(completeImpl)
+    const restore = setCompactionCompleteSimpleForTest(completeMock)
+
+    try {
+      assert.equal(await applyCompactionIfNeeded(manager, {
+        ...FALLBACK_OPTIONS,
+        modelContextWindow: 32_000,
+      }), true)
+    } finally {
+      restore()
+    }
+
+    const compaction = manager.getEntries().find((entry) => entry.type === 'compaction')
+    assert.ok(compaction?.type === 'compaction', '应存在 compaction entry')
+    const details = compaction.details as Record<string, unknown>
+    assert.equal(details.tail_split_in_tool_chain, true)
+    assert.equal(details.largest_single_part_tokens, 30_000)
   } finally {
     await rm(workspaceDir, { recursive: true, force: true })
   }
@@ -216,7 +337,7 @@ test('applyCompactionIfNeeded passes previous summary for multi-round fact itera
 
   try {
     const manager = createManager(workspaceDir)
-    fillMessages(manager, 50)
+    fillLargeMessages(manager, 12, 48_000)
 
     const completeImpl: CompleteSimpleMock = async (_model, context) => {
       const firstMessage = context.messages[0]
@@ -237,10 +358,10 @@ test('applyCompactionIfNeeded passes previous summary for multi-round fact itera
     try {
       assert.equal(await applyCompactionIfNeeded(manager, FALLBACK_OPTIONS), true)
 
-      for (let index = 0; index < 50; index += 1) {
+      for (let index = 0; index < 12; index += 1) {
         manager.appendMessage({
           role: index % 2 === 0 ? 'user' : 'assistant',
-          content: `phase-two message ${index + 1}`,
+          content: `phase-two message ${index + 1}\n${'y'.repeat(48_000)}`,
           timestamp: Date.now() + index,
         })
       }

@@ -41,7 +41,7 @@ export function CategoryTags({ onSelect }: CategoryTagsProps) {
             'px-3 py-1.5 text-sm',
             'text-text-secondary',
             'transition-colors',
-            'hover:bg-accent-soft hover:text-accent-text hover:border-accent-text/20',
+            'hover:border-[color:var(--color-input-border)] hover:bg-toolbar-selected hover:text-text-primary',
           )}
         >
           <Icon className="size-3.5" />

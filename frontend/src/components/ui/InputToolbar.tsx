@@ -39,7 +39,7 @@ export function InputToolbar({
             'size-8 rounded-full',
             'border border-border',
             'text-text-secondary',
-            'transition-colors hover:bg-hover hover:text-text-primary',
+            'transition-colors hover:bg-toolbar-selected hover:text-text-primary',
           )}
           aria-label="添加附件"
         >
@@ -50,7 +50,7 @@ export function InputToolbar({
           <button
             type="button"
             onClick={() => onModeChange('simple')}
-            className="rounded-full border border-border bg-surface px-2 py-1 text-xs text-text-secondary"
+            className="rounded-full border border-border bg-toolbar-selected px-2 py-1 text-xs text-text-primary"
             aria-label="关闭 plan 模式"
           >
             plan
@@ -69,7 +69,7 @@ export function InputToolbar({
           'transition-colors',
           hasContent
             ? 'bg-accent text-white hover:opacity-90'
-            : 'bg-hover text-text-muted cursor-not-allowed',
+            : 'bg-toolbar-selected text-text-muted cursor-not-allowed',
         )}
         aria-label="发送消息"
       >

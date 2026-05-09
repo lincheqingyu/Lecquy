@@ -54,6 +54,7 @@
 
     /* ---------- 交互色 ---------- */
     --color-hover: #f3f0e8;                             /* 鼠标悬停底色 · 按钮 hover / 列表项 hover / 代码块复制按钮 hover */
+    --color-toolbar-selected: rgb(239, 238, 236);        /* 输入工具栏选中 / hover 底色 · ChatInput / CategoryTags */
     --color-accent: #3b82f6;                            /* 强调色（蓝）· 链接焦点环 / 选中指示 */
     --color-accent-soft: #eff6ff;                       /* 强调色柔和背景 · 标签 hover tint / 轻量高亮 */
     --color-accent-text: #2563eb;                       /* 强调色文字 · 链接文字颜色 */
@@ -85,10 +86,15 @@
      * 浅色维持白底；暗色在 .dark 里改写为 rgb(48, 48, 48)，
      * 让 ChatInput 比页面底色 #212121 略亮一档。 */
     --color-input-surface: #ffffff;                      /* ChatInput 外层底色 · components/ui/ChatInput.tsx */
+    --color-input-border: #d9d6cf;                       /* ChatInput 边框色 · 偏 Claude 灰，不继承全局暖色边框 */
+    --color-input-border-hover: #c9c5bd;                 /* ChatInput hover / focus 边框色 */
+    --color-input-control: #30302d;                      /* ChatInput 工具按钮文字 / 图标 */
+    --color-input-control-muted: #8a8781;                /* ChatInput 模型名 / 次级控件 */
+    --color-input-placeholder: #8f8c86;                  /* ChatInput placeholder */
 
     /* ---------- 阴影 ---------- */
-    --shadow-input: 0 2px 8px rgba(15, 23, 42, 0.06);        /* 输入框默认阴影 · ChatInput 静态态 */
-    --shadow-input-hover: 0 10px 28px rgba(15, 23, 42, 0.12); /* 输入框 hover / focus 阴影 · ChatInput 聚焦态 */
+    --shadow-input: 0 1px 2px rgba(15, 23, 42, 0.03), 0 18px 42px rgba(15, 23, 42, 0.06); /* 输入框默认阴影 · ChatInput 静态态 */
+    --shadow-input-hover: 0 1px 2px rgba(15, 23, 42, 0.04), 0 20px 46px rgba(15, 23, 42, 0.08); /* 输入框 hover / focus 阴影 */
 }
 
 /* ============================================
@@ -117,6 +123,7 @@
     --color-diagram-line: rgba(255, 255, 255, 0.16); /* 暗色 ASCII 图表 / 树图导线 */
     --color-input: var(--color-border);
     --color-hover: #2a2a2a;                    /* 暗色 hover 底色 · 按钮 / 列表项 / 代码块复制按钮 hover */
+    --color-toolbar-selected: #303030;          /* 暗色输入工具栏选中 / hover 底色 */
     --color-accent: #ececec;                   /* 暗色强调色（反色）· 高对比高亮 */
     --color-accent-soft: rgba(255, 255, 255, 0.08); /* 暗色强调色柔和背景 · 标签 hover tint */
     --color-accent-text: #ffffff;              /* 暗色强调色文字 · 链接 */
@@ -141,8 +148,13 @@
     --color-inline-code-text: #f08a79;         /* 暗色行内代码文字 */
     --color-inline-code-bg: rgba(240, 138, 121, 0.14); /* 暗色行内代码背景 tint */
     --color-input-surface: #303030;            /* 暗色 ChatInput 底色 rgb(48, 48, 48) · 比页面底 #212121 亮一档 */
-    --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.3);      /* 暗色 ChatInput 默认阴影 */
-    --shadow-input-hover: 0 12px 32px rgba(0, 0, 0, 0.36); /* 暗色 ChatInput hover / focus 阴影 */
+    --color-input-border: #454545;             /* 暗色 ChatInput 边框 */
+    --color-input-border-hover: #5a5a5a;       /* 暗色 ChatInput hover / focus 边框 */
+    --color-input-control: #e8e8e8;            /* 暗色 ChatInput 工具按钮文字 / 图标 */
+    --color-input-control-muted: #a6a6a6;      /* 暗色 ChatInput 模型名 / 次级控件 */
+    --color-input-placeholder: #8e8e8e;        /* 暗色 ChatInput placeholder */
+    --shadow-input: 0 1px 2px rgba(0, 0, 0, 0.22), 0 18px 42px rgba(0, 0, 0, 0.28);      /* 暗色 ChatInput 默认阴影 */
+    --shadow-input-hover: 0 1px 2px rgba(0, 0, 0, 0.24), 0 20px 46px rgba(0, 0, 0, 0.34); /* 暗色 ChatInput hover / focus 阴影 */
 }
 
 :root {

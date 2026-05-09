@@ -19,10 +19,14 @@ import {
   type ArtifactWithLocation,
   type ChatArtifact,
 } from '../../../lib/artifacts'
+import type { ModelPresetItem } from '../../../lib/model-presets'
 
 interface ConversationAreaProps {
   isDark: boolean
   modelConfig: ModelConfig
+  modelPresets: ModelPresetItem[]
+  selectedModelPresetId: string
+  onModelPresetSelect: (presetId: string) => void
   peerId: string
   currentSessionKey?: string | null
   externalMessages: ChatMessage[]
@@ -43,6 +47,9 @@ interface ConversationAreaProps {
 export function ConversationArea({
   isDark,
   modelConfig,
+  modelPresets,
+  selectedModelPresetId,
+  onModelPresetSelect,
   peerId,
   currentSessionKey = null,
   externalMessages,
@@ -130,6 +137,10 @@ export function ConversationArea({
   const MessageListComp = USE_PI_WEB_UI_PARTIAL ? PiMessageListAdapter : MessageList
   const ChatInputComp = USE_PI_WEB_UI_PARTIAL ? PiChatInputAdapter : ChatInput
   const isSplitWorkspace = workspaceMode === 'split'
+  const conversationGutterClassName = isSplitWorkspace ? 'w-full px-4 md:px-6' : 'w-full px-4 md:px-2'
+  const conversationInputClassName = isSplitWorkspace
+    ? 'mr-auto w-full max-w-[min(100%,58rem)]'
+    : 'mx-auto w-full max-w-[50rem]'
   const stopButton = showStopButton ? (
     <button
       type="button"
@@ -216,19 +227,27 @@ export function ConversationArea({
               </div>
               <div className="mt-4 text-base text-text-muted">支持 simple 与 plan 两种模式</div>
             </div>
-            <ChatInputComp
-              mode={mode}
-              onModeChange={setMode}
-              onSend={handleSend}
-              showSuggestions
-              disabled={!effectiveCanSend}
-              disabledReason={effectiveDisabledReason}
-              rightSlot={stopButton}
-            />
+            <div className={conversationGutterClassName}>
+              <div className={conversationInputClassName}>
+                <ChatInputComp
+                  mode={mode}
+                  onModeChange={setMode}
+                  onSend={handleSend}
+                  modelConfig={modelConfig}
+                  modelPresets={modelPresets}
+                  selectedModelPresetId={selectedModelPresetId}
+                  onModelPresetSelect={onModelPresetSelect}
+                  showSuggestions
+                  disabled={!effectiveCanSend}
+                  disabledReason={effectiveDisabledReason}
+                  rightSlot={stopButton}
+                />
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex h-full min-h-0 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className={`min-h-0 flex-1 overflow-hidden ${conversationGutterClassName}`}>
               <MessageListComp
                 messages={messages}
                 isStreaming={isStreaming}
@@ -247,9 +266,9 @@ export function ConversationArea({
                 wideLayout={isSplitWorkspace}
               />
             </div>
-            <div className="shrink-0 bg-gradient-to-t from-surface-alt via-surface-alt/95 to-transparent pt-4 pb-5">
-              <div className={isSplitWorkspace ? 'w-full px-4 md:px-6' : 'mx-auto w-full max-w-3xl px-4 md:px-2'}>
-                <div className={isSplitWorkspace ? 'mr-auto max-w-[min(100%,56rem)]' : ''}>
+            <div className="shrink-0 bg-surface-alt pt-4 pb-5">
+              <div className={conversationGutterClassName}>
+                <div className={conversationInputClassName}>
                   {pendingRequest ? (
                     <ApprovalCard
                       request={pendingRequest}
@@ -260,6 +279,10 @@ export function ConversationArea({
                       mode={mode}
                       onModeChange={setMode}
                       onSend={handleSend}
+                      modelConfig={modelConfig}
+                      modelPresets={modelPresets}
+                      selectedModelPresetId={selectedModelPresetId}
+                      onModelPresetSelect={onModelPresetSelect}
                       showSuggestions={false}
                       disabled={!effectiveCanSend}
                       disabledReason={effectiveDisabledReason}

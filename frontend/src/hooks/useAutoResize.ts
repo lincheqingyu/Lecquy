@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
+
+interface AutoResizeLayoutState {
+  multiline: boolean
+  overflowing: boolean
+}
 
 /**
  * textarea 自动高度调整 Hook
@@ -12,9 +17,15 @@ import { useCallback, useEffect, useRef } from 'react'
 export function useAutoResize(
   value: string,
   maxRows = 8,
-  onLayoutChange?: (state: { multiline: boolean; overflowing: boolean }) => void,
+  onLayoutChange?: (state: AutoResizeLayoutState) => void,
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const onLayoutChangeRef = useRef(onLayoutChange)
+  const lastLayoutRef = useRef<AutoResizeLayoutState | null>(null)
+
+  useLayoutEffect(() => {
+    onLayoutChangeRef.current = onLayoutChange
+  }, [onLayoutChange])
 
   const resize = useCallback(() => {
     const el = textareaRef.current
@@ -38,15 +49,24 @@ export function useAutoResize(
     const overflowing = scrollHeight > maxHeight
     el.style.overflowY = overflowing ? 'auto' : 'hidden'
 
-    if (onLayoutChange) {
-      const multiline = value.trim().length > 0 && scrollHeight > singleLineHeight + 1
-      onLayoutChange({ multiline, overflowing })
-    }
-  }, [maxRows, onLayoutChange, value])
+    const multilineThreshold = singleLineHeight + lineHeight / 2
+    const multiline = value.trim().length > 0 && scrollHeight > multilineThreshold
+    const nextLayout = { multiline, overflowing }
+    const lastLayout = lastLayoutRef.current
 
-  useEffect(() => {
+    if (
+      !lastLayout
+      || lastLayout.multiline !== nextLayout.multiline
+      || lastLayout.overflowing !== nextLayout.overflowing
+    ) {
+      lastLayoutRef.current = nextLayout
+      onLayoutChangeRef.current?.(nextLayout)
+    }
+  }, [maxRows, value])
+
+  useLayoutEffect(() => {
     resize()
-  }, [value, resize])
+  }, [resize])
 
   return textareaRef
 }

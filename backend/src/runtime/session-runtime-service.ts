@@ -43,6 +43,7 @@ import {
 import { getConfig, type Env } from '../config/index.js'
 import { logger } from '../utils/logger.js'
 import { createVllmModel } from '../agent/vllm-model.js'
+import { resolveModelSpec } from '../agent/model-registry.js'
 import {
   AgentExecutionError,
   createManagerTools,
@@ -84,6 +85,7 @@ import { ConfirmationBroker } from './confirmation-broker.js'
 import { resolveSessionKey } from './session-key.js'
 import { SessionManager } from './pi-session-core/session-manager.js'
 import { createSessionProjectionBase, rebuildSessionProjection } from './projections.js'
+import { MAX_FILE_TEXT_CHARS, MAX_IMAGE_BYTES } from '../types/api.js'
 
 interface SessionIndexShape {
   entries: Record<string, SessionProjection>
@@ -447,12 +449,43 @@ function createUserContent(input: string, attachments: ChatAttachment[] = []): S
 
   for (const attachment of attachments) {
     if (attachment.kind === 'image') {
+      if (attachment.data.length > MAX_IMAGE_BYTES) {
+        logger.warn('[attachments] oversized image dropped before LLM context', {
+          name: attachment.name,
+          bytes: attachment.data.length,
+          maxBytes: MAX_IMAGE_BYTES,
+        })
+        blocks.push({
+          type: 'text',
+          text: `[image dropped: oversized ${attachment.data.length}B > ${MAX_IMAGE_BYTES}B]`,
+        })
+        continue
+      }
+
       blocks.push({
         type: 'image',
         data: attachment.data,
         mimeType: attachment.mimeType,
         name: attachment.name,
         size: attachment.size,
+      })
+      continue
+    }
+
+    if (attachment.text.length > MAX_FILE_TEXT_CHARS) {
+      logger.warn('[attachments] oversized file text truncated before LLM context', {
+        name: attachment.name,
+        chars: attachment.text.length,
+        maxChars: MAX_FILE_TEXT_CHARS,
+      })
+      blocks.push({
+        type: 'file',
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        text: `${attachment.text.slice(0, MAX_FILE_TEXT_CHARS)}\n... (truncated, original ${attachment.text.length} chars)`,
+        displayText: attachment.displayText,
+        size: attachment.size,
+        truncated: true,
       })
       continue
     }
@@ -1530,10 +1563,20 @@ export class SessionRuntimeService {
 
       try {
         const compactionModel = bound.projection.model ?? this.cfg.LLM_MODEL
+        const compactionSpec = resolveModelSpec({
+          modelId: compactionModel,
+          explicitMaxTokens: model.maxTokens,
+          fallbackContextWindow: model.contextWindow,
+          fallbackMaxTokens: model.maxTokens,
+          warnOnFallback: true,
+        })
         if (await applyCompactionIfNeeded(manager, {
           model: compactionModel,
           apiKey,
           timeoutMs: this.cfg.COMPACTION_TIMEOUT_MS,
+          modelContextWindow: compactionSpec.contextWindow,
+          maxOutputTokens: compactionSpec.maxTokens,
+          contextWindowSource: compactionSpec.contextWindowSource,
         })) {
           await this.refreshProjection(sessionKey)
         }

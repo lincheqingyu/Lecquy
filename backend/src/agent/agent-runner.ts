@@ -5,7 +5,7 @@
  */
 
 import type { Model, Message } from '@mariozechner/pi-ai'
-import { agentLoop, type AgentMessage, type AgentEvent } from '@mariozechner/pi-agent-core'
+import { agentLoop, type AgentMessage, type AgentEvent, type StreamFn } from '@mariozechner/pi-agent-core'
 import type { RunId, SessionMode, SessionRouteContext, ThinkingLevel } from '@lecquy/shared'
 import { resolveWorkspaceRoot } from '../core/runtime-paths.js'
 import { buildSimpleSystemPrompt } from '../core/prompts/system-prompts.js'
@@ -25,6 +25,7 @@ import {
 import { logger } from '../utils/logger.js'
 import { ensureMemoryFiles, recordMemoryTurnAndMaybeFlush } from '../memory/index.js'
 import type { ConfirmationBroker } from '../runtime/confirmation-broker.js'
+import { compactInLoop } from '../runtime/context/in-loop-compactor.js'
 
 /** 记忆轮次计数状态（会话级） */
 export interface TurnState {
@@ -52,6 +53,7 @@ export interface SimpleAgentOptions {
   sessionId?: string
   runId?: RunId
   confirmationBroker?: ConfirmationBroker
+  streamFn?: StreamFn
 }
 
 /** Simple Agent 运行结果 */
@@ -82,6 +84,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     sessionId,
     runId,
     confirmationBroker,
+    streamFn,
   } = options
   const workspaceDir = resolveWorkspaceRoot()
 
@@ -135,6 +138,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
         agentMessages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
         ),
+      transformContext: async (agentMessages) => compactInLoop(agentMessages),
       getSteeringMessages: async () => {
         if (
           tracker.iteration >= MAX_ITERATIONS ||
@@ -167,6 +171,7 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
       },
     },
     combinedSignal,
+    streamFn,
   )
 
   const allMessages: AgentMessage[] = []

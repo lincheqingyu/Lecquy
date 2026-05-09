@@ -25,6 +25,7 @@ import {
   MAX_SUB_TOOL_FAILURES,
 } from './types.js'
 import type { ConfirmationBroker } from '../runtime/confirmation-broker.js'
+import { compactInLoop } from '../runtime/context/in-loop-compactor.js'
 
 const MAX_CONSECUTIVE_FAILURES = 2
 
@@ -219,6 +220,7 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
           (message): message is Message =>
             message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult',
         ),
+      transformContext: async (messages) => compactInLoop(messages),
       getSteeringMessages: async () => {
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           failureBlocked = true
