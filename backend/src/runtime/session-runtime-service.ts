@@ -435,6 +435,19 @@ function createUserContent(input: string, attachments: ChatAttachment[] = []): S
   const imageCount = attachments.filter((attachment) => attachment.kind === 'image').length
   const fileCount = attachments.filter((attachment) => attachment.kind === 'file').length
 
+  if (attachments.length > 0) {
+    logger.debug('[attachments] createUserContent invoked', {
+      inputChars: normalizedInput.length,
+      imageCount,
+      fileCount,
+      sizes: attachments.map((attachment) =>
+        attachment.kind === 'image'
+          ? { kind: 'image', name: attachment.name, bytes: attachment.data.length }
+          : { kind: 'file', name: attachment.name, chars: attachment.text.length },
+      ),
+    })
+  }
+
   if (normalizedInput.length > 0) {
     blocks.push({ type: 'text', text: normalizedInput })
   } else if (attachments.length > 0) {

@@ -250,8 +250,6 @@ export function ConversationArea({
             <div className={`min-h-0 flex-1 overflow-hidden ${conversationGutterClassName}`}>
               <MessageListComp
                 messages={messages}
-                isStreaming={isStreaming}
-                isWaiting={isWaiting}
                 onResendUser={effectiveCanSend ? handleResendUser : undefined}
                 onEditUser={effectiveCanSend ? handleEditUser : undefined}
                 onToggleThinking={toggleThinking}

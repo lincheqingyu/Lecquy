@@ -170,8 +170,6 @@ export function StreamdownMarkdown({
   className,
   isAnimating = false,
 }: StreamdownMarkdownProps) {
-  if (!content.trim()) return null
-
   const isDark = useDocumentDarkMode()
   const mode = isAnimating ? 'streaming' : 'static'
 
@@ -184,6 +182,8 @@ export function StreamdownMarkdown({
       mindmap: { useMaxWidth: true },
     },
   }
+
+  if (!content.trim()) return null
 
   return (
     <Streamdown

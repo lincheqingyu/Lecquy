@@ -5,8 +5,6 @@ import type { ChatArtifact } from '../../lib/artifacts'
 
 interface PiMessageListAdapterProps {
   messages: ChatMessage[]
-  isStreaming: boolean
-  isWaiting: boolean
   onResendUser?: (messageId: string) => void
   onEditUser?: (messageId: string, nextContent: string) => void
   onToggleThinking?: (messageId: string, groupKey?: string) => void

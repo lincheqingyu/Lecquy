@@ -1,17 +1,10 @@
 import clsx from 'clsx'
 import { Check, ChevronDown, ChevronUp, Copy, ListTodo, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FocusEvent, type ReactNode } from 'react'
 import { StreamdownMarkdown } from './StreamdownMarkdown'
 import { UserMessageBubble } from './UserMessageBubble'
 import type { ChatMessage } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl } from '../../lib/chat-attachments'
-import {
-  createBlocksSignature,
-  logChatStream,
-  previewStreamContent,
-  summarizeBlocks,
-  summarizeGroups,
-} from '../../lib/chat-stream-debug'
 import {
   blocksToText,
   blocksToThinkingText,
@@ -39,7 +32,6 @@ import { TimelineEvent } from './TimelineEvent'
 
 interface MessageItemProps {
   message: ChatMessage
-  isLastAssistant?: boolean
   onResendUser?: (messageId: string) => void
   onEditUser?: (messageId: string, nextContent: string) => void
   onToggleThinking?: (messageId: string, groupKey?: string) => void
@@ -237,7 +229,6 @@ function matchArtifactEntryToToolBlock(
 
 export function MessageItem({
   message,
-  isLastAssistant: _isLastAssistant = false,
   onResendUser,
   onEditUser,
   onToggleThinking,
@@ -277,7 +268,6 @@ export function MessageItem({
   const [isActionBarHovered, setIsActionBarHovered] = useState(false)
   const [isActionBarFocused, setIsActionBarFocused] = useState(false)
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now())
-  const renderDebugSignatureRef = useRef<string>('')
   const isActionBarVisible = isActionBarHovered || isActionBarFocused
   const attachments = message.attachments ?? []
   const artifacts = message.artifacts ?? []
@@ -306,24 +296,6 @@ export function MessageItem({
 
     return () => window.clearInterval(timerId)
   }, [hasRunningThinkingBlocks])
-
-  useEffect(() => {
-    if (!isAssistant || (message.blocks?.length ?? 0) === 0) return
-
-    const signature = createBlocksSignature(message.blocks)
-    if (renderDebugSignatureRef.current === signature) return
-    renderDebugSignatureRef.current = signature
-
-    logChatStream('render:assistant-message', {
-      messageId: message.id,
-      stepId: message.stepId,
-      stepStatus: message.stepStatus,
-      contentPreview: previewStreamContent(message.content),
-      thinkingPreview: previewStreamContent(message.thinkingContent),
-      blocks: summarizeBlocks(message.blocks),
-      groups: summarizeGroups(message.blocks),
-    })
-  }, [isAssistant, message.blocks, message.content, message.id, message.stepId, message.stepStatus, message.thinkingContent])
 
   if (isAssistant && !hasPrimaryContent && !hasToolBlocks && !hasThinkingBlocks && !showThoughtsCard && !hasArtifactContent) {
     return null
@@ -782,19 +754,6 @@ export function MessageItem({
           </div>
         )}
 
-        {/* TODO: 品牌标识暂时禁用，后续重新设计再启用 */}
-        {/* {isLastAssistant && (
-          <div className="group/brand mt-2 flex items-center gap-2 pl-1">
-            <img
-              src="/logo-light-mode.png"
-              alt="Lecquy"
-              className="size-7 object-contain opacity-30 transition-opacity duration-200 group-hover/brand:opacity-70"
-            />
-            <span className="text-xs text-text-muted opacity-0 transition-opacity duration-200 group-hover/brand:opacity-100">
-              由 Lecquy 驱动的 AI 助手
-            </span>
-          </div>
-        )} */}
       </div>
     </div>
   )

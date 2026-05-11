@@ -89,25 +89,6 @@ function compactUserImages(message: AgentMessage): AgentMessage | null {
   return changed ? ({ ...message, content } as unknown as AgentMessage) : null
 }
 
-function compactAssistantToolOutputs(message: AgentMessage): AgentMessage | null {
-  if (!hasObjectContent(message)) return null
-
-  let changed = false
-  const content = message.content.map((part) => {
-    if (part?.type !== 'toolCall' || typeof part.output !== 'string' || part.output.length <= 200) {
-      return part
-    }
-
-    changed = true
-    return {
-      ...part,
-      output: `${part.output.slice(0, 200)}... (truncated)`,
-    }
-  })
-
-  return changed ? ({ ...message, content } as unknown as AgentMessage) : null
-}
-
 /**
  * In-loop 上下文压缩
  *
@@ -117,6 +98,9 @@ function compactAssistantToolOutputs(message: AgentMessage): AgentMessage | null
  *   toolResult 替换为占位文字，把同区间的 image 块替换为占位文字
  * - 末尾 K 个 turn 一律不动
  *
+ * 注意：assistant 的 toolCall 块按 pi-ai 的 ToolCall 类型不带 output 字段，
+ *       工具产物在配对的 toolResult 消息里，由本函数针对 toolResult 处理。
+ *
  * 返回值：要么是入参原数组（无操作），要么是新数组（有替换）
  */
 export function compactInLoop(
@@ -125,6 +109,12 @@ export function compactInLoop(
 ): AgentMessage[] {
   const totalChars = messages.reduce((sum, message) => sum + estimateChars(message), 0)
   if (totalChars <= options.maxTotalChars) {
+    logger.debug('[in-loop-compactor] skip: under threshold', {
+      reason: 'under_threshold',
+      messageCount: messages.length,
+      totalChars,
+      maxTotalChars: options.maxTotalChars,
+    })
     return messages
   }
 
@@ -134,6 +124,13 @@ export function compactInLoop(
     .map((item) => item.index)
 
   if (assistantIndexes.length <= options.keepRecentTurns) {
+    logger.debug('[in-loop-compactor] skip: history too short', {
+      reason: 'history_too_short',
+      messageCount: messages.length,
+      totalChars,
+      assistantCount: assistantIndexes.length,
+      keepRecentTurns: options.keepRecentTurns,
+    })
     return messages
   }
 
@@ -143,7 +140,6 @@ export function compactInLoop(
 
   let toolResultCount = 0
   let imageCount = 0
-  let assistantToolOutputCount = 0
   let savedChars = 0
 
   const compactedMessages = messages.map((message, index) => {
@@ -156,9 +152,6 @@ export function compactInLoop(
     } else if (message.role === 'user') {
       replacement = compactUserImages(message)
       if (replacement) imageCount += 1
-    } else if (message.role === 'assistant') {
-      replacement = compactAssistantToolOutputs(message)
-      if (replacement) assistantToolOutputCount += 1
     }
 
     if (!replacement) return message
@@ -167,17 +160,28 @@ export function compactInLoop(
     return replacement
   })
 
-  const replacementCount = toolResultCount + imageCount + assistantToolOutputCount
+  const replacementCount = toolResultCount + imageCount
   if (replacementCount === 0) {
+    logger.debug('[in-loop-compactor] skip: nothing to replace', {
+      reason: 'no_eligible_targets',
+      messageCount: messages.length,
+      totalChars,
+      cutoffIndex,
+      keptTailCount: messages.length - cutoffIndex,
+      minToolResultChars: options.minToolResultChars,
+    })
     return messages
   }
 
-  logger.debug('[in-loop-compactor] compacted context before LLM call', {
+  logger.info('[in-loop-compactor] compacted context before LLM call', {
+    messageCount: messages.length,
     totalChars,
     savedChars,
+    remainingChars: totalChars - savedChars,
+    cutoffIndex,
+    keptTailCount: messages.length - cutoffIndex,
     toolResultCount,
     imageCount,
-    assistantToolOutputCount,
   })
 
   return compactedMessages

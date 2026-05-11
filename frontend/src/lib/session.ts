@@ -59,3 +59,30 @@ export function getSessionId(): string {
 export function resetSessionId(): string {
   return resetPeerId()
 }
+
+const LAST_ACTIVE_SESSION_KEY = 'lecquy.lastActiveSessionKey'
+
+export function getLastActiveSessionKey(): string | null {
+  try {
+    const value = localStorage.getItem(LAST_ACTIVE_SESSION_KEY)
+    return value && value.trim().length > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function setLastActiveSessionKey(sessionKey: string): void {
+  try {
+    localStorage.setItem(LAST_ACTIVE_SESSION_KEY, sessionKey)
+  } catch {
+    // 静默失败：localStorage 不可用时退化成每次冷启动都是空白态
+  }
+}
+
+export function clearLastActiveSessionKey(): void {
+  try {
+    localStorage.removeItem(LAST_ACTIVE_SESSION_KEY)
+  } catch {
+    // 静默失败
+  }
+}

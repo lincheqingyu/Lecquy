@@ -258,6 +258,17 @@ select:focus-visible {
 }
 
 /* 对话区滚动条：细线、低对比、右侧贴边 */
+.chat-scroll-mask {
+    overflow-anchor: none;
+}
+
+.chat-scroll-anchor {
+    overflow-anchor: auto;
+    height: 1px;
+    width: 100%;
+    flex-shrink: 0;
+}
+
 .chat-scrollbar {
     scrollbar-width: thin;
     /* Firefox 滚动条：滑块用 text-muted 的 45% 透明度混色，轨道透明 */

@@ -25,6 +25,7 @@
 - [项目级 / 20260508-10-上下文爆炸 根因定位与修复 执行指令.md](./项目级/20260508-10-上下文爆炸%20根因定位与修复%20执行指令.md)：根因锁定 sessions_history 工具——加默认 limit + 输出截断 + 'current' 关键字处理；同类工具 sessions_list / sessions_send 同等防御
 - [项目级 / 20260509-11-上下文爆炸 精准排查报告.md](./项目级/20260509-11-上下文爆炸%20精准排查报告.md)：codex 基于第 10 份指令的精准排查产物——发现单条消息 5.3MB base64 图片是真凶，4 个 session-tools 全部缺 TOOL_OUTPUT_LIMIT 截断；纠正了第 10 份指令中 runtime.ts 修改的判断错误
 - [项目级 / 20260509-1-上下文架构修复 in-loop 压缩 执行指令.md](./项目级/20260509-1-上下文架构修复%20in-loop%20压缩%20执行指令.md)：上下文管理结构层修复——在三个 runner 注册 `transformContext` 钩子接入 in-loop 压缩、按 Phase 2 落地 token-aware 触发、上传层加体积上限（双层校验+静默截断）；附带"跨 turn 工具失忆是有意设计"等三条决策记录
+- [项目级 / 20260510-1-会话连续性修复 peerId 与 UI 状态同步 执行指令.md](./项目级/20260510-1-会话连续性修复%20peerId%20与%20UI%20状态同步%20执行指令.md)：修复"关浏览器再开 → UI 显新会话但消息进旧会话"的撕裂 bug——纯前端最小修复（新增 `lecquy.lastActiveSessionKey` 持久化 + 冷启动反查恢复 + 残留 peerId 清理），明确放弃 DeepSeek 方案 A，且不动后端 dm 路由（peerId → sessionId 重命名留待后续结构性重构）
 - [环境与配置 / 20260408-8-环境参数配置 技术规范.md](./环境与配置/20260408-8-环境参数配置%20技术规范.md)：统一本地环境变量与配置入口
 - [后端 / 记忆与检索 / 20260408-3-Runtime Memory Compact 决策沉淀 技术规范.md](./backend/记忆与检索/20260408-3-Runtime%20Memory%20Compact%20决策沉淀%20技术规范.md)：后端记忆 / compact 决策基线
 - [后端 / Claude 上下文压缩复刻 / 20260430-14-Phase 1 codex 审查报告.md](./backend/Claude%20上下文压缩复刻/20260430-14-Phase%201%20codex%20审查报告.md)：Phase 1 LLM 摘要升级的 codex 审查与分诊结论

@@ -651,6 +651,10 @@ function resolveCompactSource(
 ): CompactSource | null {
   const messageEntries = getDurableMessageEntries(entries)
   if (messageEntries.length === 0) {
+    logger.debug('[compact] skip: no durable message entries', {
+      reason: 'no_durable_entries',
+      totalEntries: entries.length,
+    })
     return null
   }
 
@@ -667,18 +671,53 @@ function resolveCompactSource(
   }
 
   if (candidateMessages.length === 0) {
+    logger.debug('[compact] skip: no candidate messages after compaction anchor', {
+      reason: 'no_candidates_after_anchor',
+      latestCompactionId: latestCompaction?.id,
+    })
     return null
   }
 
   const sessionTokenStats = estimateSessionTokenStats(candidateMessages, previousSummary)
   if (sessionTokenStats.tokens < policy.threshold) {
+    logger.debug('[compact] skip: under token threshold', {
+      reason: 'under_threshold',
+      candidateMessageCount: candidateMessages.length,
+      estimatedTokens: sessionTokenStats.tokens,
+      threshold: policy.threshold,
+      modelContextWindow: policy.modelContextWindow,
+      contextWindowSource: policy.contextWindowSource,
+      hasPreviousSummary: Boolean(previousSummary),
+    })
     return null
   }
 
   const recentTailBudgetTokens = getRecentTailBudget(policy.threshold)
   const tail = selectRecentTail(candidateMessages, recentTailBudgetTokens)
   const firstKeptEntry = tail?.keptMessages[0]
-  if (!tail || !firstKeptEntry) return null
+  if (!tail || !firstKeptEntry) {
+    logger.debug('[compact] skip: tail selection produced empty kept set', {
+      reason: 'tail_selection_empty',
+      candidateMessageCount: candidateMessages.length,
+      recentTailBudgetTokens,
+      estimatedTokens: sessionTokenStats.tokens,
+    })
+    return null
+  }
+
+  logger.info('[compact] threshold reached, will trigger compaction', {
+    candidateMessageCount: candidateMessages.length,
+    estimatedTokens: sessionTokenStats.tokens,
+    threshold: policy.threshold,
+    modelContextWindow: policy.modelContextWindow,
+    contextWindowSource: policy.contextWindowSource,
+    keptMessageCount: tail.keptMessages.length,
+    compactedMessageCount: tail.compactedMessages.length,
+    recentTailBudgetTokens,
+    recentTailEstimatedTokens: tail.recentTailEstimatedTokens,
+    largestSinglePartTokens: sessionTokenStats.largestSinglePartTokens,
+    hasPreviousSummary: Boolean(previousSummary),
+  })
 
   return {
     previousSummary,
@@ -730,10 +769,28 @@ export async function applyCompactionIfNeeded(
   options: CompactionOptions,
 ): Promise<boolean> {
   const policy = resolveCompactionPolicy(options)
+  logger.debug('[compact] policy resolved', {
+    modelId: options.model,
+    modelContextWindow: policy.modelContextWindow,
+    contextWindowSource: policy.contextWindowSource,
+    threshold: policy.threshold,
+    outputReserved: policy.outputReserved,
+    promptOverhead: policy.promptOverhead,
+    nextInputBuffer: policy.nextInputBuffer,
+  })
   const source = resolveCompactSource(manager.getEntries(), policy)
   if (!source) {
     return false
   }
+  logger.info('[compact] applying compaction', {
+    method: 'about_to_call_llm',
+    sessionId: manager.getSessionId(),
+    compactedMessageCount: source.compactedMessages.length,
+    keptMessageCount: source.keptMessageCount,
+    estimatedTokens: source.estimatedTokens,
+    threshold: source.thresholdUsed,
+    timeoutMs: options.timeoutMs,
+  })
 
   // Step 1.5：buildCompactSummary 内含降级逻辑
   const result = await buildCompactSummary({
@@ -768,6 +825,19 @@ export async function applyCompactionIfNeeded(
   )
 
   await writeMemorySummary(manager.getCwd(), result.summary)
+
+  logger.info('[compact] compaction applied', {
+    sessionId: manager.getSessionId(),
+    method: result.method,
+    summaryChars: result.summary.length,
+    compactedMessageCount: source.compactedMessages.length,
+    keptMessageCount: source.keptMessageCount,
+    estimatedTokensBefore: source.estimatedTokens,
+    threshold: source.thresholdUsed,
+    contextWindowSource: source.contextWindowSource,
+    tailSplitInToolChain: source.tailSplitInToolChain,
+    llmError: result.llmError?.message,
+  })
 
   return true
 }

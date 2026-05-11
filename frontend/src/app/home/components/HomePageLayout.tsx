@@ -27,7 +27,14 @@ import {
   toSessionListItemVm,
   type SessionListItemVm,
 } from '../../../lib/session-management'
-import { getPeerId, resetPeerId, setPeerId } from '../../../lib/session'
+import {
+  clearLastActiveSessionKey,
+  getLastActiveSessionKey,
+  getPeerId,
+  resetPeerId,
+  setLastActiveSessionKey,
+  setPeerId,
+} from '../../../lib/session'
 import {
   findLatestArtifactLocation,
   type ArtifactWithLocation,
@@ -170,7 +177,9 @@ export function HomePageLayout() {
   const [selectedSessionKey, setSelectedSessionKey] = useState<string | null>(null)
   const [currentSessionKey, setCurrentSessionKey] = useState<string | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [activePeerId, setActivePeerId] = useState<string>(() => getPeerId())
+  const [activePeerId, setActivePeerId] = useState<string>(() => (
+    getLastActiveSessionKey() ? getPeerId() : resetPeerId()
+  ))
   const [messageSeed, setMessageSeed] = useState<ChatMessage[]>([])
   const [messageVersion, setMessageVersion] = useState(0)
   const [isSessionListLoading, setIsSessionListLoading] = useState(true)
@@ -193,6 +202,7 @@ export function HomePageLayout() {
   const resizePointerIdRef = useRef<number | null>(null)
   const resizeBodyStateRef = useRef<{ cursor: string; userSelect: string } | null>(null)
   const seenDraftArtifactKeysRef = useRef<Set<string>>(new Set())
+  const hasAttemptedRestoreRef = useRef<boolean>(false)
   const [isDocumentDividerDragging, setIsDocumentDividerDragging] = useState(false)
 
   useEffect(() => {
@@ -340,6 +350,29 @@ export function HomePageLayout() {
     void refreshSessions()
   }, [])
 
+  useEffect(() => {
+    if (hasAttemptedRestoreRef.current) return
+    if (isSessionListLoading) return
+
+    hasAttemptedRestoreRef.current = true
+
+    const targetKey = getLastActiveSessionKey()
+    if (!targetKey) {
+      return
+    }
+
+    const target = sessionItems.find((item) => item.id === targetKey)
+    if (!target) {
+      clearLastActiveSessionKey()
+      const nextPeerId = resetPeerId()
+      setActivePeerId(nextPeerId)
+      return
+    }
+
+    void handleSelectConversation(targetKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSessionListLoading, sessionItems])
+
   const replaceMessageSeed = (messages: ChatMessage[]) => {
     setMessageSeed(messages)
     setMessageVersion((prev) => prev + 1)
@@ -356,6 +389,7 @@ export function HomePageLayout() {
     setOpenDocument(null)
     setCurrentArtifacts([])
     seenDraftArtifactKeysRef.current.clear()
+    clearLastActiveSessionKey()
     replaceMessageSeed([])
   }
 
@@ -363,6 +397,7 @@ export function HomePageLayout() {
     const target = sessionItems.find((item) => item.id === sessionKey) ?? null
     setActiveView('chat')
     setSelectedSessionKey(sessionKey)
+    setLastActiveSessionKey(sessionKey)
     setCurrentSessionKey(sessionKey)
     setCurrentSessionId(target?.sessionId ?? null)
     setChatDisabledReason(null)
@@ -434,6 +469,7 @@ export function HomePageLayout() {
     setCurrentSessionKey(payload.sessionKey)
     setCurrentSessionId(payload.sessionId)
     setSelectedSessionKey(payload.sessionKey)
+    setLastActiveSessionKey(payload.sessionKey)
     void refreshSessions()
   }
 

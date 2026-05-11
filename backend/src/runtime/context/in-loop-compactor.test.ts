@@ -129,3 +129,87 @@ test('compactInLoop returns the original array when there is no older assistant 
 
   assert.strictEqual(result, messages)
 })
+
+// ─── B2: toolCall ↔ toolResult 配对完整性 ──────────────────────────────────────
+test('compactInLoop preserves toolCall/toolResult pairing across replacements', () => {
+  const messages: AgentMessage[] = []
+  for (let i = 0; i < 10; i += 1) {
+    messages.push(assistantMessage(i)) // toolCall id=call-i
+    messages.push(toolResultMessage(i)) // toolCallId=call-i
+  }
+
+  const result = compactInLoop(messages, {
+    maxTotalChars: 1,
+    keepRecentTurns: 2,
+    minToolResultChars: 2_000,
+  })
+
+  // 收集 result 里所有 toolCall.id
+  const allToolCallIds = new Set<string>()
+  for (const message of result) {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) continue
+    for (const part of message.content) {
+      if (
+        part && typeof part === 'object'
+        && 'type' in part && (part as { type?: unknown }).type === 'toolCall'
+        && 'id' in part && typeof (part as { id?: unknown }).id === 'string'
+      ) {
+        allToolCallIds.add((part as { id: string }).id)
+      }
+    }
+  }
+
+  // 收集 result 里所有 toolResult.toolCallId
+  const allToolResultIds = new Set<string>()
+  for (const message of result) {
+    if (message.role !== 'toolResult') continue
+    const callId = (message as { toolCallId?: unknown }).toolCallId
+    if (typeof callId === 'string') {
+      allToolResultIds.add(callId)
+    }
+  }
+
+  // 每个 toolCall.id 必须在 result 里有对应 toolResult.toolCallId
+  for (const callId of allToolCallIds) {
+    assert.ok(
+      allToolResultIds.has(callId),
+      `toolCall ${callId} 缺失对应 toolResult，配对被压缩破坏`,
+    )
+  }
+
+  // 每个 toolResult.toolCallId 也必须有对应 toolCall（反向校验，防止替换流程产生孤儿）
+  for (const callId of allToolResultIds) {
+    assert.ok(
+      allToolCallIds.has(callId),
+      `toolResult ${callId} 缺失对应 toolCall`,
+    )
+  }
+
+  // 数量对齐：10 个 assistant 都应保留 toolCall id（不能被砍）
+  assert.equal(allToolCallIds.size, 10)
+  assert.equal(allToolResultIds.size, 10)
+})
+
+test('compactInLoop preserves chronological order after replacement', () => {
+  const messages: AgentMessage[] = []
+  for (let i = 0; i < 10; i += 1) {
+    messages.push(assistantMessage(i))
+    messages.push(toolResultMessage(i))
+  }
+
+  const result = compactInLoop(messages, {
+    maxTotalChars: 1,
+    keepRecentTurns: 2,
+    minToolResultChars: 2_000,
+  })
+
+  // 顺序与长度都不能变
+  assert.equal(result.length, messages.length)
+  for (let i = 0; i < result.length; i += 1) {
+    assert.equal(
+      result[i].role,
+      messages[i].role,
+      `位置 ${i} 角色不应被改变`,
+    )
+  }
+})

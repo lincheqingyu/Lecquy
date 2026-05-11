@@ -17,13 +17,6 @@ import {
   type ChatArtifact,
 } from '../lib/artifacts.ts'
 import {
-  logChatStream,
-  previewUnknown,
-  previewStreamContent,
-  summarizeBlocks,
-  summarizeGroups,
-} from '../lib/chat-stream-debug.ts'
-import {
   appendThinkingDelta,
   appendTextDelta,
   blocksToText,
@@ -384,23 +377,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     pendingArtifactTraceRef.current.clear()
   }, [])
 
-  const logAssistantSnapshot = useCallback((
-    scope: string,
-    meta: Record<string, unknown>,
-    message: ChatMessage,
-  ) => {
-    logChatStream(scope, {
-      ...meta,
-      messageId: message.id,
-      stepId: message.stepId,
-      stepStatus: message.stepStatus,
-      contentPreview: previewStreamContent(message.content),
-      thinkingPreview: previewStreamContent(message.thinkingContent),
-      blocks: summarizeBlocks(message.blocks),
-      groups: summarizeGroups(message.blocks),
-    })
-  }, [])
-
   const ensurePlanMessage = useCallback(() => {
     const existing = todoMessageIdRef.current
     if (existing) return existing
@@ -519,22 +495,15 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     const stream = delta.stream ?? 'text'
     updateMessage(setMessages, messageId, (message) => {
       if (stream === 'thinking') {
-        const nextMessage = {
+        return {
           ...message,
           hasThinking: true,
           blocks: appendThinkingDelta(message.blocks ?? [], delta.content, { startedAt: Date.now() }),
           thinkingContent: (message.thinkingContent ?? '') + delta.content,
         }
-        logAssistantSnapshot('message:update:step_delta:thinking', {
-          sessionKey: delta.sessionKey,
-          runId: delta.runId,
-          stream,
-          contentPreview: previewStreamContent(delta.content),
-        }, nextMessage)
-        return nextMessage
       }
 
-      const nextMessage = {
+      return {
         ...message,
         content: message.content + delta.content,
         blocks: appendTextDelta(
@@ -542,16 +511,9 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
           delta.content,
         ),
       }
-      logAssistantSnapshot('message:update:step_delta:text', {
-        sessionKey: delta.sessionKey,
-        runId: delta.runId,
-        stream,
-        contentPreview: previewStreamContent(delta.content),
-      }, nextMessage)
-      return nextMessage
     })
     flushPendingStepArtifacts(delta.stepId, delta.kind)
-  }, [ensurePlanMessage, ensureStepMessage, flushPendingStepArtifacts, logAssistantSnapshot])
+  }, [ensurePlanMessage, ensureStepMessage, flushPendingStepArtifacts])
 
   const flushPendingStepDeltas = useCallback(() => {
     if (stepDeltaFrameRef.current !== null) {
@@ -696,14 +658,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'step_state') {
             const step = payload as ServerEventPayloadMap['step_state']
-            logChatStream('ws:step_state', {
-              sessionKey: step.sessionKey,
-              runId: step.runId,
-              stepId: step.stepId,
-              kind: step.kind,
-              status: step.status,
-              summaryPreview: previewStreamContent(step.summary),
-            })
             stepMetaRef.current.set(step.stepId, { kind: step.kind, todoIndex: step.todoIndex })
 
             if (step.kind === 'planner') {
@@ -758,7 +712,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
               const nextBlocks = step.status === 'started'
                 ? message.blocks
                 : finalizeRunningThinkingBlocks(message.blocks ?? [], step.status, step.finishedAt ?? Date.now())
-              const nextMessage = {
+              return {
                 ...message,
                 content:
                   step.summary && !blocksToText(nextBlocks).trim()
@@ -771,13 +725,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                 stepStatus: step.status,
                 thoughtTiming: toThoughtTiming(step, message.thoughtTiming, message.timestamp),
               }
-              logAssistantSnapshot('message:update:step_state', {
-                sessionKey: step.sessionKey,
-                runId: step.runId,
-                kind: step.kind,
-                status: step.status,
-              }, nextMessage)
-              return nextMessage
             })
             flushPendingStepArtifacts(step.stepId, step.kind)
             onWsEvent?.(event, step)
@@ -786,15 +733,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'step_delta') {
             const delta = payload as ServerEventPayloadMap['step_delta']
-            logChatStream('ws:step_delta', {
-              sessionKey: delta.sessionKey,
-              runId: delta.runId,
-              stepId: delta.stepId,
-              kind: delta.kind,
-              stream: delta.stream,
-              contentPreview: previewStreamContent(delta.content),
-              contentLength: delta.content.length,
-            })
             enqueueStepDelta(delta)
             return
           }
@@ -859,13 +797,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_call_start') {
             const tool = payload as ServerEventPayloadMap['tool_call_start']
-            logChatStream('ws:tool_call_start', {
-              sessionKey: tool.sessionKey,
-              runId: tool.runId,
-              stepId: tool.stepId,
-              toolCallId: tool.toolCallId,
-              toolName: tool.toolName,
-            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -874,7 +805,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             }
 
             updateMessage(setMessages, messageId, (message) => {
-              const nextMessage = {
+              return {
                 ...message,
                 blocks: pushToolCallStart(closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()), {
                   toolCallId: tool.toolCallId,
@@ -882,13 +813,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                   args: tool.args,
                 }),
               }
-              logAssistantSnapshot('message:update:tool_call_start', {
-                sessionKey: tool.sessionKey,
-                runId: tool.runId,
-                toolCallId: tool.toolCallId,
-                toolName: tool.toolName,
-              }, nextMessage)
-              return nextMessage
             })
 
             const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
@@ -905,13 +829,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_call_delta') {
             const tool = payload as ServerEventPayloadMap['tool_call_delta']
-            logChatStream('ws:tool_call_delta', {
-              sessionKey: tool.sessionKey,
-              runId: tool.runId,
-              stepId: tool.stepId,
-              toolCallId: tool.toolCallId,
-              toolName: tool.toolName,
-            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -920,7 +837,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             }
 
             updateMessage(setMessages, messageId, (message) => {
-              const nextMessage = {
+              return {
                 ...message,
                 blocks: patchToolCall(
                   closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
@@ -929,13 +846,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                   { toolName: tool.toolName, status: 'running' },
                 ),
               }
-              logAssistantSnapshot('message:update:tool_call_delta', {
-                sessionKey: tool.sessionKey,
-                runId: tool.runId,
-                toolCallId: tool.toolCallId,
-                toolName: tool.toolName,
-              }, nextMessage)
-              return nextMessage
             })
 
             const draftArtifact = createDraftArtifact(tool.stepId, tool.toolName, tool.args)
@@ -952,16 +862,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
           if (event === 'tool_call_end') {
             const tool = payload as ServerEventPayloadMap['tool_call_end']
-            logChatStream('ws:tool_call_end', {
-              sessionKey: tool.sessionKey,
-              runId: tool.runId,
-              stepId: tool.stepId,
-              toolCallId: tool.toolCallId,
-              toolName: tool.toolName,
-              status: tool.status,
-              resultPreview: tool.status === 'success' ? previewUnknown(tool.result) : undefined,
-              errorPreview: tool.status === 'error' ? previewStreamContent(tool.errorMessage) : undefined,
-            })
             const stepKind = stepMetaRef.current.get(tool.stepId)?.kind ?? 'simple_reply'
             const messageId = ensureStepMessage(tool.stepId, stepKind, { force: true })
             if (!messageId) {
@@ -971,7 +871,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
             if (tool.status === 'success') {
               updateMessage(setMessages, messageId, (message) => {
-                const nextMessage = {
+                return {
                   ...message,
                   blocks: patchToolCall(
                     closeTrailingThinkingBlock(message.blocks ?? [], 'completed', Date.now()),
@@ -984,13 +884,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                     { toolName: tool.toolName, status: 'success' },
                   ),
                 }
-                logAssistantSnapshot('message:update:tool_call_end:success', {
-                  sessionKey: tool.sessionKey,
-                  runId: tool.runId,
-                  toolCallId: tool.toolCallId,
-                  toolName: tool.toolName,
-                }, nextMessage)
-                return nextMessage
               })
 
               const readyArtifacts = (tool.generatedArtifacts ?? []).map((artifact) => ({
@@ -1014,7 +907,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
             } else {
               pendingArtifactsRef.current.delete(tool.stepId)
               updateMessage(setMessages, messageId, (message) => {
-                const nextMessage = {
+                return {
                   ...message,
                   artifacts: removeDraftArtifactsByStepId(message.artifacts, tool.stepId),
                   blocks: patchToolCall(
@@ -1029,13 +922,6 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
                     { toolName: tool.toolName, status: 'error' },
                   ),
                 }
-                logAssistantSnapshot('message:update:tool_call_end:error', {
-                  sessionKey: tool.sessionKey,
-                  runId: tool.runId,
-                  toolCallId: tool.toolCallId,
-                  toolName: tool.toolName,
-                }, nextMessage)
-                return nextMessage
               })
             }
 
@@ -1102,7 +988,7 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
 
     reconnectWsRef.current = ws
     return ws
-  }, [cleanupCancelledRunMessages, enqueueStepDelta, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, flushPendingStepDeltas, logAssistantSnapshot, onWsEvent])
+  }, [cleanupCancelledRunMessages, enqueueStepDelta, ensurePlanMessage, ensureStepMessage, finalizeRunningThoughts, flushPendingStepArtifacts, flushPendingStepDeltas, onWsEvent])
 
   const buildModelOptions = useCallback(() => ({
     model: modelConfig.model,
