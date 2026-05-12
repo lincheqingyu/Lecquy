@@ -1,4 +1,19 @@
-import {ChevronDown, Trash2, X} from 'lucide-react'
+import {
+    Bot,
+    Brain,
+    ChevronDown,
+    ChevronRight,
+    ChevronUp,
+    Cpu,
+    Database,
+    FileText,
+    Pencil,
+    Plus,
+    SlidersHorizontal,
+    Trash2,
+    Wrench,
+    X,
+} from 'lucide-react'
 import {clsx} from 'clsx'
 import {useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction} from 'react'
 import {createDefaultThinkingConfig, type ThinkingConfig, type ThinkingProtocol} from '@lecquy/shared'
@@ -6,6 +21,7 @@ import type {ModelConfig} from '../../../hooks/useChat'
 import {API_V1} from '../../../config/api.ts'
 import {
     getModelPresetLabel,
+    getModelPresetModelLabel,
     NEW_MODEL_PRESET_VALUE,
     type ModelPresetItem,
 } from '../../../lib/model-presets.ts'
@@ -78,6 +94,8 @@ export function SettingsDrawer({
                                }: SettingsDrawerProps) {
     const [isContextPanelOpen, setIsContextPanelOpen] = useState(false)
     const [isModelOptionsOpen, setIsModelOptionsOpen] = useState(false)
+    const [isCurrentAgentExpanded, setIsCurrentAgentExpanded] = useState(false)
+    const [isLecquyKernelExpanded, setIsLecquyKernelExpanded] = useState(false)
     const [activeInlineDropdown, setActiveInlineDropdown] = useState<InlineDropdownId | null>(null)
     const [isModelPanelOpen, setIsModelPanelOpen] = useState(false)
     const [selectedContextFile, setSelectedContextFile] = useState<EditableContextFileName>('SOUL.md')
@@ -100,6 +118,7 @@ export function SettingsDrawer({
     const [contextLoading, setContextLoading] = useState(false)
     const [contextError, setContextError] = useState<string | null>(null)
     const [draftModel, setDraftModel] = useState('')
+    const [draftAgentName, setDraftAgentName] = useState('')
     const [draftBaseUrl, setDraftBaseUrl] = useState('')
     const [draftApiKey, setDraftApiKey] = useState('')
     const [modelSaveStatus, setModelSaveStatus] = useState<'Saved' | 'Editing'>('Saved')
@@ -203,6 +222,11 @@ export function SettingsDrawer({
     })()
 
     const activeModelPreset = modelPresets.find((p) => p.id === selectedModelPresetId) ?? null
+    const activeAgentName = getModelPresetLabel(activeModelPreset) || modelConfig.model || 'Default agent'
+    const activeAgentModel = getModelPresetModelLabel(activeModelPreset) || modelConfig.model || 'No model configured'
+    const activeAgentRoleFiles = activeModelPreset?.roleContextFiles?.length
+        ? activeModelPreset.roleContextFiles
+        : ['Role.md', 'Tools.md']
     const tokenOptions = [
         {key: 'low', label: 'Low', hint: '8k', value: 8192},
         {key: 'medium', label: 'Middle', hint: '16k', value: 16384},
@@ -243,11 +267,13 @@ export function SettingsDrawer({
         const initialId = selectedModelPresetId ?? NEW_MODEL_PRESET_VALUE
         setSelectedModelPresetId(initialId)
         if (initialId === NEW_MODEL_PRESET_VALUE) {
+            setDraftAgentName('')
             setDraftModel('')
             setDraftBaseUrl('')
             setDraftApiKey('')
         } else {
             const selected = modelPresets.find((p) => p.id === initialId)
+            setDraftAgentName(selected?.title ?? selected?.model ?? '')
             setDraftModel(selected?.model ?? '')
             setDraftBaseUrl(selected?.baseUrl ?? '')
             setDraftApiKey(selected?.apiKey ?? '')
@@ -311,7 +337,7 @@ export function SettingsDrawer({
 
         const timer = window.setTimeout(() => {
             if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE) {
-                if (!draftModel.trim() && !draftBaseUrl.trim() && !draftApiKey.trim()) {
+                if (!draftAgentName.trim() && !draftModel.trim() && !draftBaseUrl.trim() && !draftApiKey.trim()) {
                     setModelSaveStatus('Saved')
                     return
                 }
@@ -321,7 +347,12 @@ export function SettingsDrawer({
                     model: draftModel,
                     baseUrl: draftBaseUrl,
                     apiKey: draftApiKey,
-                    title: draftModel.trim() || undefined,
+                    title: draftAgentName.trim() || draftModel.trim() || 'Untitled agent',
+                    temperature: modelConfig.temperature,
+                    maxTokens: modelConfig.maxTokens,
+                    enableTools: modelConfig.enableTools,
+                    thinking: modelConfig.thinking,
+                    roleContextFiles: ['Role.md', 'Tools.md'],
                 }
                 setModelPresets((prev) => [...prev, newItem])
                 setSelectedModelPresetId(nextId)
@@ -342,7 +373,12 @@ export function SettingsDrawer({
                         model: draftModel,
                         baseUrl: draftBaseUrl,
                         apiKey: draftApiKey,
-                        title: draftModel.trim() || item.title,
+                        title: draftAgentName.trim() || draftModel.trim() || item.title,
+                        temperature: modelConfig.temperature,
+                        maxTokens: modelConfig.maxTokens,
+                        enableTools: modelConfig.enableTools,
+                        thinking: modelConfig.thinking,
+                        roleContextFiles: item.roleContextFiles ?? ['Role.md', 'Tools.md'],
                     }
                     : item,
             )
@@ -360,6 +396,7 @@ export function SettingsDrawer({
             window.clearTimeout(timer)
         }
     }, [
+        draftAgentName,
         draftApiKey,
         draftBaseUrl,
         draftModel,
@@ -468,6 +505,7 @@ export function SettingsDrawer({
     const handleModelPresetSelection = (value: string) => {
         setSelectedModelPresetId(value)
         if (value === NEW_MODEL_PRESET_VALUE) {
+            setDraftAgentName('')
             setDraftModel('')
             setDraftBaseUrl('')
             setDraftApiKey('')
@@ -476,15 +514,25 @@ export function SettingsDrawer({
             return
         }
         const selected = modelPresets.find((item) => item.id === value)
+        setDraftAgentName(selected?.title ?? selected?.model ?? '')
         setDraftModel(selected?.model ?? '')
         setDraftBaseUrl(selected?.baseUrl ?? '')
         setDraftApiKey(selected?.apiKey ?? '')
         if (selected) {
+            const defaultThinking = createDefaultThinkingConfig()
             onModelConfigChange({
                 ...modelConfig,
                 model: selected.model,
                 baseUrl: selected.baseUrl,
                 apiKey: selected.apiKey,
+                temperature: Number(selected.temperature ?? modelConfig.temperature),
+                maxTokens: Number(selected.maxTokens ?? modelConfig.maxTokens),
+                enableTools: Boolean(selected.enableTools ?? modelConfig.enableTools),
+                thinking: {
+                    ...defaultThinking,
+                    ...modelConfig.thinking,
+                    ...selected.thinking,
+                },
             })
         }
         setModelSaveStatus('Saved')
@@ -494,13 +542,47 @@ export function SettingsDrawer({
     const handleDeleteModelPreset = () => {
         if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE) return
         const nextItems = modelPresets.filter((item) => item.id !== selectedModelPresetId)
+        const fallback = nextItems[0] ?? null
         setModelPresets(nextItems)
+        setSelectedModelPresetId(fallback?.id ?? NEW_MODEL_PRESET_VALUE)
+        setDraftAgentName(fallback?.title ?? fallback?.model ?? '')
+        setDraftModel(fallback?.model ?? '')
+        setDraftBaseUrl(fallback?.baseUrl ?? '')
+        setDraftApiKey(fallback?.apiKey ?? '')
+        if (fallback) {
+            const defaultThinking = createDefaultThinkingConfig()
+            onModelConfigChange({
+                ...modelConfig,
+                model: fallback.model,
+                baseUrl: fallback.baseUrl,
+                apiKey: fallback.apiKey,
+                temperature: Number(fallback.temperature ?? modelConfig.temperature),
+                maxTokens: Number(fallback.maxTokens ?? modelConfig.maxTokens),
+                enableTools: Boolean(fallback.enableTools ?? modelConfig.enableTools),
+                thinking: {
+                    ...defaultThinking,
+                    ...modelConfig.thinking,
+                    ...fallback.thinking,
+                },
+            })
+        }
+        setModelSaveStatus('Saved')
+        setModelsError(null)
+    }
+
+    const handleCreateAgent = () => {
         setSelectedModelPresetId(NEW_MODEL_PRESET_VALUE)
+        setDraftAgentName('')
         setDraftModel('')
         setDraftBaseUrl('')
         setDraftApiKey('')
         setModelSaveStatus('Saved')
         setModelsError(null)
+        setIsModelPanelOpen(true)
+    }
+
+    const handleEditAgent = () => {
+        setIsModelPanelOpen(true)
     }
 
     const handleOpenContextPanel = (name: EditableContextFileName) => {
@@ -576,11 +658,15 @@ export function SettingsDrawer({
     }, [isOpen, handleDrawerClose])
 
     const hasSecondaryPanelOpen = isContextPanelOpen || isModelPanelOpen
-    const railCardClassName = 'rounded-xl border border-border bg-surface-alt p-4 shadow-[0_1px_2px_rgba(15,23,42,0.035)]'
-    const railButtonCardClassName = clsx(
-        railCardClassName,
-        'w-full text-left transition-colors hover:border-[color:var(--border-strong)] hover:bg-hover',
-    )
+    const hasActiveAgent = selectedModelPresetId !== NEW_MODEL_PRESET_VALUE && Boolean(activeModelPreset)
+    const railCardClassName = 'rounded-2xl border border-border bg-surface p-3 shadow-[0_1px_2px_rgba(15,23,42,0.035)]'
+    const railIconButtonClassName = 'inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40'
+    const kernelFiles = [
+        {name: 'SOUL.md', label: 'Soul'},
+        {name: 'IDENTITY.md', label: 'Identity'},
+        {name: 'USER.md', label: 'User'},
+        {name: 'MEMORY.md', label: 'Memory'},
+    ] as const satisfies ReadonlyArray<{name: EditableContextFileName; label: string}>
 
     return (
         <div
@@ -588,14 +674,14 @@ export function SettingsDrawer({
                 "shrink-0 overflow-hidden bg-surface-alt",
                 "transition-[width] duration-300 ease-in-out",
             )}
-            style={{width: isOpen ? '20rem' : '0'}}
+            style={{width: isOpen ? '22.5rem' : '0'}}
             role="complementary"
             aria-label="设置辅助栏"
             aria-hidden={!isOpen}
             inert={!isOpen}
         >
-            {/* 内层固定 w-[20rem]，避免外层宽度动画过程中内容回流抖动 */}
-            <div className="flex h-full w-[20rem] flex-col">
+            {/* 内层固定宽度，避免外层宽度动画过程中内容回流抖动 */}
+            <div className="flex h-full w-[22.5rem] flex-col">
                     <div className="relative min-h-0 flex-1 overflow-hidden">
                 <div
                     ref={settingsScrollRef}
@@ -610,300 +696,404 @@ export function SettingsDrawer({
                     aria-hidden={hasSecondaryPanelOpen}
                 >
                     <div className="space-y-3">
-                    <button
-                        type="button"
-                        onClick={() => setIsModelPanelOpen(true)}
-                        className={railButtonCardClassName}
-                    >
-                        <span className="block text-[15px] font-semibold leading-5 text-text-primary">Model</span>
-                        <span className="mt-2 block truncate text-sm leading-5 text-text-secondary">
-                            {getModelPresetLabel(activeModelPreset) || modelConfig.model || '未设置模型'}
-                        </span>
-                        <span className="mt-0.5 block truncate text-sm leading-5 text-text-secondary">
-                            {modelConfig.baseUrl || 'Select a model and adjust runtime parameters'}
-                        </span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => handleOpenContextPanel(selectedContextFile)}
-                        className={railButtonCardClassName}
-                    >
-                        <span className="block text-[15px] font-semibold leading-5 text-text-primary">Assistant context</span>
-                        <span className="mt-2 block text-sm leading-5 text-text-secondary">
-                            Soul · Identity · User · Memory
-                        </span>
-                        <span className="mt-1 block text-sm leading-5 text-text-secondary">
-                            编辑 `.lecquy` 上下文文件，系统托管 AGENTS / TOOLS 只读
-                        </span>
-                        <span className="mt-3 flex flex-wrap gap-2">
-                            {EDITABLE_CONTEXT_FILES.map((file) => (
-                                <span
-                                    key={file.name}
-                                    className="inline-flex rounded-full border border-border bg-surface-alt px-2.5 py-1 text-xs leading-none text-text-muted"
-                                >
-                                    {file.title}
-                                </span>
-                            ))}
-                        </span>
-                    </button>
-
-                    <section className={railCardClassName} aria-label="Runtime">
-                        <h3 className="text-[15px] font-semibold leading-5 text-text-primary">Runtime</h3>
-                        <div className="mt-4 space-y-4">
-                            <div className="flex items-center justify-between gap-4">
-                                <div>
-                                    <div className="text-sm font-semibold text-text-primary">Function Calling</div>
-                                    <div className="mt-0.5 text-xs text-text-secondary">启用后模型可调用工具</div>
+                        <section className={railCardClassName} aria-label="Current agent">
+                            <button
+                                type="button"
+                                onClick={() => setIsCurrentAgentExpanded(!isCurrentAgentExpanded)}
+                                className="flex w-full items-center justify-between gap-3 text-left"
+                            >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <Bot className="size-5 shrink-0 text-text-primary" strokeWidth={1.8}/>
+                                    <h3 className="truncate text-[18px] font-semibold leading-6 text-text-primary">Current agent</h3>
+                                    <span className="truncate text-sm text-text-secondary">{activeAgentName}</span>
                                 </div>
+                                <div className="flex shrink-0 items-center gap-0.5">
+                                    {isCurrentAgentExpanded && (
+                                        <>
+                                            <span
+                                                role="button"
+                                                onClick={(e) => { e.stopPropagation(); handleCreateAgent() }}
+                                                className={railIconButtonClassName}
+                                                aria-label="新增 agent"
+                                                title="新增 agent"
+                                            >
+                                                <Plus className="size-4"/>
+                                            </span>
+                                            <span
+                                                role="button"
+                                                onClick={(e) => { e.stopPropagation(); handleEditAgent() }}
+                                                className={railIconButtonClassName}
+                                                aria-label="编辑 agent"
+                                                title="编辑 agent"
+                                            >
+                                                <Pencil className="size-4"/>
+                                            </span>
+                                            <span
+                                                role="button"
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteModelPreset() }}
+                                                className={railIconButtonClassName}
+                                                aria-label="删除 agent"
+                                                title="删除 agent"
+                                            >
+                                                <Trash2 className="size-4"/>
+                                            </span>
+                                        </>
+                                    )}
+                                    {isCurrentAgentExpanded ? (
+                                        <ChevronUp className="size-5 shrink-0 text-text-secondary"/>
+                                    ) : (
+                                        <ChevronDown className="size-5 shrink-0 text-text-secondary"/>
+                                    )}
+                                </div>
+                            </button>
+
+                            {isCurrentAgentExpanded && (
+                                <div className="mt-3 space-y-4 border-t border-border pt-3">
+                                <div>
+                                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-text-primary">
+                                        <FileText className="size-4 text-text-secondary"/>
+                                        Role context
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {activeAgentRoleFiles.map((file) => (
+                                            <span
+                                                key={file}
+                                                className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-border bg-surface-alt px-2.5 py-2 text-xs text-text-secondary"
+                                            >
+                                                <FileText className="size-3.5 shrink-0"/>
+                                                <span className="truncate">{file}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 <button
                                     type="button"
-                                    role="switch"
-                                    aria-checked={modelConfig.enableTools}
-                                    onClick={() => updateModelConfig({enableTools: !modelConfig.enableTools})}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
-                                        modelConfig.enableTools
-                                            ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
-                                            : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
-                                    }`}
+                                    onClick={handleEditAgent}
+                                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-surface-alt px-3 py-3 text-left transition-colors hover:bg-hover"
                                 >
-                                    <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
-                                        modelConfig.enableTools ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
-                                    }`}/>
+                                    <span className="flex min-w-0 items-center gap-3">
+                                        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-hover text-text-secondary">
+                                            <Cpu className="size-4"/>
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-sm font-semibold text-text-primary">{activeAgentModel}</span>
+                                            <span className="mt-0.5 block truncate text-xs text-text-secondary">{modelConfig.baseUrl || 'No base URL'}</span>
+                                        </span>
+                                    </span>
+                                    <ChevronRight className="size-4 shrink-0 text-text-muted"/>
                                 </button>
-                            </div>
 
-                            <div className="flex items-center justify-between gap-4">
-                                <div>
-                                    <div className="text-sm font-semibold text-text-primary">Thinking enabled</div>
-                                    <div className="mt-0.5 text-xs text-text-secondary">显示折叠思考</div>
-                                </div>
-                                <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={thinkingEnabled}
-                                    disabled={!thinkingProtocolSelected}
-                                    onClick={() => updateThinkingConfig({enabled: !thinkingConfig.enabled})}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
-                                        thinkingEnabled
-                                            ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
-                                            : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
-                                    } ${!thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''}`}
-                                >
-                                    <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
-                                        thinkingEnabled ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
-                                    }`}/>
-                                </button>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section className={railCardClassName} aria-label="Generation">
-                        <h3 className="text-[15px] font-semibold leading-5 text-text-primary">Generation</h3>
-                        <div className="mt-4 space-y-5">
-                            <div>
-                                <div className="mb-3 text-sm font-semibold text-text-primary">Temperature</div>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="range"
-                                        min={0}
-                                        max={2}
-                                        step={0.05}
-                                        value={modelConfig.temperature}
-                                        onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
-                                        className="min-w-0 flex-1 accent-text-primary"
-                                    />
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={2}
-                                        step={0.05}
-                                        value={modelConfig.temperature}
-                                        onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
-                                        className="w-16 rounded-xl border border-border bg-surface-alt py-1.5 text-center text-sm text-text-primary shadow-[0_1px_2px_rgba(15,23,42,0.06)] outline-none"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-text-primary">Max tokens</div>
-                                    <div className="mt-0.5 text-xs text-text-secondary">回复上限</div>
-                                </div>
-                                <div ref={maxTokensDropdownRef} className="relative w-[132px] shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleInlineDropdown('maxTokens')}
-                                        className="flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
-                                        aria-haspopup="listbox"
-                                        aria-expanded={isMaxTokensOpen}
-                                        aria-label="Max tokens"
-                                    >
-                                        <span className="truncate text-text-primary">{selectedTokenOption.label}</span>
-                                        <span className="text-xs text-text-muted">{selectedTokenOption.hint}</span>
-                                        <ChevronDown className="size-4 text-text-muted"/>
-                                    </button>
-
-                                    {isMaxTokensOpen && (
-                                        <div
-                                            className="absolute right-0 z-20 mt-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
-                                            role="listbox"
-                                            aria-label="Max tokens options"
-                                        >
-                                            {tokenOptions.map((item) => {
-                                                const active = item.key === maxTokenPreset
-                                                return (
-                                                    <button
-                                                        key={item.key}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            updateModelConfig({maxTokens: item.value})
-                                                            setActiveInlineDropdown(null)
-                                                        }}
-                                                        className={clsx(
-                                                            'flex w-full items-center justify-between px-3 py-2 text-sm',
-                                                            active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
-                                                        )}
-                                                        role="option"
-                                                        aria-selected={active}
-                                                    >
-                                                        <span>{item.label}</span>
-                                                        <span className="text-xs text-text-muted">{item.hint}</span>
-                                                    </button>
-                                                )
-                                            })}
+                                <div className="space-y-3 pt-1">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                                                <Wrench className="size-4 text-text-secondary"/>
+                                                Function Calling
+                                            </div>
+                                            <div className="mt-0.5 text-xs text-text-secondary">启用后 agent 可调用工具</div>
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section className={railCardClassName} aria-label="Thinking">
-                        <h3 className="text-[15px] font-semibold leading-5 text-text-primary">Thinking</h3>
-                        <div className="mt-4 space-y-4">
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-text-primary">Thinking protocol</div>
-                                    <div className="mt-0.5 text-xs text-text-secondary">思考协议</div>
-                                </div>
-                                <div ref={thinkingProtocolDropdownRef} className="relative w-[132px] shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleInlineDropdown('thinkingProtocol')}
-                                        className="flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
-                                        aria-haspopup="listbox"
-                                        aria-expanded={isThinkingProtocolOpen}
-                                        aria-label="Thinking protocol"
-                                    >
-                                        <span className="truncate text-text-primary">{selectedThinkingProtocol.label}</span>
-                                        <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'set' : 'off'}</span>
-                                        <ChevronDown className="size-4 text-text-muted"/>
-                                    </button>
-
-                                    {isThinkingProtocolOpen && (
-                                        <div
-                                            className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
-                                            role="listbox"
-                                            aria-label="Thinking protocol options"
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={modelConfig.enableTools}
+                                            onClick={() => updateModelConfig({enableTools: !modelConfig.enableTools})}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                                                modelConfig.enableTools
+                                                    ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
+                                                    : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
+                                            }`}
                                         >
-                                            {thinkingProtocolOptions.map((item) => {
-                                                const active = item.value === thinkingConfig.protocol
-                                                return (
-                                                    <button
-                                                        key={item.value}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            updateThinkingConfig({
-                                                                protocol: item.value,
-                                                                enabled: item.value === 'off' ? false : thinkingConfig.enabled,
-                                                            })
-                                                            setActiveInlineDropdown(null)
-                                                        }}
-                                                        className={clsx(
-                                                            'flex w-full items-center justify-between px-3 py-2 text-sm',
-                                                            active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
-                                                        )}
-                                                        role="option"
-                                                        aria-selected={active}
-                                                    >
-                                                        <span>{item.label}</span>
-                                                        <span className="text-xs text-text-muted">{item.value === 'off' ? 'off' : 'on'}</span>
-                                                    </button>
-                                                )
-                                            })}
+                                            <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                                                modelConfig.enableTools ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
+                                            }`}/>
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                                                <Brain className="size-4 text-text-secondary"/>
+                                                Thinking enabled
+                                            </div>
+                                            <div className="mt-0.5 text-xs text-text-secondary">显示折叠思考</div>
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-text-primary">Thinking level</div>
-                                    <div className="mt-0.5 text-xs text-text-secondary">思考强度</div>
-                                </div>
-                                <div ref={thinkingLevelDropdownRef} className="relative w-[132px] shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (!thinkingProtocolSelected) return
-                                            toggleInlineDropdown('thinkingLevel')
-                                        }}
-                                        className={`flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)] ${
-                                            !thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''
-                                        }`}
-                                        aria-haspopup="listbox"
-                                        aria-expanded={isThinkingLevelOpen}
-                                        aria-label="Thinking level"
-                                        disabled={!thinkingProtocolSelected}
-                                    >
-                                        <span className="truncate text-text-primary">{selectedThinkingLevel.label}</span>
-                                        <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'on' : 'off'}</span>
-                                        <ChevronDown className="size-4 text-text-muted"/>
-                                    </button>
-
-                                    {isThinkingLevelOpen && thinkingProtocolSelected && (
-                                        <div
-                                            className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
-                                            role="listbox"
-                                            aria-label="Thinking level options"
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={thinkingEnabled}
+                                            disabled={!thinkingProtocolSelected}
+                                            onClick={() => updateThinkingConfig({enabled: !thinkingConfig.enabled})}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                                                thinkingEnabled
+                                                    ? 'border-[color:var(--color-toggle-on)] bg-[color:var(--color-toggle-on)]'
+                                                    : 'border-[color:var(--color-toggle-off)] bg-[color:var(--color-toggle-off)]'
+                                            } ${!thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''}`}
                                         >
-                                            {thinkingLevelOptions.map((item) => {
-                                                const active = item.value === thinkingConfig.level
-                                                return (
-                                                    <button
-                                                        key={item.value}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            updateThinkingConfig({level: item.value})
-                                                            setActiveInlineDropdown(null)
-                                                        }}
-                                                        className={clsx(
-                                                            'flex w-full items-center justify-between px-3 py-2 text-sm',
-                                                            active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
-                                                        )}
-                                                        role="option"
-                                                        aria-selected={active}
-                                                    >
-                                                        <span>{item.label}</span>
-                                                        <span className="text-xs text-text-muted">{item.value}</span>
-                                                    </button>
-                                                )
-                                            })}
+                                            <span className={`inline-block h-4 w-4 rounded-full shadow-sm transition-transform ${
+                                                thinkingEnabled ? 'translate-x-6 bg-[color:var(--color-toggle-thumb-active)]' : 'translate-x-1 bg-[color:var(--color-toggle-thumb)]'
+                                            }`}/>
+                                        </button>
+                                    </div>
+
+                                    <div>
+                                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-text-primary">
+                                            <SlidersHorizontal className="size-4 text-text-secondary"/>
+                                            Temperature
                                         </div>
-                                    )}
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={2}
+                                                step={0.05}
+                                                value={modelConfig.temperature}
+                                                onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
+                                                className="min-w-0 flex-1 accent-text-primary"
+                                            />
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={2}
+                                                step={0.05}
+                                                value={modelConfig.temperature}
+                                                onChange={(e) => updateModelConfig({temperature: Number(e.target.value)})}
+                                                className="w-16 rounded-xl border border-border bg-surface-alt py-1.5 text-center text-sm text-text-primary shadow-[0_1px_2px_rgba(15,23,42,0.06)] outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-semibold text-text-primary">Max tokens</div>
+                                            <div className="mt-0.5 text-xs text-text-secondary">回复上限</div>
+                                        </div>
+                                        <div ref={maxTokensDropdownRef} className="relative w-[132px] shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleInlineDropdown('maxTokens')}
+                                                className="flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                                aria-haspopup="listbox"
+                                                aria-expanded={isMaxTokensOpen}
+                                                aria-label="Max tokens"
+                                            >
+                                                <span className="truncate text-text-primary">{selectedTokenOption.label}</span>
+                                                <span className="text-xs text-text-muted">{selectedTokenOption.hint}</span>
+                                                <ChevronDown className="size-4 text-text-muted"/>
+                                            </button>
+
+                                            {isMaxTokensOpen && (
+                                                <div
+                                                    className="absolute right-0 z-20 mt-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+                                                    role="listbox"
+                                                    aria-label="Max tokens options"
+                                                >
+                                                    {tokenOptions.map((item) => {
+                                                        const active = item.key === maxTokenPreset
+                                                        return (
+                                                            <button
+                                                                key={item.key}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    updateModelConfig({maxTokens: item.value})
+                                                                    setActiveInlineDropdown(null)
+                                                                }}
+                                                                className={clsx(
+                                                                    'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                                    active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                                )}
+                                                                role="option"
+                                                                aria-selected={active}
+                                                            >
+                                                                <span>{item.label}</span>
+                                                                <span className="text-xs text-text-muted">{item.hint}</span>
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-semibold text-text-primary">Thinking protocol</div>
+                                            <div className="mt-0.5 text-xs text-text-secondary">思考协议</div>
+                                        </div>
+                                        <div ref={thinkingProtocolDropdownRef} className="relative w-[132px] shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleInlineDropdown('thinkingProtocol')}
+                                                className="flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
+                                                aria-haspopup="listbox"
+                                                aria-expanded={isThinkingProtocolOpen}
+                                                aria-label="Thinking protocol"
+                                            >
+                                                <span className="truncate text-text-primary">{selectedThinkingProtocol.label}</span>
+                                                <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'set' : 'off'}</span>
+                                                <ChevronDown className="size-4 text-text-muted"/>
+                                            </button>
+
+                                            {isThinkingProtocolOpen && (
+                                                <div
+                                                    className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+                                                    role="listbox"
+                                                    aria-label="Thinking protocol options"
+                                                >
+                                                    {thinkingProtocolOptions.map((item) => {
+                                                        const active = item.value === thinkingConfig.protocol
+                                                        return (
+                                                            <button
+                                                                key={item.value}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    updateThinkingConfig({
+                                                                        protocol: item.value,
+                                                                        enabled: item.value === 'off' ? false : thinkingConfig.enabled,
+                                                                    })
+                                                                    setActiveInlineDropdown(null)
+                                                                }}
+                                                                className={clsx(
+                                                                    'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                                    active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                                )}
+                                                                role="option"
+                                                                aria-selected={active}
+                                                            >
+                                                                <span>{item.label}</span>
+                                                                <span className="text-xs text-text-muted">{item.value === 'off' ? 'off' : 'on'}</span>
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-semibold text-text-primary">Thinking level</div>
+                                            <div className="mt-0.5 text-xs text-text-secondary">思考强度</div>
+                                        </div>
+                                        <div ref={thinkingLevelDropdownRef} className="relative w-[132px] shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!thinkingProtocolSelected) return
+                                                    toggleInlineDropdown('thinkingLevel')
+                                                }}
+                                                className={`flex w-full items-center justify-between rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm shadow-[0_1px_2px_rgba(15,23,42,0.06)] ${
+                                                    !thinkingProtocolSelected ? 'cursor-not-allowed opacity-50' : ''
+                                                }`}
+                                                aria-haspopup="listbox"
+                                                aria-expanded={isThinkingLevelOpen}
+                                                aria-label="Thinking level"
+                                                disabled={!thinkingProtocolSelected}
+                                            >
+                                                <span className="truncate text-text-primary">{selectedThinkingLevel.label}</span>
+                                                <span className="text-xs text-text-muted">{thinkingProtocolSelected ? 'on' : 'off'}</span>
+                                                <ChevronDown className="size-4 text-text-muted"/>
+                                            </button>
+
+                                            {isThinkingLevelOpen && thinkingProtocolSelected && (
+                                                <div
+                                                    className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-full overflow-auto rounded-xl border border-border bg-surface-alt shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+                                                    role="listbox"
+                                                    aria-label="Thinking level options"
+                                                >
+                                                    {thinkingLevelOptions.map((item) => {
+                                                        const active = item.value === thinkingConfig.level
+                                                        return (
+                                                            <button
+                                                                key={item.value}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    updateThinkingConfig({level: item.value})
+                                                                    setActiveInlineDropdown(null)
+                                                                }}
+                                                                className={clsx(
+                                                                    'flex w-full items-center justify-between px-3 py-2 text-sm',
+                                                                    active ? 'bg-settings-card-active text-text-primary' : 'bg-surface-alt text-text-secondary hover:bg-hover hover:text-text-primary',
+                                                                )}
+                                                                role="option"
+                                                                aria-selected={active}
+                                                            >
+                                                                <span>{item.label}</span>
+                                                                <span className="text-xs text-text-muted">{item.value}</span>
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </section>
-                </div>
+                                </div>
+                            )}
+                        </section>
+
+                        <section className={railCardClassName} aria-label="Lecquy kernel">
+                            <button
+                                type="button"
+                                onClick={() => setIsLecquyKernelExpanded(!isLecquyKernelExpanded)}
+                                className="flex w-full items-center justify-between gap-3 text-left"
+                            >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <Database className="size-5 shrink-0 text-text-secondary"/>
+                                    <h3 className="text-[18px] font-semibold leading-6 text-text-primary">Lecquy kernel</h3>
+                                </div>
+                                {isLecquyKernelExpanded ? (
+                                    <ChevronUp className="size-5 shrink-0 text-text-secondary"/>
+                                ) : (
+                                    <ChevronDown className="size-5 shrink-0 text-text-secondary"/>
+                                )}
+                            </button>
+                            {isLecquyKernelExpanded && (
+                                <>
+                                    <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+                                        {kernelFiles.map((file) => (
+                                            <button
+                                                key={file.name}
+                                                type="button"
+                                                onClick={() => handleOpenContextPanel(file.name)}
+                                                className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-surface-alt px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+                                            >
+                                                <FileText className="size-3.5 shrink-0"/>
+                                                <span className="truncate">{file.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="mt-3 rounded-2xl border border-border bg-surface-alt px-3 py-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-semibold text-text-primary">memory.db</div>
+                                                <div className="mt-0.5 text-xs text-text-secondary">SQLite · local memory</div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenContextPanel('MEMORY.md')}
+                                                className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+                                            >
+                                                查看 / 编辑
+                                            </button>
+                                        </div>
+                                        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                            衰减机制待实现，详见 CLAUDE.md §8.1
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </section>
+
+
+                    </div>
                 </div>
 
                 {isContextPanelOpen && (
                     <div className="settings-scrollbar-hidden absolute inset-0 z-20 flex flex-col overflow-y-auto bg-surface-alt px-4 py-4">
                         <div className="flex items-center justify-between border-b border-border pb-3">
                             <div>
-                                <span className="text-base font-semibold text-text-primary">Assistant context</span>
+                                <span className="text-base font-semibold text-text-primary">Lecquy kernel</span>
                                 <p className="mt-1 text-xs text-text-secondary">Soul · Identity · User · Memory</p>
                             </div>
                             <button
@@ -1106,11 +1296,11 @@ export function SettingsDrawer({
                 {isModelPanelOpen && (
                     <div className="settings-scrollbar-hidden absolute inset-0 z-20 flex flex-col overflow-y-auto bg-surface-alt px-4 py-4">
                         <div className="flex items-center justify-between border-b border-border pb-3">
-                            <span className="text-base font-semibold text-text-primary">Model selection</span>
+                            <span className="text-base font-semibold text-text-primary">Agent profile</span>
                             <button
                                 type="button"
                                 onClick={() => setIsModelPanelOpen(false)}
-                                aria-label="关闭模型面板"
+                                aria-label="关闭 agent 面板"
                                 className="flex size-8 items-center justify-center rounded text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
                             >
                                 <X className="size-4"/>
@@ -1125,11 +1315,11 @@ export function SettingsDrawer({
                                     className="flex w-full items-center justify-between rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none"
                                     aria-haspopup="listbox"
                                     aria-expanded={isModelOptionsOpen}
-                                    aria-label="Model preset"
+                                    aria-label="Agent preset"
                                 >
                                     <span className="truncate">
                                         {selectedModelPresetId === NEW_MODEL_PRESET_VALUE
-                                            ? '+ Create new model setting'
+                                            ? '+ Create new agent'
                                             : getModelPresetLabel(modelPresets.find((item) => item.id === selectedModelPresetId) ?? null)}
                                     </span>
                                     <ChevronDown className="size-4 text-text-muted"/>
@@ -1139,7 +1329,7 @@ export function SettingsDrawer({
                                     <div
                                         className="absolute z-20 mt-2 w-full overflow-hidden rounded-lg border border-border bg-surface-alt shadow-sm"
                                         role="listbox"
-                                        aria-label="Model preset options"
+                                        aria-label="Agent preset options"
                                     >
                                         <button
                                             type="button"
@@ -1156,7 +1346,7 @@ export function SettingsDrawer({
                                             role="option"
                                             aria-selected={selectedModelPresetId === NEW_MODEL_PRESET_VALUE}
                                         >
-                                            + Create new model setting
+                                            + Create new agent
                                         </button>
                                         {modelPresets.map((item) => (
                                             <button
@@ -1175,12 +1365,25 @@ export function SettingsDrawer({
                                                 role="option"
                                                 aria-selected={selectedModelPresetId === item.id}
                                             >
-                                                {getModelPresetLabel(item)}
+                                                <span className="flex min-w-0 flex-col">
+                                                    <span className="truncate">{getModelPresetLabel(item)}</span>
+                                                    <span className="truncate text-xs text-text-muted">{getModelPresetModelLabel(item)}</span>
+                                                </span>
                                             </button>
                                         ))}
                                     </div>
                                 )}
                             </div>
+
+                            <input
+                                value={draftAgentName}
+                                onChange={(e) => {
+                                    setDraftAgentName(e.target.value)
+                                    setModelSaveStatus('Editing')
+                                }}
+                                placeholder="agent name"
+                                className="w-full rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary outline-none focus:ring-2 focus:ring-[color:var(--border-strong)]"
+                            />
 
                             <div className="flex items-center gap-2">
                                 <input
@@ -1205,7 +1408,7 @@ export function SettingsDrawer({
                                     onClick={handleDeleteModelPreset}
                                     disabled={selectedModelPresetId === NEW_MODEL_PRESET_VALUE}
                                     className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label="Delete model setting"
+                                    aria-label="Delete agent"
                                 >
                                     <Trash2 className="size-4"/>
                                 </button>
@@ -1238,7 +1441,7 @@ export function SettingsDrawer({
                             />
 
                             <div className="mt-auto text-xs text-text-muted">
-                                Model settings are saved in local storage.
+                                Agent profiles are saved in local storage. Model is only the selected agent runtime.
                             </div>
                         </div>
                     </div>

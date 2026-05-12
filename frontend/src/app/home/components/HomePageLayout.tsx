@@ -109,6 +109,39 @@ function loadModelConfig(): ModelConfig {
   }
 }
 
+function createAgentPresetFromModelConfig(id: string, modelConfig: ModelConfig): ModelPresetItem {
+  const modelName = modelConfig.model?.trim()
+  return {
+    id,
+    model: modelConfig.model || '',
+    baseUrl: modelConfig.baseUrl || '',
+    apiKey: modelConfig.apiKey || '',
+    title: modelName || 'Default agent',
+    temperature: modelConfig.temperature,
+    maxTokens: modelConfig.maxTokens,
+    enableTools: modelConfig.enableTools,
+    thinking: modelConfig.thinking,
+    roleContextFiles: ['Role.md', 'Tools.md'],
+  }
+}
+
+function applyAgentPresetToModelConfig(preset: ModelPresetItem, fallback: ModelConfig): ModelConfig {
+  const defaultThinking = createDefaultThinkingConfig()
+  return {
+    model: preset.model,
+    baseUrl: preset.baseUrl,
+    apiKey: preset.apiKey,
+    temperature: Number(preset.temperature ?? fallback.temperature),
+    maxTokens: Number(preset.maxTokens ?? fallback.maxTokens),
+    enableTools: Boolean(preset.enableTools ?? fallback.enableTools),
+    thinking: {
+      ...defaultThinking,
+      ...fallback.thinking,
+      ...preset.thinking,
+    },
+  }
+}
+
 function loadSidebarCollapsed(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)
@@ -233,19 +266,13 @@ export function HomePageLayout() {
   }, [modelConfig])
 
   useEffect(() => {
-    // 首次没有模型预设时，按当前模型配置创建一个默认预设，供输入框只读选择器复用。
+    // 首次没有 agent 预设时，按当前模型配置创建一个默认 agent，供输入框选择器复用。
     if (modelPresets.length > 0) return
     const id = `model_${Date.now()}`
-    const initial: ModelPresetItem = {
-      id,
-      model: modelConfig.model || '',
-      baseUrl: modelConfig.baseUrl || '',
-      apiKey: modelConfig.apiKey || '',
-      title: modelConfig.model || 'Default model',
-    }
+    const initial = createAgentPresetFromModelConfig(id, modelConfig)
     setModelPresets([initial])
     setSelectedModelPresetId(id)
-  }, [modelConfig.apiKey, modelConfig.baseUrl, modelConfig.model, modelPresets.length])
+  }, [modelConfig, modelPresets.length])
 
   useEffect(() => {
     localStorage.setItem(MODEL_PRESET_STORAGE_KEY, JSON.stringify(modelPresets))
@@ -266,13 +293,37 @@ export function HomePageLayout() {
 
     const fallback = modelPresets[0]
     setSelectedModelPresetId(fallback.id)
-    setModelConfig((prev) => ({
-      ...prev,
-      model: fallback.model,
-      baseUrl: fallback.baseUrl,
-      apiKey: fallback.apiKey,
-    }))
+    setModelConfig((prev) => applyAgentPresetToModelConfig(fallback, prev))
   }, [modelPresets, selectedModelPresetId])
+
+  useEffect(() => {
+    if (selectedModelPresetId === NEW_MODEL_PRESET_VALUE) return
+
+    setModelPresets((prev) => prev.map((item) => (
+      item.id === selectedModelPresetId
+        ? {
+          ...item,
+          model: modelConfig.model,
+          baseUrl: modelConfig.baseUrl,
+          apiKey: modelConfig.apiKey,
+          temperature: modelConfig.temperature,
+          maxTokens: modelConfig.maxTokens,
+          enableTools: modelConfig.enableTools,
+          thinking: modelConfig.thinking,
+          roleContextFiles: item.roleContextFiles ?? ['Role.md', 'Tools.md'],
+        }
+        : item
+    )))
+  }, [
+    modelConfig.apiKey,
+    modelConfig.baseUrl,
+    modelConfig.enableTools,
+    modelConfig.maxTokens,
+    modelConfig.model,
+    modelConfig.temperature,
+    modelConfig.thinking,
+    selectedModelPresetId,
+  ])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, isSidebarCollapsed ? '1' : '0')
@@ -599,12 +650,7 @@ export function HomePageLayout() {
     if (!preset) return
 
     setSelectedModelPresetId(presetId)
-    setModelConfig((prev) => ({
-      ...prev,
-      model: preset.model,
-      baseUrl: preset.baseUrl,
-      apiKey: preset.apiKey,
-    }))
+    setModelConfig((prev) => applyAgentPresetToModelConfig(preset, prev))
   }, [modelPresets])
 
   const updateDocumentPanelWidth = useCallback((clientX: number) => {

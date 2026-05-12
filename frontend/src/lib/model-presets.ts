@@ -1,9 +1,16 @@
+import type { ThinkingConfig } from '@lecquy/shared'
+
 export interface ModelPresetItem {
   id: string
   model: string
   baseUrl: string
   apiKey: string
   title?: string
+  temperature?: number
+  maxTokens?: number
+  enableTools?: boolean
+  thinking?: ThinkingConfig
+  roleContextFiles?: string[]
 }
 
 export const MODEL_PRESET_STORAGE_KEY = 'lecquy.modelPresets'
@@ -31,9 +38,16 @@ export function loadActiveModelPresetIdFromStorage(): string | null {
 
 export function getModelPresetLabel(item: ModelPresetItem | null | undefined): string {
   if (!item) return ''
-  const modelLabel = item.model?.trim()
-  if (modelLabel) return modelLabel
   const legacyTitle = item.title?.trim()
   if (legacyTitle) return legacyTitle
+  const modelLabel = item.model?.trim()
+  if (modelLabel) return modelLabel
   return 'Untitled model'
+}
+
+export function getModelPresetModelLabel(item: ModelPresetItem | null | undefined): string {
+  if (!item) return ''
+  const modelLabel = item.model?.trim()
+  if (modelLabel) return modelLabel
+  return 'No model configured'
 }

@@ -6,7 +6,11 @@ import { AutoResizeTextarea } from './AutoResizeTextarea'
 import { CategoryTags } from './CategoryTags'
 import type { ChatMode, ModelConfig } from '../../hooks/useChat'
 import { buildAttachmentPreviewUrl, readChatAttachment } from '../../lib/chat-attachments'
-import { getModelPresetLabel, type ModelPresetItem } from '../../lib/model-presets'
+import {
+  getModelPresetLabel,
+  getModelPresetModelLabel,
+  type ModelPresetItem,
+} from '../../lib/model-presets'
 
 const FILE_INPUT_ACCEPT = 'image/*,.txt,.md,.markdown,.json,.csv,.ts,.tsx,.js,.jsx,.mjs,.cjs,.sql,.yaml,.yml,.xml,.html,.css,.scss,.log,.pdf,.docx,.xlsx,.xls'
 
@@ -79,19 +83,19 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [isReadingAttachments, setIsReadingAttachments] = useState(false)
-  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const modelMenuRef = useRef<HTMLDivElement | null>(null)
+  const agentMenuRef = useRef<HTMLDivElement | null>(null)
 
   const previewAttachments = useMemo(() => attachments.map((attachment) => ({
     attachment,
     previewUrl: buildAttachmentPreviewUrl(attachment),
   })), [attachments])
-  const activeModelPreset = useMemo(() => {
+  const activeAgentPreset = useMemo(() => {
     return modelPresets.find((preset) => preset.id === selectedModelPresetId) ?? null
   }, [modelPresets, selectedModelPresetId])
-  const modelButtonLabel = getModelPresetLabel(activeModelPreset) || modelConfig.model || '选择模型'
+  const agentButtonLabel = getModelPresetLabel(activeAgentPreset) || modelConfig.model || '选择 agent'
 
   /** 发送消息（暂时为空操作，后续接入） */
   const handleSend = () => {
@@ -167,9 +171,9 @@ export function ChatInput({
     onModeChange(mode === 'plan' ? 'simple' : 'plan')
   }
 
-  const handleModelSelect = (presetId: string) => {
+  const handleAgentSelect = (presetId: string) => {
     onModelPresetSelect(presetId)
-    setIsModelMenuOpen(false)
+    setIsAgentMenuOpen(false)
   }
 
   const planBadge = mode === 'plan' ? (
@@ -184,18 +188,18 @@ export function ChatInput({
   ) : null
 
   useEffect(() => {
-    if (!isModelMenuOpen) return
+    if (!isAgentMenuOpen) return
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (modelMenuRef.current?.contains(target)) return
-      setIsModelMenuOpen(false)
+      if (agentMenuRef.current?.contains(target)) return
+      setIsAgentMenuOpen(false)
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setIsModelMenuOpen(false)
+        setIsAgentMenuOpen(false)
       }
     }
 
@@ -206,7 +210,7 @@ export function ChatInput({
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isModelMenuOpen])
+  }, [isAgentMenuOpen])
 
   return (
     <div className="mx-auto w-full">
@@ -330,30 +334,30 @@ export function ChatInput({
             {planBadge}
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div ref={modelMenuRef} className="relative">
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
+            <div ref={agentMenuRef} className="relative min-w-0">
               <button
                 type="button"
-                onClick={() => setIsModelMenuOpen((prev) => !prev)}
-                className="inline-flex h-8 w-max items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[15px] font-medium text-[color:var(--color-input-control)] transition-colors hover:bg-toolbar-selected"
+                onClick={() => setIsAgentMenuOpen((prev) => !prev)}
+                className="inline-flex h-8 min-w-0 max-w-[16rem] items-center gap-2 rounded-full px-2.5 text-[15px] font-medium text-[color:var(--color-input-control)] transition-colors hover:bg-toolbar-selected"
                 aria-haspopup="listbox"
-                aria-expanded={isModelMenuOpen}
-                aria-label={`选择模型：${modelButtonLabel}`}
-                title={modelButtonLabel}
+                aria-expanded={isAgentMenuOpen}
+                aria-label={`选择 agent：${agentButtonLabel}`}
+                title={agentButtonLabel}
               >
-                <span>{modelButtonLabel}</span>
-                <ChevronDown className="size-4 shrink-0" strokeWidth={1.8} />
+                <span className="truncate">{agentButtonLabel}</span>
+                <ChevronDown className="size-4 shrink-0 text-[color:var(--color-input-control-muted)]" strokeWidth={1.8} />
               </button>
 
-              {isModelMenuOpen && (
+              {isAgentMenuOpen && (
                 <div
-                  className="absolute bottom-full right-0 z-30 mb-2 w-[min(18rem,calc(100vw-2rem))] max-h-[13rem] overflow-y-auto rounded-2xl border border-border bg-surface-raised p-1 shadow-[0_18px_48px_rgba(15,23,42,0.14)] dark:shadow-[0_18px_48px_rgba(0,0,0,0.42)]"
+                  className="absolute bottom-full right-0 z-30 mb-2 max-h-[15rem] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border bg-surface-raised p-1 shadow-[0_18px_48px_rgba(15,23,42,0.14)] dark:shadow-[0_18px_48px_rgba(0,0,0,0.42)]"
                   role="listbox"
-                  aria-label="模型 preset"
+                  aria-label="Agent presets"
                 >
                   {modelPresets.length === 0 ? (
                     <div className="px-3 py-3 text-sm text-text-muted">
-                      请先在设置栏 Model 卡片中添加模型
+                      请先在右侧 Current agent 中添加 agent
                     </div>
                   ) : (
                     modelPresets.map((preset) => {
@@ -362,7 +366,7 @@ export function ChatInput({
                         <button
                           key={preset.id}
                           type="button"
-                          onClick={() => handleModelSelect(preset.id)}
+                          onClick={() => handleAgentSelect(preset.id)}
                           className={clsx(
                             'flex w-full flex-col rounded-xl px-3 py-2.5 text-left transition-colors',
                             selected
@@ -376,7 +380,7 @@ export function ChatInput({
                             {getModelPresetLabel(preset)}
                           </span>
                           <span className="mt-0.5 max-w-full truncate text-xs text-text-muted">
-                            {preset.baseUrl || 'No base URL'}
+                            {getModelPresetModelLabel(preset)} · {preset.baseUrl || 'No base URL'}
                           </span>
                         </button>
                       )
