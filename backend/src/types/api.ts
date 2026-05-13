@@ -46,6 +46,11 @@ export const modelOptionsSchema = z.object({
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
   enableTools: z.boolean().default(false),
+  headers: z.record(z.string()).optional(),
+  cacheRetention: z.enum(['none', 'short', 'long']).optional(),
+  sessionId: z.string().optional(),
+  maxRetryDelayMs: z.number().int().min(0).optional(),
+  metadata: z.record(z.unknown()).optional(),
   thinking: z.object({
     enabled: z.boolean().default(false),
     level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('medium'),

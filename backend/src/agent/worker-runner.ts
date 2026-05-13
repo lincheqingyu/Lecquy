@@ -36,6 +36,14 @@ export interface WorkerRunOptions {
   memoryRecall?: AgentMessage[]
   model: Model<'openai-completions'>
   apiKey: string
+  thinkingLevel?: ThinkingLevel
+  temperature?: number
+  maxTokens?: number
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  llmSessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   workspaceDir: string
   onEvent?: (event: AgentRuntimeEvent) => void
   signal?: AbortSignal
@@ -52,6 +60,12 @@ interface LegacyWorkerRunOptions {
   systemPromptOverride?: string
   thinkingLevel?: ThinkingLevel
   temperature?: number
+  maxTokens?: number
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  llmSessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   extraSystemPrompt?: string
   signal?: AbortSignal
   onEvent?: (event: AgentRuntimeEvent) => void
@@ -74,6 +88,12 @@ interface NormalizedWorkerRunOptions {
   signal?: AbortSignal
   thinkingLevel?: ThinkingLevel
   temperature?: number
+  maxTokens?: number
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  llmSessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   sessionKey?: string
   sessionId?: string
   runId?: RunId
@@ -160,6 +180,12 @@ async function normalizeWorkerRunOptions(options: WorkerAgentOptions): Promise<N
     signal: options.signal,
     thinkingLevel: options.thinkingLevel,
     temperature: options.temperature,
+    maxTokens: options.maxTokens,
+    headers: options.headers,
+    cacheRetention: options.cacheRetention,
+    llmSessionId: options.llmSessionId,
+    maxRetryDelayMs: options.maxRetryDelayMs,
+    metadata: options.metadata,
     sessionKey: options.sessionKey,
     sessionId: options.sessionId,
     runId: options.runId,
@@ -214,6 +240,12 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
         ? normalized.thinkingLevel
         : undefined,
       temperature: normalized.temperature,
+      maxTokens: normalized.maxTokens,
+      headers: normalized.headers,
+      cacheRetention: normalized.cacheRetention,
+      sessionId: normalized.llmSessionId,
+      maxRetryDelayMs: normalized.maxRetryDelayMs,
+      metadata: normalized.metadata,
       onPayload: (payload) => mutateProviderPayload(normalized.model, payload),
       convertToLlm: (messages: AgentMessage[]) =>
         messages.filter(

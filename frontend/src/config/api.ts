@@ -6,6 +6,7 @@
 declare const __BACKEND_ORIGIN__: string
 declare const __LEGACY_WS_BASE__: string
 declare const __BACKEND_PORT__: string
+declare const __FRONTEND_PORT__: string
 
 function isAutoBase(value: string): boolean {
   return value.trim() === '' || value === 'auto'
@@ -17,6 +18,21 @@ function normalizeBase(value: string): string {
 
 function resolveWindowBase(protocol: 'http:' | 'https:' | 'ws:' | 'wss:'): string {
   return `${protocol}//${window.location.hostname}:${__BACKEND_PORT__}`
+}
+
+function resolveCurrentOriginBase(protocol: 'http:' | 'https:' | 'ws:' | 'wss:'): string {
+  return `${protocol}//${window.location.host}`
+}
+
+function currentPort(): string {
+  if (window.location.port) return window.location.port
+  return window.location.protocol === 'https:' ? '443' : '80'
+}
+
+function shouldUseSameOriginBackend(): boolean {
+  if (!isAutoBase(__BACKEND_ORIGIN__)) return false
+  if (isAutoBase(__FRONTEND_PORT__)) return false
+  return currentPort() !== __FRONTEND_PORT__
 }
 
 function toWsBase(value: string): string {
@@ -34,6 +50,10 @@ function resolveApiBase(): string {
     return normalizeBase(__BACKEND_ORIGIN__)
   }
 
+  if (shouldUseSameOriginBackend()) {
+    return normalizeBase(window.location.origin)
+  }
+
   return resolveWindowBase(window.location.protocol === 'https:' ? 'https:' : 'http:')
 }
 
@@ -44,6 +64,10 @@ function resolveWsBase(): string {
 
   if (!isAutoBase(__BACKEND_ORIGIN__)) {
     return toWsBase(__BACKEND_ORIGIN__)
+  }
+
+  if (shouldUseSameOriginBackend()) {
+    return resolveCurrentOriginBase(window.location.protocol === 'https:' ? 'wss:' : 'ws:')
   }
 
   return resolveWindowBase(window.location.protocol === 'https:' ? 'wss:' : 'ws:')

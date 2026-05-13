@@ -34,6 +34,7 @@ export default defineConfig(({ mode }) => {
         define: {
             // 统一使用 BACKEND_ORIGIN 覆盖前后端通信地址，默认按当前页面 + BACKEND_PORT 自动推导
             '__BACKEND_PORT__': JSON.stringify(backendPort),
+            '__FRONTEND_PORT__': JSON.stringify(String(frontendPort)),
             '__BACKEND_ORIGIN__': JSON.stringify(backendOrigin),
             '__LEGACY_WS_BASE__': JSON.stringify(legacyWsBase),
         },
