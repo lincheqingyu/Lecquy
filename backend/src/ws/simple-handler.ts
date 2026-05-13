@@ -3,6 +3,7 @@
  */
 
 import type { WebSocket } from 'ws'
+import { resolveThinkingLevel } from '@lecquy/shared'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runSimpleAgent } from '../agent/index.js'
 import { isCoreAgentEvent } from '../agent/tool-permission.js'
@@ -70,10 +71,12 @@ export async function handleSimpleChat(
 
   const config = getConfig()
   const { messages, model: modelId, baseUrl, apiKey: reqApiKey, options, enableTools } = payload
+  const thinkingLevel = resolveThinkingLevel(payload.thinking)
   const piModel = createVllmModel({
     modelId,
     baseUrl,
     maxTokens: options?.maxTokens,
+    thinkingProtocol: payload.thinking?.protocol ?? 'off',
   })
   const apiKey = reqApiKey ?? config.LLM_API_KEY
 
@@ -98,7 +101,14 @@ export async function handleSimpleChat(
       contextMessages,
       model: piModel,
       apiKey,
+      thinkingLevel,
       temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      headers: payload.headers,
+      cacheRetention: payload.cacheRetention,
+      llmSessionId: payload.sessionId,
+      maxRetryDelayMs: payload.maxRetryDelayMs,
+      metadata: payload.metadata,
       extraSystemPrompt: normalized.extraSystemPrompt,
       signal: state.abortController.signal,
       enableTools,

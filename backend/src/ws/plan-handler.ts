@@ -4,6 +4,7 @@
 
 import type { WebSocket } from 'ws'
 import { z } from 'zod'
+import { resolveThinkingLevel } from '@lecquy/shared'
 import { createVllmModel } from '../agent/vllm-model.js'
 import { runManagerAgent, runWorkerAgent } from '../agent/index.js'
 import { isCoreAgentEvent } from '../agent/tool-permission.js'
@@ -56,10 +57,12 @@ async function executePendingTodos(
   payload: ChatPayload,
 ): Promise<void> {
   const config = getConfig()
+  const thinkingLevel = resolveThinkingLevel(payload.thinking)
   const piModel = createVllmModel({
     modelId: payload.model,
     baseUrl: payload.baseUrl,
     maxTokens: payload.options?.maxTokens,
+    thinkingProtocol: payload.thinking?.protocol ?? 'off',
   })
   const apiKey = payload.apiKey ?? config.LLM_API_KEY
 
@@ -86,7 +89,14 @@ async function executePendingTodos(
         prompt,
         model: piModel,
         apiKey,
+        thinkingLevel,
         temperature: payload.options?.temperature,
+        maxTokens: payload.options?.maxTokens,
+        headers: payload.headers,
+        cacheRetention: payload.cacheRetention,
+        llmSessionId: payload.sessionId,
+        maxRetryDelayMs: payload.maxRetryDelayMs,
+        metadata: payload.metadata,
         signal: state.abortController?.signal,
         onEvent: (event) => {
           if (event.type === 'message_update') {
@@ -203,10 +213,12 @@ export async function handlePlanChat(
 
   const config = getConfig()
   const { messages, model: modelId, baseUrl, apiKey: reqApiKey, options } = payload
+  const thinkingLevel = resolveThinkingLevel(payload.thinking)
   const piModel = createVllmModel({
     modelId,
     baseUrl,
     maxTokens: options?.maxTokens,
+    thinkingProtocol: payload.thinking?.protocol ?? 'off',
   })
   const apiKey = reqApiKey ?? config.LLM_API_KEY
 
@@ -232,7 +244,14 @@ export async function handlePlanChat(
       contextMessages,
       model: piModel,
       apiKey,
+      thinkingLevel,
       temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      headers: payload.headers,
+      cacheRetention: payload.cacheRetention,
+      llmSessionId: payload.sessionId,
+      maxRetryDelayMs: payload.maxRetryDelayMs,
+      metadata: payload.metadata,
       extraSystemPrompt: normalized.extraSystemPrompt,
       signal: state.abortController.signal,
       todoManager: state.todoManager,

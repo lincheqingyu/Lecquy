@@ -33,6 +33,12 @@ export interface ManagerAgentOptions {
   systemPromptOverride?: string
   thinkingLevel?: ThinkingLevel
   temperature?: number
+  maxTokens?: number
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  llmSessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   extraSystemPrompt?: string
   signal?: AbortSignal
   onEvent?: (event: AgentRuntimeEvent) => void
@@ -156,6 +162,12 @@ export async function runManagerAgent(options: ManagerAgentOptions): Promise<Man
       apiKey,
       reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
+      maxTokens: options.maxTokens,
+      headers: options.headers,
+      cacheRetention: options.cacheRetention,
+      sessionId: options.llmSessionId,
+      maxRetryDelayMs: options.maxRetryDelayMs,
+      metadata: options.metadata,
       onPayload: (payload) => mutateProviderPayload(model, payload),
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(

@@ -40,6 +40,12 @@ export interface SimpleAgentOptions {
   systemPromptOverride?: string
   thinkingLevel?: ThinkingLevel
   temperature?: number
+  maxTokens?: number
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  llmSessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   extraSystemPrompt?: string
   signal?: AbortSignal
   onEvent?: (event: AgentRuntimeEvent) => void
@@ -73,6 +79,12 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
     systemPromptOverride,
     thinkingLevel,
     temperature,
+    maxTokens,
+    headers,
+    cacheRetention,
+    llmSessionId,
+    maxRetryDelayMs,
+    metadata,
     extraSystemPrompt,
     signal,
     onEvent,
@@ -133,6 +145,12 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
       apiKey,
       reasoning: thinkingLevel && thinkingLevel !== 'off' ? thinkingLevel : undefined,
       temperature,
+      maxTokens,
+      headers,
+      cacheRetention,
+      sessionId: llmSessionId,
+      maxRetryDelayMs,
+      metadata,
       onPayload: (payload) => mutateProviderPayload(model, payload),
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(

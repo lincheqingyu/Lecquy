@@ -10,6 +10,11 @@ export interface ModelPresetItem {
   maxTokens?: number
   enableTools?: boolean
   thinking?: ThinkingConfig
+  headers?: Record<string, string>
+  cacheRetention?: 'none' | 'short' | 'long'
+  sessionId?: string
+  maxRetryDelayMs?: number
+  metadata?: Record<string, unknown>
   roleContextFiles?: string[]
 }
 

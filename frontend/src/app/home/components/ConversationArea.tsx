@@ -213,7 +213,7 @@ export function ConversationArea({
     >
       <div className="min-h-0 flex-1">
         {!hasSent ? (
-          <div className="flex h-full flex-col items-center justify-center">
+          <div className="flex h-full flex-col items-center justify-center pt-[6vh]">
             <div className="mb-10 text-center">
               <div className="flex items-center justify-center gap-2">
                 <img
@@ -225,7 +225,6 @@ export function ConversationArea({
                   Welcome, Master
                 </div>
               </div>
-              <div className="mt-4 text-base text-text-muted">支持 simple 与 plan 两种模式</div>
             </div>
             <div className={conversationGutterClassName}>
               <div className={conversationInputClassName}>

@@ -223,6 +223,11 @@ export interface ClientModelOptions {
   readonly apiKey?: string
   readonly enableTools?: boolean
   readonly thinking?: ThinkingConfig
+  readonly headers?: Record<string, string>
+  readonly cacheRetention?: 'none' | 'short' | 'long'
+  readonly sessionId?: string
+  readonly maxRetryDelayMs?: number
+  readonly metadata?: Record<string, unknown>
   readonly options?: {
     readonly temperature?: number
     readonly maxTokens?: number

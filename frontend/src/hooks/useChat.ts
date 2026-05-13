@@ -80,6 +80,11 @@ export interface ModelConfig {
   apiKey: string
   enableTools: boolean
   thinking: ThinkingConfig
+  headers: Record<string, string>
+  cacheRetention: 'none' | 'short' | 'long'
+  sessionId: string
+  maxRetryDelayMs: number
+  metadata: Record<string, unknown>
 }
 
 export type SessionResolvedPayload = ServerEventPayloadMap['session_bound']
@@ -996,6 +1001,11 @@ export function useChat({ modelConfig, peerId, currentSessionKey, onWsEvent }: U
     apiKey: modelConfig.apiKey || undefined,
     enableTools: modelConfig.enableTools,
     thinking: modelConfig.thinking,
+    headers: Object.keys(modelConfig.headers).length > 0 ? modelConfig.headers : undefined,
+    cacheRetention: modelConfig.cacheRetention,
+    sessionId: modelConfig.sessionId.trim() || undefined,
+    maxRetryDelayMs: modelConfig.maxRetryDelayMs,
+    metadata: Object.keys(modelConfig.metadata).length > 0 ? modelConfig.metadata : undefined,
     options: {
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,

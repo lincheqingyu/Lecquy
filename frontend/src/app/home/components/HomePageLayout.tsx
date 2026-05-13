@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createDefaultThinkingConfig, type ChatAttachment } from '@lecquy/shared'
 import { ConversationArea } from './ConversationArea'
 import { TopBar } from './TopBar'
 import { ChatsOverview } from './ChatsOverview'
 import { DocumentPanel } from './DocumentPanel'
 import { ArtifactPanel } from '../../../components/artifacts/ArtifactPanel'
-import { SettingsDrawer } from './SettingsDrawer'
+import { RightRail } from '../right-rail/RightRail'
+import { Moon, PanelRight, Sun } from 'lucide-react'
+import {
+  createInitialRightRailState,
+  rightRailReducer,
+} from '../right-rail/rightRailState'
 import {
   ConversationSidebar,
   type ConversationItem,
@@ -83,12 +88,46 @@ interface OpenArtifactDocument {
 
 type OpenDocument = OpenAttachmentDocument | OpenArtifactDocument
 
+function normalizeRuntimeHeaders(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => typeof item === 'string'),
+  ) as Record<string, string>
+}
+
+function normalizeRuntimeMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return { ...(value as Record<string, unknown>) }
+}
+
+function normalizeCacheRetention(value: unknown): ModelConfig['cacheRetention'] {
+  return value === 'none' || value === 'long' ? value : 'short'
+}
+
+function createDefaultModelConfig(): ModelConfig {
+  return {
+    model: 'glm-4.7',
+    temperature: 0.7,
+    maxTokens: 8192,
+    baseUrl: '',
+    apiKey: '',
+    enableTools: false,
+    thinking: createDefaultThinkingConfig(),
+    headers: {},
+    cacheRetention: 'short',
+    sessionId: '',
+    maxRetryDelayMs: 60000,
+    metadata: {},
+  }
+}
+
 function loadModelConfig(): ModelConfig {
-  const defaultThinking = createDefaultThinkingConfig()
+  const fallback = createDefaultModelConfig()
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.modelConfig)
     if (!raw) {
-      return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false, thinking: defaultThinking }
+      return fallback
     }
     const parsed = JSON.parse(raw)
     return {
@@ -99,13 +138,18 @@ function loadModelConfig(): ModelConfig {
       apiKey: parsed.apiKey ?? '',
       enableTools: Boolean(parsed.enableTools ?? false),
       thinking: {
-        enabled: Boolean(parsed.thinking?.enabled ?? defaultThinking.enabled),
-        level: parsed.thinking?.level ?? defaultThinking.level,
-        protocol: parsed.thinking?.protocol ?? defaultThinking.protocol,
+        enabled: Boolean(parsed.thinking?.enabled ?? fallback.thinking.enabled),
+        level: parsed.thinking?.level ?? fallback.thinking.level,
+        protocol: parsed.thinking?.protocol ?? fallback.thinking.protocol,
       },
+      headers: normalizeRuntimeHeaders(parsed.headers),
+      cacheRetention: normalizeCacheRetention(parsed.cacheRetention),
+      sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : '',
+      maxRetryDelayMs: Number(parsed.maxRetryDelayMs ?? 60000),
+      metadata: normalizeRuntimeMetadata(parsed.metadata),
     }
   } catch {
-    return { model: 'glm-4.7', temperature: 0.7, maxTokens: 8192, baseUrl: '', apiKey: '', enableTools: false, thinking: defaultThinking }
+    return fallback
   }
 }
 
@@ -121,24 +165,33 @@ function createAgentPresetFromModelConfig(id: string, modelConfig: ModelConfig):
     maxTokens: modelConfig.maxTokens,
     enableTools: modelConfig.enableTools,
     thinking: modelConfig.thinking,
+    headers: modelConfig.headers,
+    cacheRetention: modelConfig.cacheRetention,
+    sessionId: modelConfig.sessionId,
+    maxRetryDelayMs: modelConfig.maxRetryDelayMs,
+    metadata: modelConfig.metadata,
     roleContextFiles: ['Role.md', 'Tools.md'],
   }
 }
 
-function applyAgentPresetToModelConfig(preset: ModelPresetItem, fallback: ModelConfig): ModelConfig {
-  const defaultThinking = createDefaultThinkingConfig()
+function applyAgentPresetToModelConfig(preset: ModelPresetItem): ModelConfig {
+  const defaults = createDefaultModelConfig()
   return {
     model: preset.model,
     baseUrl: preset.baseUrl,
     apiKey: preset.apiKey,
-    temperature: Number(preset.temperature ?? fallback.temperature),
-    maxTokens: Number(preset.maxTokens ?? fallback.maxTokens),
-    enableTools: Boolean(preset.enableTools ?? fallback.enableTools),
+    temperature: Number(preset.temperature ?? defaults.temperature),
+    maxTokens: Number(preset.maxTokens ?? defaults.maxTokens),
+    enableTools: Boolean(preset.enableTools ?? defaults.enableTools),
     thinking: {
-      ...defaultThinking,
-      ...fallback.thinking,
+      ...defaults.thinking,
       ...preset.thinking,
     },
+    headers: normalizeRuntimeHeaders(preset.headers),
+    cacheRetention: normalizeCacheRetention(preset.cacheRetention),
+    sessionId: preset.sessionId ?? defaults.sessionId,
+    maxRetryDelayMs: Number(preset.maxRetryDelayMs ?? defaults.maxRetryDelayMs),
+    metadata: normalizeRuntimeMetadata(preset.metadata),
   }
 }
 
@@ -220,7 +273,11 @@ export function HomePageLayout() {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [chatDisabledReason, setChatDisabledReason] = useState<string | null>(null)
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [rightRailState, dispatchRightRail] = useReducer(
+    rightRailReducer,
+    undefined,
+    createInitialRightRailState,
+  )
   const [isDark, setIsDark] = useState<boolean>(() => loadThemeMode())
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => loadModelConfig())
   const [modelPresets, setModelPresets] = useState<ModelPresetItem[]>(() => loadModelPresetsFromStorage())
@@ -293,7 +350,7 @@ export function HomePageLayout() {
 
     const fallback = modelPresets[0]
     setSelectedModelPresetId(fallback.id)
-    setModelConfig((prev) => applyAgentPresetToModelConfig(fallback, prev))
+    setModelConfig(applyAgentPresetToModelConfig(fallback))
   }, [modelPresets, selectedModelPresetId])
 
   useEffect(() => {
@@ -310,6 +367,11 @@ export function HomePageLayout() {
           maxTokens: modelConfig.maxTokens,
           enableTools: modelConfig.enableTools,
           thinking: modelConfig.thinking,
+          headers: modelConfig.headers,
+          cacheRetention: modelConfig.cacheRetention,
+          sessionId: modelConfig.sessionId,
+          maxRetryDelayMs: modelConfig.maxRetryDelayMs,
+          metadata: modelConfig.metadata,
           roleContextFiles: item.roleContextFiles ?? ['Role.md', 'Tools.md'],
         }
         : item
@@ -317,9 +379,14 @@ export function HomePageLayout() {
   }, [
     modelConfig.apiKey,
     modelConfig.baseUrl,
+    modelConfig.cacheRetention,
     modelConfig.enableTools,
+    modelConfig.headers,
     modelConfig.maxTokens,
+    modelConfig.maxRetryDelayMs,
+    modelConfig.metadata,
     modelConfig.model,
+    modelConfig.sessionId,
     modelConfig.temperature,
     modelConfig.thinking,
     selectedModelPresetId,
@@ -391,7 +458,8 @@ export function HomePageLayout() {
       const rows = await fetchSessions()
       setSessionItems(rows.map(toSessionListItemVm))
     } catch {
-      setSessionError('会话列表加载失败')
+      setSessionItems([])
+      setSessionError(null)
     } finally {
       setIsSessionListLoading(false)
     }
@@ -439,6 +507,7 @@ export function HomePageLayout() {
     setChatDisabledReason(null)
     setOpenDocument(null)
     setCurrentArtifacts([])
+    dispatchRightRail({ type: 'reset-session' })
     seenDraftArtifactKeysRef.current.clear()
     clearLastActiveSessionKey()
     replaceMessageSeed([])
@@ -454,6 +523,7 @@ export function HomePageLayout() {
     setChatDisabledReason(null)
     setOpenDocument(null)
     setCurrentArtifacts([])
+    dispatchRightRail({ type: 'reset-session' })
     seenDraftArtifactKeysRef.current.clear()
     setIsHistoryLoading(true)
     setSessionError(null)
@@ -575,7 +645,7 @@ export function HomePageLayout() {
   }, [currentArtifacts])
 
   const handleOpenAttachment = (messageId: string, attachmentIndex: number, attachment: ChatAttachment) => {
-    setIsSettingsOpen(false)
+    dispatchRightRail({ type: 'close' })
     setIsSidebarCollapsed(true)
     if (!openDocument) {
       setDocumentPanelWidth(
@@ -597,7 +667,7 @@ export function HomePageLayout() {
   const handleOpenArtifact = useCallback((messageId: string, artifactIndex: number, artifact: ChatArtifact) => {
     const sessionKey = selectedSessionKey ?? currentSessionKey
     if (!sessionKey) return
-    setIsSettingsOpen(false)
+    dispatchRightRail({ type: 'close' })
     setIsSidebarCollapsed(true)
     if (!openDocument) {
       setDocumentPanelWidth(
@@ -626,22 +696,22 @@ export function HomePageLayout() {
       return true
     })
 
-    if (activeView !== 'chat' || openDocument || !nextDraft) return
+    if (activeView !== 'chat' || openDocument || rightRailState.pinnedMode || !nextDraft) return
 
     handleOpenArtifact(nextDraft.messageId, nextDraft.artifactIndex, nextDraft.artifact)
-  }, [activeView, currentArtifacts, handleOpenArtifact, openDocument])
+  }, [activeView, currentArtifacts, handleOpenArtifact, openDocument, rightRailState.pinnedMode])
 
   const handleCloseDocument = () => {
     setOpenDocument(null)
   }
 
-  const handleSettingsToggle = () => {
-    setIsSettingsOpen((prev) => {
-      const next = !prev
-      if (next) {
-        setOpenDocument(null)
-      }
-      return next
+  const handleRuntimeToggle = () => {
+    setOpenDocument(null)
+    dispatchRightRail({
+      type: 'toggle-mode',
+      mode: 'runtime',
+      reason: 'user',
+      pin: true,
     })
   }
 
@@ -650,7 +720,7 @@ export function HomePageLayout() {
     if (!preset) return
 
     setSelectedModelPresetId(presetId)
-    setModelConfig((prev) => applyAgentPresetToModelConfig(preset, prev))
+    setModelConfig(applyAgentPresetToModelConfig(preset))
   }, [modelPresets])
 
   const updateDocumentPanelWidth = useCallback((clientX: number) => {
@@ -713,6 +783,7 @@ export function HomePageLayout() {
         onOpenSessions={() => {
           setOpenDocument(null)
           setCurrentArtifacts([])
+          dispatchRightRail({ type: 'reset-session' })
           seenDraftArtifactKeysRef.current.clear()
           setActiveView('sessions')
         }}
@@ -729,116 +800,145 @@ export function HomePageLayout() {
         isDark={isDark}
       />
 
-      {/* 右侧区域：TopBar + 内容区 + 设置抽屉，纵向排列 */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar
-          conversationTitle={conversationTitle}
-          sessionMetaText={sessionMetaText}
-          isDark={isDark}
-          onThemeToggle={() => setIsDark((prev) => !prev)}
-          onSettingsToggle={handleSettingsToggle}
-        />
+      {/* 工作台：主工作区 + 右侧工作区，RightRail 固定从最右侧自然展开 */}
+      <div className="relative flex min-w-0 flex-1 overflow-hidden">
+        <div
+          className="absolute top-3 z-20 flex items-center gap-1.5 transition-[right] duration-200 ease-out"
+          style={{ right: rightRailState.isOpen ? 'calc(20rem + 0.75rem)' : '1.25rem' }}
+        >
+          <button
+            type="button"
+            onClick={() => setIsDark((prev) => !prev)}
+            className={[
+              'flex items-center justify-center',
+              'size-8 rounded-lg',
+              'text-text-secondary',
+              'transition-colors hover:bg-hover hover:text-text-primary',
+            ].join(' ')}
+            aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+          >
+            {isDark ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              handleRuntimeToggle()
+            }}
+            className={[
+              'flex items-center justify-center',
+              'size-8 rounded-lg',
+              'text-text-secondary',
+              'transition-colors hover:bg-hover hover:text-text-primary',
+            ].join(' ')}
+            aria-label="打开运行时工作区"
+          >
+            <PanelRight className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <TopBar
+            conversationTitle={conversationTitle}
+            sessionMetaText={sessionMetaText}
+          />
 
-        {/* 内容区 + 设置抽屉，横向排列 */}
-        <div className="flex min-w-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {sessionError && (
-            <div className="shrink-0 border-b border-border bg-surface px-4 py-2 text-xs text-text-muted">
-              {sessionError}
-            </div>
-          )}
-          {activeView === 'sessions' ? (
-            <ChatsOverview
-              conversations={sidebarItems}
-              onCreateConversation={handleStartNewConversation}
-              onSelectConversation={(conversationId) => {
-                void handleSelectConversation(conversationId)
-              }}
-            />
-          ) : (
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <ConversationArea
-                  isDark={isDark}
-                  modelConfig={modelConfig}
-                  modelPresets={modelPresets}
-                  selectedModelPresetId={selectedModelPresetId}
-                  onModelPresetSelect={handleModelPresetSelect}
-                  peerId={activePeerId}
-                  currentSessionKey={selectedSessionKey ?? currentSessionKey}
-                  externalMessages={messageSeed}
-                  messageVersion={messageVersion}
-                  canSend={canSend}
-                  disabledReason={inputHint}
-                  onSessionResolved={handleSessionResolved}
-                  onSessionTitleUpdated={handleSessionTitleUpdated}
-                  onChatLifecycleEvent={handleChatLifecycleEvent}
-                  onOpenAttachment={handleOpenAttachment}
-                  onOpenArtifact={handleOpenArtifact}
-                  onArtifactsChange={setCurrentArtifacts}
-                  activeAttachmentKey={showDocumentWorkspace ? openDocument?.key ?? null : null}
-                  workspaceMode={showDocumentWorkspace ? 'split' : 'default'}
-                />
+            {sessionError && (
+              <div className="shrink-0 border-b border-border bg-surface px-4 py-2 text-xs text-text-muted">
+                {sessionError}
               </div>
+            )}
+            {activeView === 'sessions' ? (
+              <ChatsOverview
+                conversations={sidebarItems}
+                onCreateConversation={handleStartNewConversation}
+                onSelectConversation={(conversationId) => {
+                  void handleSelectConversation(conversationId)
+                }}
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <ConversationArea
+                    isDark={isDark}
+                    modelConfig={modelConfig}
+                    modelPresets={modelPresets}
+                    selectedModelPresetId={selectedModelPresetId}
+                    onModelPresetSelect={handleModelPresetSelect}
+                    peerId={activePeerId}
+                    currentSessionKey={selectedSessionKey ?? currentSessionKey}
+                    externalMessages={messageSeed}
+                    messageVersion={messageVersion}
+                    canSend={canSend}
+                    disabledReason={inputHint}
+                    onSessionResolved={handleSessionResolved}
+                    onSessionTitleUpdated={handleSessionTitleUpdated}
+                    onChatLifecycleEvent={handleChatLifecycleEvent}
+                    onOpenAttachment={handleOpenAttachment}
+                    onOpenArtifact={handleOpenArtifact}
+                    onArtifactsChange={setCurrentArtifacts}
+                    activeAttachmentKey={showDocumentWorkspace ? openDocument?.key ?? null : null}
+                    workspaceMode={showDocumentWorkspace ? 'split' : 'default'}
+                  />
+                </div>
 
-              {showDocumentWorkspace && openDocument && (
-                <>
-                  <div
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label="调整文档面板宽度"
-                    className="relative hidden w-px shrink-0 self-stretch md:block"
-                  >
+                {showDocumentWorkspace && openDocument && (
+                  <>
                     <div
-                      onPointerDown={handleDocumentResizeStart}
-                      onPointerMove={handleDocumentResizeMove}
-                      onPointerUp={handleDocumentResizeEnd}
-                      onPointerCancel={handleDocumentResizeEnd}
-                      onLostPointerCapture={handleDocumentResizeLostCapture}
-                      className="group absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize touch-none"
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="调整文档面板宽度"
+                      className="relative hidden w-px shrink-0 self-stretch md:block"
                     >
                       <div
-                        className={[
-                          'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
-                          isDocumentDividerDragging
-                            ? 'bg-[color:var(--border-strong)]'
-                            : 'bg-border group-hover:bg-[color:var(--border-strong)]',
-                        ].join(' ')}
-                      />
-                      <div
-                        className={[
-                          'absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-1 ring-black/6 transition-all duration-150 dark:bg-surface',
-                          isDocumentDividerDragging
-                            ? 'shadow-[0_8px_18px_rgba(15,23,42,0.18)]'
-                            : 'shadow-[0_4px_10px_rgba(15,23,42,0.12)] group-hover:shadow-[0_6px_14px_rgba(15,23,42,0.16)]',
-                        ].join(' ')}
-                      />
+                        onPointerDown={handleDocumentResizeStart}
+                        onPointerMove={handleDocumentResizeMove}
+                        onPointerUp={handleDocumentResizeEnd}
+                        onPointerCancel={handleDocumentResizeEnd}
+                        onLostPointerCapture={handleDocumentResizeLostCapture}
+                        className="group absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 cursor-col-resize touch-none"
+                      >
+                        <div
+                          className={[
+                            'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
+                            isDocumentDividerDragging
+                              ? 'bg-[color:var(--border-strong)]'
+                              : 'bg-border group-hover:bg-[color:var(--border-strong)]',
+                          ].join(' ')}
+                        />
+                        <div
+                          className={[
+                            'absolute left-1/2 top-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-1 ring-black/6 transition-all duration-150 dark:bg-surface',
+                            isDocumentDividerDragging
+                              ? 'shadow-[0_8px_18px_rgba(15,23,42,0.18)]'
+                              : 'shadow-[0_4px_10px_rgba(15,23,42,0.12)] group-hover:shadow-[0_6px_14px_rgba(15,23,42,0.16)]',
+                          ].join(' ')}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  {openDocument.kind === 'attachment' ? (
-                    <DocumentPanel
-                      document={openDocument}
-                      width={documentPanelWidth}
-                      onClose={handleCloseDocument}
-                    />
-                  ) : (
-                    <ArtifactPanel
-                      sessionKey={openDocument.sessionKey}
-                      artifact={openDocument.artifact}
-                      width={documentPanelWidth}
-                      onClose={handleCloseDocument}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    {openDocument.kind === 'attachment' ? (
+                      <DocumentPanel
+                        document={openDocument}
+                        width={documentPanelWidth}
+                        onClose={handleCloseDocument}
+                      />
+                    ) : (
+                      <ArtifactPanel
+                        sessionKey={openDocument.sessionKey}
+                        artifact={openDocument.artifact}
+                        width={documentPanelWidth}
+                        onClose={handleCloseDocument}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* 设置抽屉：宽度动画 0 → 20rem，自然挤压主对话区 */}
-        <SettingsDrawer
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
+        <RightRail
+          state={rightRailState}
           modelConfig={modelConfig}
           onModelConfigChange={setModelConfig}
           modelPresets={modelPresets}
@@ -847,7 +947,6 @@ export function HomePageLayout() {
           onSelectedModelPresetIdChange={setSelectedModelPresetId}
         />
       </div>
-    </div>
     </div>
   )
 }
