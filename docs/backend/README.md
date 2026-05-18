@@ -5,8 +5,10 @@
 ## 主题目录
 
 - [架构与接口](./架构与接口/)：后端架构分析、接口示例、会话联调、Simple / Plan 模式
+- [后端代码文件级说明](./20260618-1-后端代码文件级说明%20技术规范.md)：后端代码文件职责与调用链索引
 - [记忆与检索](./记忆与检索/)：记忆系统、compact、RAG、检索与搜索分析
 - [Prompt 与运行时](./Prompt 与运行时/)：隐藏 Prompt、Prompt v2、序列化、权限契约、Skill Runtime
+- [System Prompt 重新开发](./System%20Prompt%20重新开发/)：FrozenSystemSnapshot、`<system_prompt_update>`、API replay transcript 与 provider adapter 的重做指导
 - [规划与路线](./规划与路线/)：后端能力借鉴与中长期路线
 
 ## 专题探索

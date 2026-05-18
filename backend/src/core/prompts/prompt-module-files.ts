@@ -1,10 +1,31 @@
 // 中文：本文件（prompt-module-files.ts）位于 backend/src/core/prompts/prompt-module-files.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
 // English: This file (prompt-module-files.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/prompt-module-files.ts, wiring upstream callers with downstream runtime logic.
 
+/**
+ * 系统 prompt 模块文件加载器。
+ *
+ * 本文件只负责“模板文件清单 + 模板读取 + 占位符渲染”三件事：
+ * - 模板清单：PromptTemplateName 和 TEMPLATE_FILENAMES 定义哪些模块可被 system-prompts.ts 调用；
+ * - 读取策略：优先读取 `.lecquy/system-prompt/*.md` 中的用户/项目覆盖模板；
+ * - 兜底策略：磁盘模板不存在或读取失败时使用 DEFAULT_TEMPLATES，保证 prompt builder 不因缺文件中断；
+ * - 渲染策略：只做 `{{PLACEHOLDER}}` 级别的纯字符串替换，不执行 Markdown、JS、表达式或递归模板逻辑。
+ *
+ * 与其他文件的边界：
+ * - context-files.ts 负责解析 `.lecquy` 根路径，本文件只复用 resolvePromptContextPaths；
+ * - system-prompts.ts 负责决定“什么时候渲染哪个模板”，本文件不判断角色和模式；
+ * - prompt-serializer.ts 负责最终 LAYER 包裹和排序，本文件只返回单个模板渲染后的正文。
+ *
+ * 维护注意：
+ * - 新增模板时必须同时更新 PromptTemplateName、TEMPLATE_FILENAMES、DEFAULT_TEMPLATES；
+ * - DEFAULT_TEMPLATES 是可运行兜底，不是主配置来源，正式覆盖应写入 `.lecquy/system-prompt/`；
+ * - 占位符命名统一使用大写下划线，便于最后的未替换占位符清理正则识别。
+ */
+
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { resolvePromptContextPaths } from './context-files.js'
 
+/** system-prompts.ts 可请求渲染的模板名白名单。 */
 export type PromptTemplateName =
   | 'identity-simple'
   | 'identity-manager'
@@ -40,6 +61,16 @@ const TEMPLATE_FILENAMES: Record<PromptTemplateName, string> = {
   'extra-instructions': 'extra-instructions.md',
 }
 
+export const PROMPT_TEMPLATE_NAMES = Object.keys(TEMPLATE_FILENAMES).sort() as PromptTemplateName[]
+
+/**
+ * 内置默认模板。
+ *
+ * 这些文本保证 Lecquy 即使没有 `.lecquy/system-prompt/*.md` 也能构造可用 system prompt。
+ * 它们有两个设计约束：
+ * - 内容尽量短，避免默认兜底把 prompt 变成不可维护的大块文案；
+ * - 每个模板只表达一个 section，避免 system-prompts.ts 无法按层级组合。
+ */
 const DEFAULT_TEMPLATES: Record<PromptTemplateName, string> = {
   'identity-simple': '你是运行在 Lecquy 中的个人助手，负责直接完成用户请求或通过工具推进任务。\n',
   'identity-manager': '你是运行在 Lecquy 中的任务规划管理器，负责把用户目标拆成清晰、可执行的计划。\n',
@@ -131,29 +162,36 @@ const DEFAULT_TEMPLATES: Record<PromptTemplateName, string> = {
 
 async function readTextIfExists(filePath: string): Promise<string> {
   try {
+    // 只在成功读取时返回内容；任何文件不存在、权限不足或瞬时 IO 错误都降级为空串。
     return await fs.readFile(filePath, 'utf8')
   } catch {
+    // 这里刻意吞掉错误：模板覆盖是可选能力，缺模板不能阻断主 agent loop。
     return ''
   }
 }
 
 function resolveTemplateDir(workspaceDir?: string): string {
+  // 模板目录挂在 `.lecquy/system-prompt` 下，rootDir 的解析规则集中在 context-files/runtime-paths 链路。
   const { rootDir } = resolvePromptContextPaths(workspaceDir)
   return path.join(rootDir, 'system-prompt')
 }
 
 function resolveTemplatePath(name: PromptTemplateName, workspaceDir?: string): string {
+  // name 已被 PromptTemplateName 限定为白名单，因此这里不会拼接任意用户输入路径。
   return path.join(resolveTemplateDir(workspaceDir), TEMPLATE_FILENAMES[name])
 }
 
 export async function ensurePromptModuleTemplates(workspaceDir?: string): Promise<void> {
+  // 当前只确保目录存在，不主动写默认模板，避免覆盖用户已经维护的 prompt 文件。
   const templateDir = resolveTemplateDir(workspaceDir)
   await fs.mkdir(templateDir, { recursive: true })
 }
 
 export async function readPromptModuleTemplate(name: PromptTemplateName, workspaceDir?: string): Promise<string> {
+  // 优先读取磁盘模板，允许项目按需覆盖默认 prompt section。
   const filePath = resolveTemplatePath(name, workspaceDir)
   const content = await readTextIfExists(filePath)
+  // 空文件也会回退默认模板；如果未来需要“显式清空模板”，应新增独立语义而不是复用空文件。
   return content || DEFAULT_TEMPLATES[name]
 }
 
@@ -165,11 +203,15 @@ export async function renderPromptModuleTemplate(
   const template = await readPromptModuleTemplate(name, workspaceDir)
   let rendered = template
 
+  // 只替换调用方明确传入的占位符，避免模板文件具备执行能力。
   for (const [key, value] of Object.entries(replacements)) {
     rendered = rendered.replaceAll(`{{${key}}}`, value)
   }
 
+  // 未填充的大写占位符统一清空，避免把 `{{FOO}}` 泄漏到最终 system prompt。
   rendered = rendered.replace(/\{\{[A-Z0-9_]+\}\}/g, '')
+  // 多个 section 组合时容易产生三连空行；这里先在模板级做一次收敛。
   rendered = rendered.replace(/\n{3,}/g, '\n\n')
+  // 返回不带首尾空白的正文，最终换行边界由 system-prompts / serializer 统一决定。
   return rendered.trim()
 }

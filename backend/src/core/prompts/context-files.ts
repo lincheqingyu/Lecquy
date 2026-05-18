@@ -1,6 +1,29 @@
 // 中文：本文件（context-files.ts）位于 backend/src/core/prompts/context-files.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
 // English: This file (context-files.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/context-files.ts, wiring upstream callers with downstream runtime logic.
 
+/**
+ * Prompt 上下文文件读取与 startup 切片构造模块。
+ *
+ * 本文件负责把 `.lecquy` 下的长期上下文文件变成 prompt builder 可消费的结构：
+ * - 路径解析：统一解析 workspace、backend、skills、memory、artifacts 与上下文文件路径；
+ * - 文件读取：读取 SOUL.md、IDENTITY.md、USER.md、MEMORY.md、AGENTS.md、TOOLS.md 等上下文；
+ * - 角色过滤：simple/manager 可读取用户侧上下文，worker 默认只读取托管规则；
+ * - startup 构造：把 capability、SOUL/IDENTITY、USER profile、MEMORY.summary 等内容组合为 StartupContext 层；
+ * - 用户偏好：把 USER.md 的 preference 切片单独放到 UserPreference 层，避免和 profile 混杂；
+ * - 预算保护：通过 STARTUP_BUDGETS 与 estimateTokens 控制上下文体积，避免 system prompt 膨胀。
+ *
+ * 与 system prompt 拼接链路的关系：
+ * - 上游 system-prompts.ts 调用这里读取上下文和预构建 layer slice；
+ * - user-md-parser.ts 只负责解析 USER.md，本文件负责决定解析结果放入哪一层；
+ * - capability-block.ts 只负责生成能力块文本，本文件负责把能力块纳入 startup；
+ * - prompt-serializer.ts 不知道这些文件来自哪里，只接收 LayerSlice。
+ *
+ * 维护边界：
+ * - 这里可以改“读哪些上下文文件”和“如何裁剪”，但不要改 LAYER 标签协议；
+ * - 不要把 MemoryRecall 查询结果塞进这里的 system/startup 层，MemoryRecall 按项目守则应挂在当轮 user message；
+ * - 修改 backend/src 文件新增/删除时需同步后端文件级说明索引；单纯注释修改不涉及索引结构变化。
+ */
+
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
@@ -20,19 +43,31 @@ import { parseUserMd } from './user-md-parser.js'
 import { resolveRuntimePaths, resolveWorkspaceRoot } from '../runtime-paths.js'
 
 export type PromptContextRole = 'simple' | 'manager' | 'worker'
+/** 上下文角色类型：simple/manager 使用全量上下文，worker 通常只读托管上下文。 */
 export type ContextFileName = (typeof ALL_CONTEXT_FILE_NAMES)[number]
+/** 可由用户编辑的上下文文件类型。 */
 export type EditableContextFileName = (typeof EDITABLE_CONTEXT_FILE_NAMES)[number]
+/** 系统托管上下文文件类型。 */
 export type ManagedContextFileName = (typeof MANAGED_CONTEXT_FILE_NAMES)[number]
 
 export interface PromptContextPaths {
+  /** 该会话的 workspace 根目录。 */
   readonly workspaceDir: string
+  /** backend 子目录路径（兼容运行态日志和文档引用）。 */
   readonly backendDir: string
+  /** skill 运行目录。 */
   readonly skillsDir: string
+  /** skill 协议前缀标签（builtin://skills）。 */
   readonly bundledSkillsDirLabel: string
+  /** .lecquy 根目录。 */
   readonly rootDir: string
+  /** 记忆目录。 */
   readonly memoryDir: string
+  /** artifacts 目录。 */
   readonly artifactsDir: string
+  /** 可对外展示文档目录。 */
   readonly artifactsDocsDir: string
+  /** 各类上下文文件路径。 */
   readonly soulFile: string
   readonly identityFile: string
   readonly userFile: string
@@ -47,10 +82,15 @@ export interface PromptContextPaths {
 }
 
 export interface PromptContextFile {
+  /** 文件名（SOUL/IDENTITY/USER/AGENTS/TOOLS/MEMORY）。 */
   readonly name: ContextFileName
+  /** 对用户友好的路径展示名。 */
   readonly path: string
+  /** 文件用途描述。 */
   readonly description: string
+  /** 是否允许用户编辑。 */
   readonly editable: boolean
+  /** 文件正文（已读取）。 */
   readonly content: string
 }
 
@@ -63,6 +103,7 @@ export const ALL_CONTEXT_FILE_NAMES = [
   'TOOLS.md',
 ] as const
 
+/** 用户可编辑上下文：代表 kira 的长期偏好、身份与可读记忆入口。 */
 export const EDITABLE_CONTEXT_FILE_NAMES = [
   'SOUL.md',
   'IDENTITY.md',
@@ -70,11 +111,13 @@ export const EDITABLE_CONTEXT_FILE_NAMES = [
   'MEMORY.md',
 ] as const
 
+/** 系统托管上下文：由运行时/项目规则生成或维护，不作为普通用户偏好编辑入口。 */
 export const MANAGED_CONTEXT_FILE_NAMES = [
   'AGENTS.md',
   'TOOLS.md',
 ] as const
 
+/** simple/manager 读取顺序；顺序本身会影响最终 prompt 字节和模型注意力位置。 */
 const USER_CONTEXT_FILE_ORDER = [
   'SOUL.md',
   'IDENTITY.md',
@@ -84,11 +127,13 @@ const USER_CONTEXT_FILE_ORDER = [
   'MEMORY.md',
 ] as const
 
+/** worker 只读取托管约束，避免子任务执行器携带过多用户画像和长期记忆。 */
 const WORKER_CONTEXT_FILE_ORDER = [
   'AGENTS.md',
   'TOOLS.md',
 ] as const
 
+/** 上下文文件的人类可读元信息，用于 UI/接口展示和 readPromptContextFilesLegacy 返回结构。 */
 const CONTEXT_FILE_META: Record<ContextFileName, { label: string; description: string; editable: boolean }> = {
   'SOUL.md': {
     label: '.lecquy/SOUL.md',
@@ -124,13 +169,16 @@ const CONTEXT_FILE_META: Record<ContextFileName, { label: string; description: s
 
 async function readTextIfExists(filePath: string): Promise<string> {
   try {
+    // 上下文文件是可选配置；不存在时返回空，调用方再决定是否跳过 section。
     return await fs.readFile(filePath, 'utf8')
   } catch {
+    // 不把读取失败直接抛到 prompt builder，避免单个上下文文件损坏导致整轮对话不可用。
     return ''
   }
 }
 
 function hashContent(content: string): string {
+  // SHA256 用于判断同一层内容是否变化；不是安全用途，只做稳定指纹。
   return createHash('sha256').update(content).digest('hex')
 }
 
@@ -139,6 +187,7 @@ function createLayerSlice(
   content: string,
   attributes?: Record<string, string>,
 ): LayerSlice {
+  // context-files 内部也能创建 LayerSlice，保持与 prompt-serializer.createSlice 同一结构契约。
   return {
     layer,
     tag: LAYER_TAGS[layer],
@@ -155,6 +204,7 @@ function truncateToTokenBudget(content: string, tokenBudget: number): string {
     return normalized
   }
 
+  // 先按 3.5 chars/token 粗裁，再用 estimateTokens 循环修正，兼顾速度与预算上限。
   const maxChars = Math.floor(tokenBudget * 3.5)
   let truncated = normalized.slice(0, maxChars).trimEnd()
   while (truncated && estimateTokens(truncated) > tokenBudget) {
@@ -164,6 +214,7 @@ function truncateToTokenBudget(content: string, tokenBudget: number): string {
 }
 
 function buildManagedSystemContent(paths: PromptContextPaths): string {
+  // 托管系统内容只包含 AGENTS/TOOLS 两类稳定规则，避免把用户侧长期画像混入 worker 必读上下文。
   return [
     '# Project Context',
     '',
@@ -180,6 +231,7 @@ function buildManagedSystemContent(paths: PromptContextPaths): string {
 }
 
 function renderStartupSections(sections: string[]): string {
+  // startup 内部 section 用空行隔开；空 section 先过滤，避免最终 prompt 出现大段空白。
   return sections
     .filter((section) => section.trim().length > 0)
     .join('\n\n')
@@ -187,6 +239,7 @@ function renderStartupSections(sections: string[]): string {
 }
 
 function trimStartupSection(section: string, overflowChars: number): string {
+  // 被预算裁剪的 section 优先从末尾截断，因为 section 前部通常包含标题和高层语义。
   if (!section || overflowChars <= 0) {
     return section
   }
@@ -201,6 +254,7 @@ function trimStartupSection(section: string, overflowChars: number): string {
   }
 
   if (truncated.startsWith('## ') && (!truncated.includes('\n') || truncated.slice(truncated.indexOf('\n') + 1).trim().length === 0)) {
+    // 如果裁剪后只剩孤立标题，直接丢弃，避免模型看到没有正文的误导性 section。
     return ''
   }
 
@@ -208,12 +262,14 @@ function trimStartupSection(section: string, overflowChars: number): string {
 }
 
 function fitStartupContentWithinBudget(sections: string[]): string {
+  // 这里处理 startup 总预算；单个 USER.md 切片预算已在 user-md-parser.ts 内处理。
   const mutableSections = [...sections]
   const maxChars = Math.floor(STARTUP_BUDGETS.startupTotal * 3.5)
   let rendered = renderStartupSections(mutableSections)
 
   while (rendered && estimateTokens(rendered) > STARTUP_BUDGETS.startupTotal) {
     const overflowChars = rendered.length - maxChars
+    // 优先裁剪后置 section，尽量保留 capability / SOUL / IDENTITY 等前置稳定信息。
     const targetIndex = [...mutableSections]
       .map((section, index) => ({ section, index }))
       .reverse()
@@ -232,6 +288,7 @@ function fitStartupContentWithinBudget(sections: string[]): string {
 }
 
 function buildUserMdEvent(userSlices: UserMdSlices): { type: 'user_md_truncated' | 'user_md_rejected'; reason: string } | undefined {
+  // USER.md 解析异常不直接进入 prompt 正文，而是以事件标签形式保留给上层日志/监控。
   if (userSlices.rejected) {
     return {
       type: 'user_md_rejected',
@@ -249,7 +306,7 @@ function buildUserMdEvent(userSlices: UserMdSlices): { type: 'user_md_truncated'
   return undefined
 }
 
-function buildManagedAgentsContent(): string {
+export function buildManagedAgentsContent(): string {
   return [
     '# Lecquy Runtime AGENTS',
     '',
@@ -281,7 +338,7 @@ function buildManagedAgentsContent(): string {
   ].join('\n')
 }
 
-function buildManagedToolsContent(paths: PromptContextPaths): string {
+export function buildManagedToolsContent(paths: PromptContextPaths): string {
   return [
     '# Lecquy Runtime TOOLS',
     '',

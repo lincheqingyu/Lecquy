@@ -61,11 +61,16 @@ import {
   consumePermissionFailureMetadata,
   type AgentRuntimeEvent,
 } from '../agent/tool-permission.js'
-import { loadStartupSlices } from '../core/prompts/context-files.js'
-import { buildLayeredSystemPrompt } from '../core/prompts/prompt-serializer.js'
-import type { AgentRole, BuildLayeredPromptOptions, CapabilityBlock } from '../core/prompts/prompt-layer-types.js'
+import type { AgentRole } from '../core/prompts/prompt-layer-types.js'
 import { SkillSession } from '../core/skills/skill-session.js'
 import { buildSystemPromptLegacy } from '../core/prompts/system-prompts.js'
+import {
+  SYSTEM_PROMPT_SNAPSHOT_CUSTOM_TYPE,
+  buildFrozenSystemSnapshot,
+  findLatestFrozenSystemSnapshot,
+  type FrozenSystemSnapshot,
+  type SystemPromptSnapshotEntryData,
+} from '../core/prompts/system-prompt-snapshot.js'
 import { createTodoManager } from '../core/todo/todo-manager.js'
 import { migrateLegacyRuntimeStorage } from '../core/runtime-storage-migration.js'
 import {
@@ -133,6 +138,7 @@ type NotifierFn = (event: keyof ServerEventPayloadMap, payload: ServerEventPaylo
 
 interface PromptBuildRequest {
   readonly sessionId: string
+  readonly manager: SessionManager
   readonly role: AgentRole
   readonly mode: SessionMode
   readonly route?: SessionRouteContext
@@ -613,6 +619,7 @@ export class SessionRuntimeService {
   // 与 toolArgsByCallId 并列，只存状态相关字段。落库 assistant message 时用于补全 toolCall block。
   private readonly toolResultsByCallId = new Map<string, ToolResultState>()
   private readonly skillSessions = new Map<string, SkillSession>()
+  private readonly systemPromptSnapshots = new Map<string, FrozenSystemSnapshot>()
   private readonly sessionModes = new Map<string, SessionMode>()
   private readonly broker: ConfirmationBroker
 
@@ -645,6 +652,7 @@ export class SessionRuntimeService {
 
   async shutdown(): Promise<void> {
     this.skillSessions.clear()
+    this.systemPromptSnapshots.clear()
     this.sessionModes.clear()
     await this.persistIndex()
   }
@@ -768,6 +776,18 @@ export class SessionRuntimeService {
     const created = new SkillSession()
     this.skillSessions.set(sessionId, created)
     return created
+  }
+
+  private getSystemPromptSnapshotCacheKey(sessionId: string, role: AgentRole): string {
+    return `${sessionId}:${role}`
+  }
+
+  private deleteSystemPromptSnapshots(sessionId: string): void {
+    for (const key of this.systemPromptSnapshots.keys()) {
+      if (key.startsWith(`${sessionId}:`)) {
+        this.systemPromptSnapshots.delete(key)
+      }
+    }
   }
 
   private handleSkillModeSwitch(sessionId: string, mode: SessionMode): void {
@@ -1021,6 +1041,7 @@ export class SessionRuntimeService {
     this.managers.delete(projection.key)
     this.pgSyncState.delete(projection.key)
     this.skillSessions.delete(projection.sessionId)
+    this.deleteSystemPromptSnapshots(projection.sessionId)
     this.sessionModes.delete(projection.sessionId)
     await this.persistIndex()
 
@@ -1413,21 +1434,41 @@ export class SessionRuntimeService {
     }).contextMessages
   }
 
-  private buildPromptCapability(
-    tools: ReadonlyArray<AgentTool<any>>,
-    toolsEnabled: boolean,
-  ): CapabilityBlock {
-    const available = toolsEnabled
-      ? tools.map((tool) => tool.name).sort()
-      : []
-
-    return {
-      executor: toolsEnabled && available.includes('bash')
-        ? (process.platform === 'win32' ? 'powershell' : 'shell')
-        : 'none',
-      available,
-      unavailable: ['no_browser', 'no_deploy', 'no_external_api'].sort(),
+  private async ensureFrozenSystemSnapshot(request: PromptBuildRequest): Promise<FrozenSystemSnapshot> {
+    const cacheKey = this.getSystemPromptSnapshotCacheKey(request.sessionId, request.role)
+    const cached = this.systemPromptSnapshots.get(cacheKey)
+    if (cached) {
+      return cached
     }
+
+    const restored = findLatestFrozenSystemSnapshot(request.manager.getEntries(), request.sessionId, request.role)
+    if (restored) {
+      this.systemPromptSnapshots.set(cacheKey, restored)
+      return restored
+    }
+
+    const snapshot = await buildFrozenSystemSnapshot({
+      sessionId: request.sessionId,
+      createdReason: 'session_created',
+      role: request.role,
+      mode: request.mode,
+      workspaceDir: this.runtimePaths.workspaceDir,
+      route: request.route,
+      modelId: request.modelId,
+      thinkingLevel: request.thinkingLevel,
+      tools: request.tools,
+      toolsEnabled: request.toolsEnabled,
+      extraInstructions: request.extraInstructions,
+      activeSkillName: request.activeSkillName,
+      skillSession: this.getOrCreateSkillSession(request.sessionId),
+    })
+    const entryData: SystemPromptSnapshotEntryData = {
+      kind: SYSTEM_PROMPT_SNAPSHOT_CUSTOM_TYPE,
+      snapshot,
+    }
+    request.manager.appendCustomEntry(SYSTEM_PROMPT_SNAPSHOT_CUSTOM_TYPE, entryData)
+    this.systemPromptSnapshots.set(cacheKey, snapshot)
+    return snapshot
   }
 
   private async buildRunSystemPrompt(request: PromptBuildRequest): Promise<string> {
@@ -1448,48 +1489,8 @@ export class SessionRuntimeService {
       return await buildSystemPromptLegacy(legacyOptions)
     }
 
-    const capability = this.buildPromptCapability(request.tools, request.toolsEnabled)
-    const { startupSlice, preferenceSlice, managedSystemContent } = await loadStartupSlices({
-      workspaceDir: this.runtimePaths.workspaceDir,
-      role: request.role,
-      capability,
-    })
-
-    const layeredOptions: BuildLayeredPromptOptions = {
-      role: request.role,
-      mode: request.mode,
-      workspaceDir: this.runtimePaths.workspaceDir,
-      tools: request.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description?.trim() || tool.label?.trim() || '可用工具',
-      })),
-      toolsEnabled: request.toolsEnabled,
-      modelId: request.modelId,
-      thinkingLevel: request.thinkingLevel,
-      channel: request.route?.channel,
-      chatType: request.route?.chatType,
-      timeZone: request.route?.userTimezone,
-      extraInstructions: request.extraInstructions,
-      activeSkillName: request.activeSkillName,
-      managedSystemContent,
-      startupSlice,
-      preferenceSlice,
-      capability,
-      userSlices: {
-        profileSlice: '',
-        preferenceSlice: '',
-        rejected: false,
-      },
-      soulContent: '',
-      identityContent: '',
-      memorySummary: '',
-    }
-
-    const result = await buildLayeredSystemPrompt(
-      layeredOptions,
-      this.getOrCreateSkillSession(request.sessionId),
-    )
-    return result.systemPrompt
+    const snapshot = await this.ensureFrozenSystemSnapshot(request)
+    return snapshot.systemText
   }
 
   private async executeRun(
@@ -1653,6 +1654,7 @@ export class SessionRuntimeService {
     const tools = toolsEnabled ? createSimpleTools() : []
     const systemPrompt = await this.buildRunSystemPrompt({
       sessionId: bound.projection.sessionId,
+      manager: bound.manager,
       role: 'simple',
       mode,
       route: bound.projection.route,
@@ -1773,6 +1775,7 @@ export class SessionRuntimeService {
       const managerTools = createManagerTools(todoManager)
       const managerSystemPrompt = await this.buildRunSystemPrompt({
         sessionId: bound.projection.sessionId,
+        manager: bound.manager,
         role: 'manager',
         mode: 'plan',
         route: bound.projection.route,
@@ -1873,6 +1876,7 @@ export class SessionRuntimeService {
       const workerTools = createWorkerTools()
       const workerSystemPrompt = await this.buildRunSystemPrompt({
         sessionId: bound.projection.sessionId,
+        manager: bound.manager,
         role: 'worker',
         mode: 'plan',
         route: bound.projection.route,
