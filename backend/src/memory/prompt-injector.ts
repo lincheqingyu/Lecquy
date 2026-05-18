@@ -1,3 +1,6 @@
+// 中文：本文件（prompt-injector.ts）位于 backend/src/memory/prompt-injector.ts，属于backend链路中的memory 记忆链路代码，连接上游调用方与下游执行逻辑。
+// English: This file (prompt-injector.ts) belongs to the backend memory 记忆链路 layer in backend/src/memory/prompt-injector.ts, wiring upstream callers with downstream runtime logic.
+
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionMode, SessionRouteContext } from '@lecquy/shared'
 import { getPool } from '../db/client.js'

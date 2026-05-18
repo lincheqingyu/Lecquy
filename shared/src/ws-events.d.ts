@@ -1,3 +1,6 @@
+// 中文：本文件（ws-events.d.ts）位于 shared/src/ws-events.d.ts，属于shared链路中的TypeScript 类型声明代码，连接上游调用方与下游执行逻辑。
+// English: This file (ws-events.d.ts) belongs to the shared typescript 类型声明 layer in shared/src/ws-events.d.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * WebSocket 事件类型定义
  * 前后端共享，确保事件名和 payload 类型一致

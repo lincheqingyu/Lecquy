@@ -1,3 +1,6 @@
+// 中文：本文件（runtime-storage-migration.ts）位于 backend/src/core/runtime-storage-migration.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (runtime-storage-migration.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/runtime-storage-migration.ts, wiring upstream callers with downstream runtime logic.
+
 import { existsSync, statSync } from 'node:fs'
 import {
   copyFile,

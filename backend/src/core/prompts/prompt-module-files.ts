@@ -1,3 +1,6 @@
+// 中文：本文件（prompt-module-files.ts）位于 backend/src/core/prompts/prompt-module-files.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (prompt-module-files.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/prompt-module-files.ts, wiring upstream callers with downstream runtime logic.
+
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { resolvePromptContextPaths } from './context-files.js'

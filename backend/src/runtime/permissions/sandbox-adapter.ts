@@ -1,3 +1,6 @@
+// 中文：本文件（sandbox-adapter.ts）位于 backend/src/runtime/permissions/sandbox-adapter.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (sandbox-adapter.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/permissions/sandbox-adapter.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 沙箱适配器
  *

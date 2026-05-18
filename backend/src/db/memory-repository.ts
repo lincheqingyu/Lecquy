@@ -1,3 +1,6 @@
+// 中文：本文件（memory-repository.ts）位于 backend/src/db/memory-repository.ts，属于backend链路中的数据库访问层代码，连接上游调用方与下游执行逻辑。
+// English: This file (memory-repository.ts) belongs to the backend 数据库访问层 layer in backend/src/db/memory-repository.ts, wiring upstream callers with downstream runtime logic.
+
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import type {

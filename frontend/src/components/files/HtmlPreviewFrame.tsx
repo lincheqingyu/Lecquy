@@ -1,3 +1,6 @@
+// 中文：本文件（HtmlPreviewFrame.tsx）位于 frontend/src/components/files/HtmlPreviewFrame.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (HtmlPreviewFrame.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/files/HtmlPreviewFrame.tsx, wiring upstream callers with downstream runtime logic.
+
 import clsx from 'clsx'
 
 export const INTERACTIVE_HTML_SANDBOX = [

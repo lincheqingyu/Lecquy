@@ -1,3 +1,6 @@
+// 中文：本文件（PiMessageListAdapter.tsx）位于 frontend/src/adapters/pi-web-ui/PiMessageListAdapter.tsx，属于frontend链路中的前端适配层代码，连接上游调用方与下游执行逻辑。
+// English: This file (PiMessageListAdapter.tsx) belongs to the frontend 前端适配层 layer in frontend/src/adapters/pi-web-ui/PiMessageListAdapter.tsx, wiring upstream callers with downstream runtime logic.
+
 import type { ChatAttachment } from '@lecquy/shared'
 import { MessageList } from '../../components/chat/MessageList'
 import type { ChatMessage } from '../../hooks/useChat'

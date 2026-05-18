@@ -1,3 +1,6 @@
+// 中文：本文件（useAutoResize.ts）位于 frontend/src/hooks/useAutoResize.ts，属于frontend链路中的前端状态钩子代码，连接上游调用方与下游执行逻辑。
+// English: This file (useAutoResize.ts) belongs to the frontend 前端状态钩子 layer in frontend/src/hooks/useAutoResize.ts, wiring upstream callers with downstream runtime logic.
+
 import { useCallback, useLayoutEffect, useRef } from 'react'
 
 interface AutoResizeLayoutState {

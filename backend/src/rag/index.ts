@@ -1,3 +1,6 @@
+// 中文：本文件（index.ts）位于 backend/src/rag/index.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (index.ts) belongs to the backend backend 模块实现 layer in backend/src/rag/index.ts, wiring upstream callers with downstream runtime logic.
+
 import { randomUUID } from 'node:crypto'
 import { getConfig } from '../config/index.js'
 import { getPool } from '../db/client.js'

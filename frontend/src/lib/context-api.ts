@@ -1,3 +1,6 @@
+// 中文：本文件（context-api.ts）位于 frontend/src/lib/context-api.ts，属于frontend链路中的前端共享库代码，连接上游调用方与下游执行逻辑。
+// English: This file (context-api.ts) belongs to the frontend 前端共享库 layer in frontend/src/lib/context-api.ts, wiring upstream callers with downstream runtime logic.
+
 import { API_V1 } from '../config/api'
 
 export type ContextFileName =

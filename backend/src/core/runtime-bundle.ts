@@ -1,3 +1,6 @@
+// 中文：本文件（runtime-bundle.ts）位于 backend/src/core/runtime-bundle.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (runtime-bundle.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/runtime-bundle.ts, wiring upstream callers with downstream runtime logic.
+
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { getAsset, isSea } from 'node:sea'

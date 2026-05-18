@@ -1,3 +1,6 @@
+// 中文：本文件（file-preview-actions.ts）位于 frontend/src/lib/file-preview-actions.ts，属于frontend链路中的前端共享库代码，连接上游调用方与下游执行逻辑。
+// English: This file (file-preview-actions.ts) belongs to the frontend 前端共享库 layer in frontend/src/lib/file-preview-actions.ts, wiring upstream callers with downstream runtime logic.
+
 function createObjectUrlDownload(url: string, fileName: string) {
   const link = document.createElement('a')
   link.href = url

@@ -1,3 +1,6 @@
+// 中文：本文件（sqlite-store.test.ts）位于 backend/src/memory/__tests__/sqlite-store.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (sqlite-store.test.ts) belongs to the backend 测试用例 layer in backend/src/memory/__tests__/sqlite-store.test.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

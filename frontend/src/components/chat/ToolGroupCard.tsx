@@ -1,3 +1,6 @@
+// 中文：本文件（ToolGroupCard.tsx）位于 frontend/src/components/chat/ToolGroupCard.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ToolGroupCard.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/chat/ToolGroupCard.tsx, wiring upstream callers with downstream runtime logic.
+
 import clsx from 'clsx'
 import { ChevronDown } from 'lucide-react'
 import type { MessageToolCallBlock } from '../../lib/message-blocks'

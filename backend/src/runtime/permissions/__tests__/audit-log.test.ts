@@ -1,3 +1,6 @@
+// 中文：本文件（audit-log.test.ts）位于 backend/src/runtime/permissions/__tests__/audit-log.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (audit-log.test.ts) belongs to the backend 测试用例 layer in backend/src/runtime/permissions/__tests__/audit-log.test.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 审计日志测试
  */

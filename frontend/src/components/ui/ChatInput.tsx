@@ -1,3 +1,6 @@
+// 中文：本文件（ChatInput.tsx）位于 frontend/src/components/ui/ChatInput.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ChatInput.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/ui/ChatInput.tsx, wiring upstream callers with downstream runtime logic.
+
 import clsx from 'clsx'
 import { ChevronDown, FileText, Folder, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react'

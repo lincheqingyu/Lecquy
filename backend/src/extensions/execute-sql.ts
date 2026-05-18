@@ -1,3 +1,6 @@
+// 中文：本文件（execute-sql.ts）位于 backend/src/extensions/execute-sql.ts，属于backend链路中的扩展接口代码，连接上游调用方与下游执行逻辑。
+// English: This file (execute-sql.ts) belongs to the backend 扩展接口 layer in backend/src/extensions/execute-sql.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * execute_sql 扩展工具 — 查询达梦数据库
  * 仅支持 SELECT 语句，自动限制返回行数

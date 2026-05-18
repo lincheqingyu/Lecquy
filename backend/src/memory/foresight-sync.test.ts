@@ -1,3 +1,6 @@
+// 中文：本文件（foresight-sync.test.ts）位于 backend/src/memory/foresight-sync.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (foresight-sync.test.ts) belongs to the backend 测试用例 layer in backend/src/memory/foresight-sync.test.ts, wiring upstream callers with downstream runtime logic.
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { RunId, SessionProjection } from '@lecquy/shared'

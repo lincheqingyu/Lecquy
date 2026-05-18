@@ -1,3 +1,6 @@
+// 中文：本文件（rightRailState.ts）位于 frontend/src/app/home/right-rail/rightRailState.ts，属于frontend链路中的frontend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (rightRailState.ts) belongs to the frontend frontend 模块实现 layer in frontend/src/app/home/right-rail/rightRailState.ts, wiring upstream callers with downstream runtime logic.
+
 export type RightRailMode =
   | 'context'
   | 'progress'

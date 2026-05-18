@@ -1,3 +1,6 @@
+// 中文：本文件（agent-runner.ts）位于 backend/src/agent/agent-runner.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (agent-runner.ts) belongs to the backend agent 编排与工具链 layer in backend/src/agent/agent-runner.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Simple Agent 运行器
  * 对应旧代码 src/agents2/agent-loop/
@@ -14,6 +17,7 @@ import { createPermissionAwareTools, type AgentRuntimeEvent } from './tool-permi
 import { getPermissionManager } from './permission-manager-registry.js'
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
+import { logAiRequestSnapshot } from './ai-request-logger.js'
 import {
   AgentExecutionError,
   createTracker,
@@ -151,7 +155,20 @@ export async function runSimpleAgent(options: SimpleAgentOptions): Promise<Simpl
       sessionId: llmSessionId,
       maxRetryDelayMs,
       metadata,
-      onPayload: (payload) => mutateProviderPayload(model, payload),
+      onPayload: (payload) => {
+        mutateProviderPayload(model, payload)
+        logAiRequestSnapshot({
+          role: 'simple',
+          model,
+          systemPrompt,
+          promptMessages: messages,
+          contextMessages,
+          sessionKey,
+          sessionId,
+          runId,
+          llmSessionId,
+        }, payload)
+      },
       convertToLlm: (agentMessages: AgentMessage[]) =>
         agentMessages.filter(
           (m): m is Message => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',

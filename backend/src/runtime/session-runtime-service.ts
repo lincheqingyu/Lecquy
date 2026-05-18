@@ -1,3 +1,6 @@
+// 中文：本文件（session-runtime-service.ts）位于 backend/src/runtime/session-runtime-service.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (session-runtime-service.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/session-runtime-service.ts, wiring upstream callers with downstream runtime logic.
+
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'

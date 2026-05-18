@@ -1,3 +1,6 @@
+// 中文：本文件（ws-events.ts）位于 shared/src/ws-events.ts，属于shared链路中的共享类型代码，连接上游调用方与下游执行逻辑。
+// English: This file (ws-events.ts) belongs to the shared 共享类型 layer in shared/src/ws-events.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * WebSocket 生命周期事件定义
  * 前后端共享，确保事件名和 payload 类型一致

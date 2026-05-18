@@ -1,3 +1,6 @@
+// 中文：本文件（ws-pg-acceptance.ts）位于 backend/src/dev/ws-pg-acceptance.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (ws-pg-acceptance.ts) belongs to the backend backend 模块实现 layer in backend/src/dev/ws-pg-acceptance.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'

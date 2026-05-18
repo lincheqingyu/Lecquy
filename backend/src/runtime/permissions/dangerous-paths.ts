@@ -1,3 +1,6 @@
+// 中文：本文件（dangerous-paths.ts）位于 backend/src/runtime/permissions/dangerous-paths.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (dangerous-paths.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/permissions/dangerous-paths.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 危险文件与目录黑名单
  *

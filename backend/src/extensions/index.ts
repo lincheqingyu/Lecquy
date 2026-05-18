@@ -1,3 +1,6 @@
+// 中文：本文件（index.ts）位于 backend/src/extensions/index.ts，属于backend链路中的扩展接口代码，连接上游调用方与下游执行逻辑。
+// English: This file (index.ts) belongs to the backend 扩展接口 layer in backend/src/extensions/index.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 扩展工具注册表
  * 技能专用工具，与核心工具（bash, read_file, skill, todo_write）分离

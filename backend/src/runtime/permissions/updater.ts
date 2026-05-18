@@ -1,3 +1,6 @@
+// 中文：本文件（updater.ts）位于 backend/src/runtime/permissions/updater.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (updater.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/permissions/updater.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 权限规则更新与持久化
  *

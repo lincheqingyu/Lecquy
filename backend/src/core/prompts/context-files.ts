@@ -1,3 +1,6 @@
+// 中文：本文件（context-files.ts）位于 backend/src/core/prompts/context-files.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (context-files.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/context-files.ts, wiring upstream callers with downstream runtime logic.
+
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'

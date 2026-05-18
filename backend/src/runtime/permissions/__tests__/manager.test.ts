@@ -1,3 +1,6 @@
+// 中文：本文件（manager.test.ts）位于 backend/src/runtime/permissions/__tests__/manager.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (manager.test.ts) belongs to the backend 测试用例 layer in backend/src/runtime/permissions/__tests__/manager.test.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * PermissionManager 集成测试
  */

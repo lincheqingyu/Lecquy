@@ -1,3 +1,6 @@
+// 中文：本文件（knowledge-repository.ts）位于 backend/src/db/knowledge-repository.ts，属于backend链路中的数据库访问层代码，连接上游调用方与下游执行逻辑。
+// English: This file (knowledge-repository.ts) belongs to the backend 数据库访问层 layer in backend/src/db/knowledge-repository.ts, wiring upstream callers with downstream runtime logic.
+
 import type { Pool } from 'pg'
 import type {
   KnowledgeChunk,

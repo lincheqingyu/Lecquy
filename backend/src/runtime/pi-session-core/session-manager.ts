@@ -1,3 +1,6 @@
+// 中文：本文件（session-manager.ts）位于 backend/src/runtime/pi-session-core/session-manager.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (session-manager.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/pi-session-core/session-manager.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Vendored and adapted from:
  * /Users/hqy/Documents/zxh/github/pi-mono/packages/coding-agent/src/core/session-manager.ts

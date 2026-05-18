@@ -1,3 +1,6 @@
+// 中文：本文件（AutoResizeTextarea.tsx）位于 frontend/src/components/ui/AutoResizeTextarea.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (AutoResizeTextarea.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/ui/AutoResizeTextarea.tsx, wiring upstream callers with downstream runtime logic.
+
 import { useCallback, type ClipboardEvent, type KeyboardEvent, type RefObject } from 'react'
 import { useAutoResize } from '../../hooks/useAutoResize'
 

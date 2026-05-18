@@ -1,3 +1,6 @@
+// 中文：本文件（DocumentPanel.tsx）位于 frontend/src/app/home/components/DocumentPanel.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (DocumentPanel.tsx) belongs to the frontend 前端组件 layer in frontend/src/app/home/components/DocumentPanel.tsx, wiring upstream callers with downstream runtime logic.
+
 import clsx from 'clsx'
 import { Image as ImageIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'

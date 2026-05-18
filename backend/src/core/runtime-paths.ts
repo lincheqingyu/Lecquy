@@ -1,3 +1,6 @@
+// 中文：本文件（runtime-paths.ts）位于 backend/src/core/runtime-paths.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (runtime-paths.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/runtime-paths.ts, wiring upstream callers with downstream runtime logic.
+
 import fs from 'node:fs'
 import path from 'node:path'
 import { isSea } from 'node:sea'

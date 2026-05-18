@@ -1,3 +1,6 @@
+// 中文：本文件（index.ts）位于 backend/src/config/index.ts，属于backend链路中的配置与路由代码，连接上游调用方与下游执行逻辑。
+// English: This file (index.ts) belongs to the backend 配置与路由 layer in backend/src/config/index.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 配置统一导出
  * 应用启动时调用 loadConfig() 初始化配置

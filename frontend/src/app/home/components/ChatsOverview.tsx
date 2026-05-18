@@ -1,3 +1,6 @@
+// 中文：本文件（ChatsOverview.tsx）位于 frontend/src/app/home/components/ChatsOverview.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ChatsOverview.tsx) belongs to the frontend 前端组件 layer in frontend/src/app/home/components/ChatsOverview.tsx, wiring upstream callers with downstream runtime logic.
+
 import { Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { ConversationItem } from './ConversationSidebar'

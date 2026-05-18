@@ -1,3 +1,6 @@
+// 中文：本文件（approval-flow.test.ts）位于 backend/src/runtime/__tests__/approval-flow.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (approval-flow.test.ts) belongs to the backend 测试用例 layer in backend/src/runtime/__tests__/approval-flow.test.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import { readFile, rm, mkdtemp } from 'node:fs/promises'
 import os from 'node:os'

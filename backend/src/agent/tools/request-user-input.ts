@@ -1,3 +1,6 @@
+// 中文：本文件（request-user-input.ts）位于 backend/src/agent/tools/request-user-input.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (request-user-input.ts) belongs to the backend agent 编排与工具链 layer in backend/src/agent/tools/request-user-input.ts, wiring upstream callers with downstream runtime logic.
+
 import { Type } from '@sinclair/typebox'
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 

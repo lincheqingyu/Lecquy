@@ -1,3 +1,6 @@
+// 中文：本文件（ShikiCodeView.tsx）位于 frontend/src/components/artifacts/ShikiCodeView.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ShikiCodeView.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/artifacts/ShikiCodeView.tsx, wiring upstream callers with downstream runtime logic.
+
 import { startTransition, useEffect, useState } from 'react'
 import { codeToHtml } from 'shiki'
 

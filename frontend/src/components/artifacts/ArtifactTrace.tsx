@@ -1,3 +1,6 @@
+// 中文：本文件（ArtifactTrace.tsx）位于 frontend/src/components/artifacts/ArtifactTrace.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ArtifactTrace.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/artifacts/ArtifactTrace.tsx, wiring upstream callers with downstream runtime logic.
+
 import { FileText, LoaderCircle } from 'lucide-react'
 import type { ArtifactTraceItem } from '@lecquy/shared'
 import { TimelineEvent } from '../chat/TimelineEvent'

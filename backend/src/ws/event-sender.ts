@@ -1,3 +1,6 @@
+// 中文：本文件（event-sender.ts）位于 backend/src/ws/event-sender.ts，属于backend链路中的WebSocket 通信代码，连接上游调用方与下游执行逻辑。
+// English: This file (event-sender.ts) belongs to the backend websocket 通信 layer in backend/src/ws/event-sender.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * WS 事件发送与 AgentEvent 映射
  */

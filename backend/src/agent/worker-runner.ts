@@ -1,3 +1,6 @@
+// 中文：本文件（worker-runner.ts）位于 backend/src/agent/worker-runner.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (worker-runner.ts) belongs to the backend agent 编排与工具链 layer in backend/src/agent/worker-runner.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Worker Agent 运行器
  */
@@ -16,6 +19,7 @@ import {
 import { getPermissionManager } from './permission-manager-registry.js'
 import { mutateProviderPayload } from './provider-payload.js'
 import { logProviderStreamEvent } from './provider-stream-debug.js'
+import { logAiRequestSnapshot } from './ai-request-logger.js'
 import {
   AgentExecutionError,
   createTracker,
@@ -246,7 +250,20 @@ export async function runWorkerAgent(options: WorkerAgentOptions): Promise<Worke
       sessionId: normalized.llmSessionId,
       maxRetryDelayMs: normalized.maxRetryDelayMs,
       metadata: normalized.metadata,
-      onPayload: (payload) => mutateProviderPayload(normalized.model, payload),
+      onPayload: (payload) => {
+        mutateProviderPayload(normalized.model, payload)
+        logAiRequestSnapshot({
+          role: 'worker',
+          model: normalized.model,
+          systemPrompt: normalized.systemPrompt,
+          promptMessages,
+          contextMessages: [],
+          sessionKey: normalized.sessionKey,
+          sessionId: normalized.sessionId,
+          runId: normalized.runId,
+          llmSessionId: normalized.llmSessionId,
+        }, payload)
+      },
       convertToLlm: (messages: AgentMessage[]) =>
         messages.filter(
           (message): message is Message =>

@@ -1,3 +1,6 @@
+// 中文：本文件（todo-manager.ts）位于 backend/src/core/todo/todo-manager.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (todo-manager.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/todo/todo-manager.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 带约束的任务列表管理器
  * 对应源码: core/todo/todo_manager.py

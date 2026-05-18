@@ -1,3 +1,6 @@
+// 中文：本文件（user-md-parser.ts）位于 backend/src/core/prompts/user-md-parser.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (user-md-parser.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/user-md-parser.ts, wiring upstream callers with downstream runtime logic.
+
 import { STARTUP_BUDGETS, USER_MD_SCHEMA, type UserMdSlices } from './prompt-layer-types.js'
 import { estimateTokens } from './prompt-serializer.js'
 

@@ -1,3 +1,6 @@
+// 中文：本文件（server.ts）位于 backend/src/server.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (server.ts) belongs to the backend backend 模块实现 layer in backend/src/server.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * HTTP 服务器启动入口
  * 加载配置 → 初始化 Provider → 启动服务

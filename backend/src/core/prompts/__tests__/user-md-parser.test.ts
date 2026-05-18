@@ -1,3 +1,6 @@
+// 中文：本文件（user-md-parser.test.ts）位于 backend/src/core/prompts/__tests__/user-md-parser.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (user-md-parser.test.ts) belongs to the backend 测试用例 layer in backend/src/core/prompts/__tests__/user-md-parser.test.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PromptLayer } from '../prompt-layer-types.js'

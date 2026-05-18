@@ -1,3 +1,6 @@
+// 中文：本文件（session.d.ts）位于 shared/src/session.d.ts，属于shared链路中的TypeScript 类型声明代码，连接上游调用方与下游执行逻辑。
+// English: This file (session.d.ts) belongs to the shared typescript 类型声明 layer in shared/src/session.d.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 会话相关类型定义
  */

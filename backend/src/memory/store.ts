@@ -1,3 +1,6 @@
+// 中文：本文件（store.ts）位于 backend/src/memory/store.ts，属于backend链路中的memory 记忆链路代码，连接上游调用方与下游执行逻辑。
+// English: This file (store.ts) belongs to the backend memory 记忆链路 layer in backend/src/memory/store.ts, wiring upstream callers with downstream runtime logic.
+
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { STARTUP_BUDGETS } from '../core/prompts/prompt-layer-types.js'

@@ -1,3 +1,7 @@
+/* 中文：本文件（index.css）位于 frontend/src/index.css，属于frontend链路中的样式表代码，连接上游调用方与下游执行逻辑。
+ * English: This file (index.css) belongs to the frontend 样式表 layer in frontend/src/index.css, wiring upstream callers with downstream runtime logic.
+ */
+
 /* ============================================
  * 全局样式入口
  * 这一行是 Tailwind 4 的"总开关"，它做了三件事：

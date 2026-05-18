@@ -1,3 +1,6 @@
+// 中文：本文件（compact-summary.template.ts）位于 backend/src/runtime/context/templates/compact-summary.template.ts，属于backend链路中的会话运行时代码，连接上游调用方与下游执行逻辑。
+// English: This file (compact-summary.template.ts) belongs to the backend 会话运行时 layer in backend/src/runtime/context/templates/compact-summary.template.ts, wiring upstream callers with downstream runtime logic.
+
 import { extractSessionText, type SessionEventEntry } from '@lecquy/shared'
 
 const COMPACT_MAX_SUMMARY_CHARS = 1_200

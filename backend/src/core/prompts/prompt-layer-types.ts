@@ -1,3 +1,6 @@
+// 中文：本文件（prompt-layer-types.ts）位于 backend/src/core/prompts/prompt-layer-types.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (prompt-layer-types.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/prompts/prompt-layer-types.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Prompt 7 层优先级枚举。
  * 数值即优先级顺序，也是最终注入顺序。

@@ -1,3 +1,6 @@
+// 中文：本文件（compact.test.ts）位于 backend/src/memory/compact.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (compact.test.ts) belongs to the backend 测试用例 layer in backend/src/memory/compact.test.ts, wiring upstream callers with downstream runtime logic.
+
 import test, { describe, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import os from 'node:os'

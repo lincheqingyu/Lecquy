@@ -1,3 +1,6 @@
+// 中文：本文件（model-registry.ts）位于 backend/src/agent/model-registry.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (model-registry.ts) belongs to the backend agent 编排与工具链 layer in backend/src/agent/model-registry.ts, wiring upstream callers with downstream runtime logic.
+
 import { logger } from '../utils/logger.js'
 
 export type ModelContextWindowSource = 'spec' | 'registry' | 'fallback'

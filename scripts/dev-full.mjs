@@ -1,3 +1,6 @@
+// 中文：本文件（dev-full.mjs）位于 scripts/dev-full.mjs，负责启动前后端联调和本地 PostgreSQL 开发实例。
+// English: This file (dev-full.mjs) starts the full-stack dev loop and local PostgreSQL dev instance.
+
 import { spawn } from 'node:child_process'
 import { isLocalPostgresRunning, resolvePostgresDevConfig, resolveWorkspaceRoot, startLocalPostgres, stopLocalPostgres } from './lib/postgres-dev.mjs'
 

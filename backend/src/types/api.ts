@@ -1,3 +1,6 @@
+// 中文：本文件（api.ts）位于 backend/src/types/api.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (api.ts) belongs to the backend backend 模块实现 layer in backend/src/types/api.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * API 请求/响应类型定义
  */

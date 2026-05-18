@@ -1,3 +1,6 @@
+// 中文：本文件（ArtifactCard.tsx）位于 frontend/src/components/artifacts/ArtifactCard.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (ArtifactCard.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/artifacts/ArtifactCard.tsx, wiring upstream callers with downstream runtime logic.
+
 import { Download, FileCode2, LoaderCircle } from 'lucide-react'
 import { FileCardShell } from '../files/FileCardShell'
 import { formatBytes, inferArtifactTypeLabel } from '../../lib/file-display'

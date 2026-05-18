@@ -1,3 +1,6 @@
+// 中文：本文件（ws-reconnect.ts）位于 frontend/src/lib/ws-reconnect.ts，属于frontend链路中的前端共享库代码，连接上游调用方与下游执行逻辑。
+// English: This file (ws-reconnect.ts) belongs to the frontend 前端共享库 layer in frontend/src/lib/ws-reconnect.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 可重连 WebSocket 封装
  * 支持指数退避重连、消息队列、心跳响应

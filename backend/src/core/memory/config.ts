@@ -1,3 +1,6 @@
+// 中文：本文件（config.ts）位于 backend/src/core/memory/config.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (config.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/memory/config.ts, wiring upstream callers with downstream runtime logic.
+
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { ensureMemoryConfigLocation, resolvePromptContextPaths } from '../prompts/context-files.js'

@@ -1,3 +1,6 @@
+// 中文：本文件（client.ts）位于 backend/src/db/client.ts，属于backend链路中的数据库访问层代码，连接上游调用方与下游执行逻辑。
+// English: This file (client.ts) belongs to the backend 数据库访问层 layer in backend/src/db/client.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * PostgreSQL 连接池
  * 调用 getPool() 前须确保 loadConfig() 已执行（server.ts 启动时会完成）

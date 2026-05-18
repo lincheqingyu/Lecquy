@@ -1,3 +1,6 @@
+// 中文：本文件（session-store.ts）位于 backend/src/session-v2/session-store.ts，属于backend链路中的会话服务代码，连接上游调用方与下游执行逻辑。
+// English: This file (session-store.ts) belongs to the backend 会话服务 layer in backend/src/session-v2/session-store.ts, wiring upstream callers with downstream runtime logic.
+
 import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

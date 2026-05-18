@@ -1,3 +1,6 @@
+// 中文：本文件（simple-handler.ts）位于 backend/src/ws/simple-handler.ts，属于backend链路中的WebSocket 通信代码，连接上游调用方与下游执行逻辑。
+// English: This file (simple-handler.ts) belongs to the backend websocket 通信 layer in backend/src/ws/simple-handler.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * WS Simple 模式处理器
  */

@@ -1,3 +1,6 @@
+// 中文：本文件（compact.ts）位于 backend/src/memory/compact.ts，属于backend链路中的memory 记忆链路代码，连接上游调用方与下游执行逻辑。
+// English: This file (compact.ts) belongs to the backend memory 记忆链路 layer in backend/src/memory/compact.ts, wiring upstream callers with downstream runtime logic.
+
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import {
@@ -769,15 +772,6 @@ export async function applyCompactionIfNeeded(
   options: CompactionOptions,
 ): Promise<boolean> {
   const policy = resolveCompactionPolicy(options)
-  logger.debug('[compact] policy resolved', {
-    modelId: options.model,
-    modelContextWindow: policy.modelContextWindow,
-    contextWindowSource: policy.contextWindowSource,
-    threshold: policy.threshold,
-    outputReserved: policy.outputReserved,
-    promptOverhead: policy.promptOverhead,
-    nextInputBuffer: policy.nextInputBuffer,
-  })
   const source = resolveCompactSource(manager.getEntries(), policy)
   if (!source) {
     return false

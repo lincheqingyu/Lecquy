@@ -1,3 +1,6 @@
+// 中文：本文件（sessions.ts）位于 backend/src/controllers/sessions.ts，属于backend链路中的HTTP 控制器代码，连接上游调用方与下游执行逻辑。
+// English: This file (sessions.ts) belongs to the backend http 控制器 layer in backend/src/controllers/sessions.ts, wiring upstream callers with downstream runtime logic.
+
 import { Router, type Router as RouterType } from 'express'
 import { z } from 'zod'
 import { getSessionRuntimeService } from '../runtime/index.js'

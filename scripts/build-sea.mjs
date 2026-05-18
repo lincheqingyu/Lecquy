@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// 中文：本文件（build-sea.mjs）位于 scripts/build-sea.mjs，负责构建 Node SEA 单文件发行包。
+// English: This file (build-sea.mjs) builds the Node SEA single-file distribution package.
+
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'

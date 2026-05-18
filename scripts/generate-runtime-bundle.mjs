@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// 中文：本文件（generate-runtime-bundle.mjs）位于 scripts/generate-runtime-bundle.mjs，生成后端运行时需要内嵌的前端与技能资源包。
+// English: This file (generate-runtime-bundle.mjs) generates the embedded frontend and skill runtime bundle for the backend.
+
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'

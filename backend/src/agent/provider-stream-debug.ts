@@ -1,3 +1,6 @@
+// 中文：本文件（provider-stream-debug.ts）位于 backend/src/agent/provider-stream-debug.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (provider-stream-debug.ts) belongs to the backend agent 编排与工具链 layer in backend/src/agent/provider-stream-debug.ts, wiring upstream callers with downstream runtime logic.
+
 import type { AgentEvent } from '@mariozechner/pi-agent-core'
 import type { Model } from '@mariozechner/pi-ai'
 import { logger } from '../utils/logger.js'
@@ -155,12 +158,6 @@ export function logProviderStreamEvent(
           deltaLength: delta.length,
           delta,
         })
-      } else {
-        logger.debug('Provider stream text_delta', {
-          ...baseContext,
-          contentIndex: event.assistantMessageEvent.contentIndex,
-          deltaLength: delta.length,
-        })
       }
       return
     }
@@ -178,12 +175,6 @@ export function logProviderStreamEvent(
           match: anomaly.match,
           deltaLength: delta.length,
           delta,
-        })
-      } else {
-        logger.debug('Provider stream thinking_delta', {
-          ...baseContext,
-          contentIndex: event.assistantMessageEvent.contentIndex,
-          deltaLength: delta.length,
         })
       }
       return

@@ -1,3 +1,6 @@
+// 中文：本文件（types.ts）位于 backend/src/memory/types.ts，属于backend链路中的memory 记忆链路代码，连接上游调用方与下游执行逻辑。
+// English: This file (types.ts) belongs to the backend memory 记忆链路 layer in backend/src/memory/types.ts, wiring upstream callers with downstream runtime logic.
+
 export type MemoryKind = 'profile' | 'episodic' | 'event' | 'foresight'
 export type MemoryStatus = 'active' | 'superseded' | 'expired' | 'deleted'
 export type MemoryJobType = 'extract_event'

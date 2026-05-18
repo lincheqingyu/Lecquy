@@ -1,3 +1,6 @@
+// 中文：本文件（index.ts）位于 shared/src/index.ts，属于shared链路中的共享类型代码，连接上游调用方与下游执行逻辑。
+// English: This file (index.ts) belongs to the shared 共享类型 layer in shared/src/index.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * @lecquy/shared — 前后端共享类型
  */

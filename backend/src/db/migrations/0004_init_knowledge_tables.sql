@@ -1,3 +1,6 @@
+-- 中文：本文件（0004_init_knowledge_tables.sql）位于 backend/src/db/migrations/0004_init_knowledge_tables.sql，属于backend链路中的数据库脚本代码，连接上游调用方与下游执行逻辑。
+-- English: This file (0004_init_knowledge_tables.sql) belongs to the backend 数据库脚本 layer in backend/src/db/migrations/0004_init_knowledge_tables.sql, wiring upstream callers with downstream runtime logic.
+
 -- 第一版 knowledge / RAG spike 表
 -- 只冻结文档与分块边界，不引入 embedding、不接主链路
 

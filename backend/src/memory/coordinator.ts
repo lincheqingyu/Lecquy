@@ -1,3 +1,6 @@
+// 中文：本文件（coordinator.ts）位于 backend/src/memory/coordinator.ts，属于backend链路中的memory 记忆链路代码，连接上游调用方与下游执行逻辑。
+// English: This file (coordinator.ts) belongs to the backend memory 记忆链路 layer in backend/src/memory/coordinator.ts, wiring upstream callers with downstream runtime logic.
+
 import { extractSessionText, type SessionProjection } from '@lecquy/shared'
 import { getConfig, type Env } from '../config/index.js'
 import { getPool } from '../db/client.js'

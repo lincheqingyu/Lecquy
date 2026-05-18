@@ -1,3 +1,6 @@
+// 中文：本文件（vite.config.ts）位于 frontend/vite.config.ts，属于frontend链路中的frontend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (vite.config.ts) belongs to the frontend frontend 模块实现 layer in frontend/vite.config.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Vite 配置
  * 从 monorepo 根目录 .env 读取共享网络配置

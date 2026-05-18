@@ -1,3 +1,6 @@
+// 中文：本文件（pg-acceptance-smoke.ts）位于 backend/src/dev/pg-acceptance-smoke.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (pg-acceptance-smoke.ts) belongs to the backend backend 模块实现 layer in backend/src/dev/pg-acceptance-smoke.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'

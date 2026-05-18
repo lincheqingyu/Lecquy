@@ -1,3 +1,6 @@
+// 中文：本文件（skill-loader.ts）位于 backend/src/core/skills/skill-loader.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (skill-loader.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/skills/skill-loader.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 技能加载器
  * 技能来源按优先级合并：

@@ -1,3 +1,6 @@
+// 中文：本文件（dangerous-paths.test.ts）位于 backend/src/runtime/permissions/__tests__/dangerous-paths.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (dangerous-paths.test.ts) belongs to the backend 测试用例 layer in backend/src/runtime/permissions/__tests__/dangerous-paths.test.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 危险路径单元测试
  */

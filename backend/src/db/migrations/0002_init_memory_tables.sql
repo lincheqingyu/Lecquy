@@ -1,3 +1,6 @@
+-- 中文：本文件（0002_init_memory_tables.sql）位于 backend/src/db/migrations/0002_init_memory_tables.sql，属于backend链路中的数据库脚本代码，连接上游调用方与下游执行逻辑。
+-- English: This file (0002_init_memory_tables.sql) belongs to the backend 数据库脚本 layer in backend/src/db/migrations/0002_init_memory_tables.sql, wiring upstream callers with downstream runtime logic.
+
 -- 第一版 memory 核心表
 -- 只落 memory_items / memory_jobs，不涉及 embedding、RAG、graph memory
 

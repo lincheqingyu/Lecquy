@@ -1,3 +1,6 @@
+// 中文：本文件（postgres-dev.mjs）位于 scripts/lib/postgres-dev.mjs，封装本地 PostgreSQL 开发实例的路径解析、启动和状态检查。
+// English: This file (postgres-dev.mjs) wraps path resolution, startup, and status checks for the local PostgreSQL dev instance.
+
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'

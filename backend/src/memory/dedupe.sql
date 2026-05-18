@@ -1,3 +1,6 @@
+-- 中文：本文件（dedupe.sql）位于 backend/src/memory/dedupe.sql，属于backend链路中的数据库脚本代码，连接上游调用方与下游执行逻辑。
+-- English: This file (dedupe.sql) belongs to the backend 数据库脚本 layer in backend/src/memory/dedupe.sql, wiring upstream callers with downstream runtime logic.
+
 -- 清理 memory_items 中按 (kind, event_type, project_id, summary, content) 完全重复的条目。
 -- 保留每组中 rowid 最小的那一条。
 -- 执行前先备份：

@@ -1,3 +1,6 @@
+-- 中文：本文件（0001_init_runtime_tables.sql）位于 backend/src/db/migrations/0001_init_runtime_tables.sql，属于backend链路中的数据库脚本代码，连接上游调用方与下游执行逻辑。
+-- English: This file (0001_init_runtime_tables.sql) belongs to the backend 数据库脚本 layer in backend/src/db/migrations/0001_init_runtime_tables.sql, wiring upstream callers with downstream runtime logic.
+
 -- 第一版 runtime 核心表
 -- 只建 sessions 和 session_events，不涉及 memory 和 compact
 

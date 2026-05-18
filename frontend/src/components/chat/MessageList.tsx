@@ -1,3 +1,6 @@
+// 中文：本文件（MessageList.tsx）位于 frontend/src/components/chat/MessageList.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (MessageList.tsx) belongs to the frontend 前端组件 layer in frontend/src/components/chat/MessageList.tsx, wiring upstream callers with downstream runtime logic.
+
 import { useEffect, useRef } from 'react'
 import type { ChatAttachment } from '@lecquy/shared'
 import type { ChatMessage } from '../../hooks/useChat'

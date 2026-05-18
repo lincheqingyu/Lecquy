@@ -1,3 +1,6 @@
+// 中文：本文件（skill-session.ts）位于 backend/src/core/skills/skill-session.ts，属于backend链路中的核心运行时与配置代码，连接上游调用方与下游执行逻辑。
+// English: This file (skill-session.ts) belongs to the backend 核心运行时与配置 layer in backend/src/core/skills/skill-session.ts, wiring upstream callers with downstream runtime logic.
+
 import { PromptLayer, type LayerSlice } from '../prompts/prompt-layer-types.js'
 import { createSlice, hashContent } from '../prompts/prompt-serializer.js'
 

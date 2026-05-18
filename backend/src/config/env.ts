@@ -1,3 +1,6 @@
+// 中文：本文件（env.ts）位于 backend/src/config/env.ts，属于backend链路中的配置与路由代码，连接上游调用方与下游执行逻辑。
+// English: This file (env.ts) belongs to the backend 配置与路由 layer in backend/src/config/env.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 环境变量校验与类型化
  * 使用 zod 进行运行时校验，确保所有必需配置存在

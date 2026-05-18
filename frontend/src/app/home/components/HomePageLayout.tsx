@@ -1,3 +1,6 @@
+// 中文：本文件（HomePageLayout.tsx）位于 frontend/src/app/home/components/HomePageLayout.tsx，属于frontend链路中的前端组件代码，连接上游调用方与下游执行逻辑。
+// English: This file (HomePageLayout.tsx) belongs to the frontend 前端组件 layer in frontend/src/app/home/components/HomePageLayout.tsx, wiring upstream callers with downstream runtime logic.
+
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createDefaultThinkingConfig, type ChatAttachment } from '@lecquy/shared'
 import { ConversationArea } from './ConversationArea'

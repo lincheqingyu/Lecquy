@@ -1,3 +1,6 @@
+// 中文：本文件（dmdb-pool.ts）位于 backend/src/extensions/dmdb-pool.ts，属于backend链路中的扩展接口代码，连接上游调用方与下游执行逻辑。
+// English: This file (dmdb-pool.ts) belongs to the backend 扩展接口 layer in backend/src/extensions/dmdb-pool.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 达梦数据库连接池（懒初始化单例）
  * dmdb 模块按需加载，避免启动时强绑定数据库能力

@@ -1,3 +1,6 @@
+// 中文：本文件（chat-ws.ts）位于 backend/src/ws/chat-ws.ts，属于backend链路中的WebSocket 通信代码，连接上游调用方与下游执行逻辑。
+// English: This file (chat-ws.ts) belongs to the backend websocket 通信 layer in backend/src/ws/chat-ws.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * WebSocket chat gateway
  * 统一 run_start / run_resume / run_cancel 生命周期协议

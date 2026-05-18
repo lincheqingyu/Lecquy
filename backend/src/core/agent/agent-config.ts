@@ -1,3 +1,6 @@
+// 中文：本文件（agent-config.ts）位于 backend/src/core/agent/agent-config.ts，属于backend链路中的agent 编排与工具链代码，连接上游调用方与下游执行逻辑。
+// English: This file (agent-config.ts) belongs to the backend agent 编排与工具链 layer in backend/src/core/agent/agent-config.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 代理类型配置
  * 对应源码: core/agent/agent_config.py

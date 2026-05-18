@@ -1,3 +1,6 @@
+// 中文：本文件（artifacts.ts）位于 frontend/src/lib/artifacts.ts，属于frontend链路中的前端共享库代码，连接上游调用方与下游执行逻辑。
+// English: This file (artifacts.ts) belongs to the frontend 前端共享库 layer in frontend/src/lib/artifacts.ts, wiring upstream callers with downstream runtime logic.
+
 import type { ArtifactTraceItem, GeneratedFileArtifact } from '@lecquy/shared'
 
 const GENERATED_DOCS_DIR = '.lecquy/artifacts/docs'

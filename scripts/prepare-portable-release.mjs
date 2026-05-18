@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// 中文：本文件（prepare-portable-release.mjs）位于 scripts/prepare-portable-release.mjs，整理 portable release 所需的前后端构建产物。
+// English: This file (prepare-portable-release.mjs) prepares frontend and backend build outputs for a portable release.
+
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'

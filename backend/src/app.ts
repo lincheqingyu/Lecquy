@@ -1,3 +1,6 @@
+// 中文：本文件（app.ts）位于 backend/src/app.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (app.ts) belongs to the backend backend 模块实现 layer in backend/src/app.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * Express 应用配置
  * 注册中间件和路由

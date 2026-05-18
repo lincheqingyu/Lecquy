@@ -1,3 +1,6 @@
+// 中文：本文件（types.ts）位于 backend/src/session-v2/types.ts，属于backend链路中的会话服务代码，连接上游调用方与下游执行逻辑。
+// English: This file (types.ts) belongs to the backend 会话服务 layer in backend/src/session-v2/types.ts, wiring upstream callers with downstream runtime logic.
+
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AssistantMessage, UserMessage } from '@mariozechner/pi-ai'
 import type { SessionChannel, SessionEntry, SessionKind, SessionRouteContext, SessionSnapshot } from '@lecquy/shared'

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# 中文：本文件（dev-pg-stop.sh）位于 scripts/dev-pg-stop.sh，属于scripts链路中的Shell 运维/开发脚本代码，连接上游调用方与下游执行逻辑。
+# English: This file (dev-pg-stop.sh) belongs to the scripts shell 运维/开发脚本 layer in scripts/dev-pg-stop.sh, wiring upstream callers with downstream runtime logic.
+
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

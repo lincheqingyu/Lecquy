@@ -1,3 +1,6 @@
+// 中文：本文件（logger.ts）位于 backend/src/utils/logger.ts，属于backend链路中的backend 模块实现代码，连接上游调用方与下游执行逻辑。
+// English: This file (logger.ts) belongs to the backend backend 模块实现 layer in backend/src/utils/logger.ts, wiring upstream callers with downstream runtime logic.
+
 /**
  * 日志工具
  * 简单的分级日志，后续可替换为 pino 等专业库

@@ -1,3 +1,6 @@
+// 中文：本文件（skill-loader.test.ts）位于 backend/src/core/skills/skill-loader.test.ts，属于backend链路中的测试用例代码，连接上游调用方与下游执行逻辑。
+// English: This file (skill-loader.test.ts) belongs to the backend 测试用例 layer in backend/src/core/skills/skill-loader.test.ts, wiring upstream callers with downstream runtime logic.
+
 import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
